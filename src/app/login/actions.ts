@@ -2,6 +2,8 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { supabaseAdminKey } from "@/lib/data/config";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export interface AuthState {
@@ -16,7 +18,21 @@ export async function authAction(_prev: AuthState, fd: FormData): Promise<AuthSt
   const next = String(fd.get("next") ?? "/dashboard");
   if (!email || password.length < 8) return { error: "Enter your email and a password of at least 8 characters." };
   const supabase = await createSupabaseServerClient();
-  if (mode === "signup") {
+  if (mode === "signup" && supabaseAdminKey()) {
+    // With the server's admin key the account is created already confirmed:
+    // no confirmation email, no Supabase auth settings to change.
+    const { error } = await createSupabaseAdminClient().auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: String(fd.get("name") ?? "") },
+    });
+    if (error) {
+      return { error: /already|exists|registered/i.test(error.message) ? "There's already an account with this email — sign in instead." : error.message };
+    }
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    if (signInError) return { error: signInError.message };
+  } else if (mode === "signup") {
     // Confirmation emails land on /auth/callback, which signs the realtor in and opens the dashboard.
     const h = await headers();
     const host = h.get("x-forwarded-host") ?? h.get("host");

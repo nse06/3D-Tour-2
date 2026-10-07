@@ -63,6 +63,11 @@ export default async function SetupPage() {
         {status.reason === "missing-schema" && (
           <>
             <h1 className="font-display mt-3 text-5xl leading-[1.05]">One last step: create the tables</h1>
+            {status.autoSetupError && (
+              <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Atrium tried to create them automatically but couldn&apos;t: {status.autoSetupError}
+              </p>
+            )}
             <p className="mt-4 text-[15px] leading-relaxed text-neutral-600">
               Your Supabase database is connected. Run Atrium&apos;s schema — it creates the listing tables, row-level security policies and the storage bucket
               for 3D captures. Ran it before an update? Run it again: it only adds what&apos;s new.

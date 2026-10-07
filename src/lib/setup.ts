@@ -4,13 +4,14 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { storageMode, supabasePublicKey, supabaseUrl } from "@/lib/data/config";
+import { applyMigrations, databaseUrl } from "@/lib/migrations";
 
 export type SetupStatus =
   | { ok: true }
   | { ok: false; reason: "no-database" }
-  | { ok: false; reason: "missing-schema"; projectRef: string | null; missing: string[] }
+  | { ok: false; reason: "missing-schema"; projectRef: string | null; missing: string[]; autoSetupError: string | null }
   | { ok: false; reason: "unreachable"; message: string };
 
 /** Tables each migration introduces, in migration order. */
@@ -25,16 +26,53 @@ export async function checkSetup(): Promise<SetupStatus> {
 
   // Anonymous client: RLS hides rows, but a missing table still errors.
   const db = createClient(supabaseUrl()!, supabasePublicKey()!, { auth: { persistSession: false } });
+  let found = await missingTables(db);
+  if ("unreachable" in found) return { ok: false, reason: "unreachable", message: found.unreachable };
+  if (!found.missing.length) return { ok: true };
+
+  // Create the tables ourselves when this deployment can reach Postgres directly
+  // (Vercel's Supabase integration provides the connection string).
+  let autoSetupError: string | null = null;
+  if (databaseUrl()) {
+    try {
+      await applyMigrations();
+      // The API reloads its schema cache asynchronously; give it a moment.
+      for (let attempt = 0; attempt < 8; attempt++) {
+        found = await missingTables(db);
+        if ("unreachable" in found || !found.missing.length) break;
+        await new Promise((r) => setTimeout(r, 750));
+      }
+      if ("unreachable" in found) return { ok: false, reason: "unreachable", message: found.unreachable };
+      if (!found.missing.length) return { ok: true };
+    } catch (e) {
+      autoSetupError = redact((e as Error).message);
+      console.error("automatic database setup failed:", autoSetupError);
+    }
+  }
+  return {
+    ok: false,
+    reason: "missing-schema",
+    projectRef: projectRefFrom(supabaseUrl()),
+    missing: "missing" in found ? found.missing : REQUIRED_TABLES,
+    autoSetupError,
+  };
+}
+
+async function missingTables(db: SupabaseClient): Promise<{ missing: string[] } | { unreachable: string }> {
   const missing: string[] = [];
   for (const table of REQUIRED_TABLES) {
     // A GET (not HEAD) so PostgREST's error body — e.g. PGRST205 "not in the schema cache" — comes back.
     const { error } = await db.from(table).select("id").limit(1);
     if (!error) continue;
     if (MISSING_TABLE.test(`${error.code} ${error.message}`)) missing.push(table);
-    else return { ok: false, reason: "unreachable", message: error.message };
+    else return { unreachable: error.message };
   }
-  if (!missing.length) return { ok: true };
-  return { ok: false, reason: "missing-schema", projectRef: projectRefFrom(supabaseUrl()), missing };
+  return { missing };
+}
+
+/** Error text without anything that looks like a connection string. */
+function redact(message: string): string {
+  return message.replace(/postgres(ql)?:\/\/\S+/gi, "postgres://…");
 }
 
 export function isMissingSchemaError(e: unknown): boolean {
