@@ -4,7 +4,7 @@
 //   scanproc <scan.json> <out.glb> [--manifest <manifest.json>]
 //   scanproc demo-scan <scan.json>        write the synthetic two-bedroom apartment scan
 //   scanproc align <room.json|structure.json>... --out <scan.json> [--glb <out.glb>] [--report <alignment.json>]
-//            [--structure <structure.json> [--top-level-only]] [--scramble [--walk] [--no-structure]]
+//            [--structure <structure.json> [--top-level-only]] [--path <scan.json>] [--scramble [--walk] [--no-structure]]
 //        RoomPlan JSON → one aligned scan (RoomAlignment). --scramble re-creates RoomPlan's
 //        per-room origins from rooms that already share a frame, to check the alignment.
 
@@ -20,7 +20,7 @@ let usage = """
     usage: scanproc process <scan.json> <out.glb> [--manifest <manifest.json>] [--texture-size <px>]
            scanproc demo-scan <scan.json>
            scanproc align <room.json|structure.json>... --out <scan.json> [--glb <out.glb>] [--report <alignment.json>]
-                [--structure <structure.json> [--top-level-only]] [--scramble [--walk] [--no-structure]]
+                [--structure <structure.json> [--top-level-only]] [--path <scan.json>] [--scramble [--walk] [--no-structure]]
     """
 
 var args = Array(CommandLine.arguments.dropFirst())
@@ -46,6 +46,7 @@ case "align":
     let glbPath = option("--glb")
     let reportPath = option("--report")
     let structurePath = option("--structure")
+    let pathFile = option("--path")
     let topLevelOnly = flag("--top-level-only")
     let scramble = flag("--scramble"), walk = flag("--walk"), noStructure = flag("--no-structure")
     guard !args.isEmpty else { fail(usage) }
@@ -58,7 +59,7 @@ case "align":
         }
         var structure: [String: Transform]? = try structurePath.map { try RoomPlanJSON.structurePoses(in: URL(fileURLWithPath: $0), topLevelOnly: topLevelOnly) }
         var parts = truth.map(\.part)
-        var path: [PoseSample] = []
+        var path: [PoseSample] = try pathFile.map { try CaptureScan.decode(from: Data(contentsOf: URL(fileURLWithPath: $0))).trajectory } ?? []
         var origins: [Vec3] = []
         if scramble {
             // Where the phone might stand when each room's scan starts: just inside the room, at hand height.

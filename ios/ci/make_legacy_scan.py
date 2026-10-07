@@ -4,15 +4,25 @@
 
 RoomPlan reports every room of a multi-room scan relative to where the phone
 was when that room's scan started. Apple's sample rooms already share one
-frame, so each room is shifted back into a frame of its own (as a real capture
-would have it). RoomPlan's merge works from data inside each file that the
-shift doesn't touch, so the rebuild has to put the rooms back together.
+frame, so each room is shifted back into a frame of its own, as a real capture
+would have it. What lets the rebuild put them back together:
 
-    make_legacy_scan.py <sample-dir> <Documents/Scans> → prints the scan id
+  --with structure   roomplan/structure.json: the merged structure (built here
+                     from the unshifted rooms, the way StructureBuilder places
+                     them), which a real capture saves. StructureBuilder itself
+                     doesn't run in the simulator.
+  --with path        scan.json with the walked path only: straight from each
+                     room's start to the next one's at 4 Hz, each sample in its
+                     room's frame (the origin jumps back to the phone as each
+                     room starts).
+
+    make_legacy_scan.py <sample-dir> <Documents/Scans> --with structure|path → prints the scan id
 """
 
+import argparse
+import copy
 import json
-import sys
+import math
 import uuid
 from pathlib import Path
 
@@ -29,6 +39,7 @@ def origin(room: dict) -> list:
 
 
 def shift(room: dict, o: list) -> dict:
+    room = copy.deepcopy(room)
     for key in ("walls", "doors", "windows", "openings", "objects", "floors"):
         for e in room.get(key, []):
             for i in range(3):
@@ -39,18 +50,46 @@ def shift(room: dict, o: list) -> dict:
     return room
 
 
+def structure(rooms: list) -> dict:
+    merged = {"version": 2, "rooms": rooms, "interestPoints": []}
+    for key in ("walls", "doors", "windows", "openings", "objects", "floors", "sections"):
+        merged[key] = [e for r in rooms for e in r.get(key, [])]
+    return merged
+
+
+def walk(origins: list) -> list:
+    samples, t = [], 0.0
+    for k, a in enumerate(origins):
+        b = origins[k + 1] if k + 1 < len(origins) else [a[0] + 0.5, a[1], a[2]]
+        steps = max(2, round(math.dist(a, b) / 0.125))
+        for i in range(steps):
+            p = [a[c] + (b[c] - a[c]) * i / steps - a[c] for c in range(3)]
+            samples.append({"t": round(t, 3), "p": p, "f": [0, 0, -1]})
+            t += 0.25
+    return samples
+
+
 def main():
-    sample, scans = Path(sys.argv[1]), Path(sys.argv[2])
-    rooms = sorted(sample.glob("**/MyHome/*/capturedRoom.json"))
-    assert rooms, f"no capturedRoom.json under {sample}"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("sample", type=Path)
+    parser.add_argument("scans", type=Path)
+    parser.add_argument("--with", dest="mode", choices=["structure", "path"], required=True)
+    args = parser.parse_args()
+    paths = sorted(args.sample.glob("**/MyHome/*/capturedRoom.json"))
+    assert paths, f"no capturedRoom.json under {args.sample}"
+    rooms = [json.loads(p.read_text()) for p in paths]
+    origins = [origin(r) for r in rooms]
     scan_id = str(uuid.uuid4()).upper()
-    folder = scans / scan_id
+    folder = args.scans / scan_id
     (folder / "roomplan").mkdir(parents=True)
-    names = []
-    for k, path in enumerate(rooms):
-        room = json.loads(path.read_text())
-        (folder / "roomplan" / f"room-{k + 1}.json").write_text(json.dumps(shift(room, origin(room))))
-        names.append(path.parent.name)
+    for k, room in enumerate(rooms):
+        (folder / "roomplan" / f"room-{k + 1}.json").write_text(json.dumps(shift(room, origins[k])))
+    if args.mode == "structure":
+        (folder / "roomplan" / "structure.json").write_text(json.dumps(structure(rooms)))
+    else:
+        scan = {"format": "atrium.capture-scan/v1", "rooms": [], "trajectory": walk(origins)}
+        (folder / "scan.json").write_text(json.dumps(scan))
+    names = [p.parent.name for p in paths]
     stats = dict(rooms=len(names), floors=1, walls=0, doors=0, windows=0, openings=0, objects=0, links=0, triangles=0, floorArea=0.0, glbBytes=0)
     record = dict(id=scan_id, createdAt="2026-10-07T12:00:00Z", roomNames=names, stats=stats, isDemo=False)
     (folder / "record.json").write_text(json.dumps(record))

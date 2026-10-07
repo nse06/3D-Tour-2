@@ -87,10 +87,10 @@ enum ScanBuilder {
         let record = CaptureRecord(startedAt: input.startedAt, device: input.device, rooms: entries, path: input.path)
         try save(record, in: dir)
 
-        let structure = await mergedStructure(rooms.map(\.room), into: raw)
+        let merged = await mergedStructure(rooms.map(\.room), into: raw)
         return try await assemble(
-            scanId: input.scanId, directory: dir, rooms: rooms, structure: structure, path: input.path, frames: input.frames,
-            startedAt: input.startedAt, device: input.device, roomsDropped: input.rooms.count - rooms.count, progress: progress)
+            scanId: input.scanId, directory: dir, rooms: rooms, structure: merged.structure, structureNote: merged.note, path: input.path,
+            frames: input.frames, startedAt: input.startedAt, device: input.device, roomsDropped: input.rooms.count - rooms.count, progress: progress)
     }
 
     /// Re-processes a saved scan with the current pipeline: same rooms and path, no rescanning.
@@ -109,16 +109,26 @@ enum ScanBuilder {
         guard !rooms.isEmpty else { throw Failure.nothingToRebuild }
 
         var structure: CapturedStructure?
+        var note = "none saved"
         if let data = try? Data(contentsOf: raw.appendingPathComponent("structure.json")) {
-            structure = try? decoder.decode(CapturedStructure.self, from: data)
+            do {
+                structure = try decoder.decode(CapturedStructure.self, from: data)
+                note = "saved"
+            } catch {
+                note = "saved, unreadable: \(error.localizedDescription)"
+            }
         }
-        if structure == nil { structure = await mergedStructure(rooms.map(\.room), into: raw) }
+        if structure == nil {
+            let merged = await mergedStructure(rooms.map(\.room), into: raw)
+            structure = merged.structure
+            note = merged.structure != nil ? "built" : "\(note); \(merged.note)"
+        }
 
         let framesURL = dir.appendingPathComponent("frames/frames.json")
         let frames = (try? Data(contentsOf: framesURL)).flatMap { try? decoder.decode([CameraFrame].self, from: $0) } ?? []
         var rebuilt = try await assemble(
-            scanId: record.id, directory: dir, rooms: rooms, structure: structure, path: capture.path, frames: frames, startedAt: capture.startedAt,
-            device: capture.device ?? DeviceInfo(), roomsDropped: capture.rooms.count - rooms.count, progress: progress)
+            scanId: record.id, directory: dir, rooms: rooms, structure: structure, structureNote: note, path: capture.path, frames: frames,
+            startedAt: capture.startedAt, device: capture.device ?? DeviceInfo(), roomsDropped: capture.rooms.count - rooms.count, progress: progress)
         rebuilt.createdAt = record.createdAt
         rebuilt.roomNames = rooms.map(\.name)
         return rebuilt
@@ -134,22 +144,25 @@ enum ScanBuilder {
 
     // MARK: Steps
 
-    /// RoomPlan's merge of the rooms, saved as raw data and as the AR preview.
-    private static func mergedStructure(_ rooms: [CapturedRoom], into raw: URL) async -> CapturedStructure? {
+    /// RoomPlan's merge of the rooms, saved as raw data and as the AR preview,
+    /// with a note on how it went (for info.json).
+    private static func mergedStructure(_ rooms: [CapturedRoom], into raw: URL) async -> (structure: CapturedStructure?, note: String) {
         let usdz = raw.appendingPathComponent("structure.usdz")
-        if let structure = try? await StructureBuilder(options: [.beautifyObjects]).capturedStructure(from: rooms) {
+        do {
+            let structure = try await StructureBuilder(options: [.beautifyObjects]).capturedStructure(from: rooms)
             try? JSONEncoder().encode(structure).write(to: raw.appendingPathComponent("structure.json"))
             try? structure.export(to: usdz)
-            return structure
+            return (structure, "built")
+        } catch {
+            if rooms.count == 1 { try? rooms[0].export(to: usdz) }
+            return (nil, "merge failed: \(error.localizedDescription)")
         }
-        if rooms.count == 1 { try? rooms[0].export(to: usdz) }
-        return nil
     }
 
     /// Rooms into one frame, then the walkthrough model, manifest and info files.
     private static func assemble(
-        scanId: UUID, directory dir: URL, rooms: [NamedRoom], structure: CapturedStructure?, path: [PoseSample], frames: [CameraFrame], startedAt: Date,
-        device: DeviceInfo, roomsDropped: Int, progress: @escaping @MainActor (Step) -> Void
+        scanId: UUID, directory dir: URL, rooms: [NamedRoom], structure: CapturedStructure?, structureNote: String, path: [PoseSample],
+        frames: [CameraFrame], startedAt: Date, device: DeviceInfo, roomsDropped: Int, progress: @escaping @MainActor (Step) -> Void
     ) async throws -> ScanRecord {
         await progress(.modeling)
         let parts = rooms.enumerated().compactMap { index, entry in
@@ -181,6 +194,7 @@ enum ScanBuilder {
             "roomsDropped": roomsDropped,
             "trajectorySamples": path.count,
             "alignment": aligned.report.summary,
+            "structure": structureNote,
         ]
         try JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]).write(to: dir.appendingPathComponent("info.json"))
         // The package zips these files; an old one would be stale.

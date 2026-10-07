@@ -2,17 +2,25 @@
 """Checks the simulator rebuild test: after Rebuild, Apple's sample rooms (each
 shifted into its own frame by make_legacy_scan.py) must fit together again.
 
-    check_rebuild.py <scan folder> <sample-dir>
+    check_rebuild.py <scan folder> <sample-dir> --method structure|path --tolerance <meters>
 """
 
+import argparse
 import json
 import math
-import sys
 from pathlib import Path
 
 
 def main():
-    folder, sample = Path(sys.argv[1]), Path(sys.argv[2])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("folder", type=Path)
+    parser.add_argument("sample", type=Path)
+    parser.add_argument("--method", required=True)
+    parser.add_argument("--tolerance", type=float, required=True)
+    args = parser.parse_args()
+    folder, sample = args.folder, args.sample
+    info = json.loads((folder / "info.json").read_text())
+    print("info:", json.dumps({k: info.get(k) for k in ("pipeline", "alignment", "structure", "structureError")}))
     report = json.loads((folder / "alignment.json").read_text())
     print("alignment:", json.dumps({k: v for k, v in report.items() if k != "rooms"}))
     for r in report["rooms"]:
@@ -44,9 +52,11 @@ def main():
         worst[room] = max(worst.get(room, 0), math.hypot(a[12] - x - dx, a[14] - z - dz))
     for room, err in sorted(worst.items()):
         print(f"  {room:12s} off by {err:.3f} m")
-    bad = {r: e for r, e in worst.items() if e > 0.05}
+    methods = {r["method"] for r in report["rooms"]}
+    assert methods == {args.method}, f"rooms placed by {methods}, expected {args.method}"
+    bad = {r: round(e, 3) for r, e in worst.items() if e > args.tolerance}
     assert not bad, f"rooms not back in place: {bad}"
-    print("rooms fit together again")
+    print(f"rooms fit together again ({args.method}, within {args.tolerance} m)")
 
 
 if __name__ == "__main__":
