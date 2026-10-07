@@ -12,8 +12,8 @@ import UIKit
 enum ScanBuilder {
     /// Bumped whenever rebuilding gives a meaningfully better walkthrough.
     /// 1–2: rooms taken as RoomPlan reported them. 3: rooms aligned into one frame.
-    /// 4: the scan's photos painted onto the model.
-    static let pipelineVersion = 4
+    /// 4: the scan's photos painted onto the model. 5: one sharp photo per patch, furniture in parts.
+    static let pipelineVersion = 5
 
     enum Step: Int, CaseIterable {
         case combining, modeling, packaging

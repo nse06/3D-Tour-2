@@ -64,9 +64,8 @@ which the phone can't pass.
 ## 3. Scan your home
 
 * **Before you start:** turn on the lights, open interior doors and blinds. Begin in the entry or
-  the living room. The photos the phone takes while you scan (one every 1.5 s) are painted onto
-  the walls, floors, ceilings and furniture of the walkthrough, so tidy up what buyers shouldn't
-  see.
+  the living room. The photos the phone takes while you scan are painted onto the walls, floors,
+  ceilings and furniture of the walkthrough, so tidy up what buyers shouldn't see.
 * Tap **Start a scan**. Move slowly along the walls, pointing at the edges where walls meet the
   floor and ceiling, at windows, doors and large furniture. RoomPlan shows what it has measured
   and coaches you ("Move closer to the wall", "Slow down").
@@ -86,17 +85,23 @@ which the phone can't pass.
 Tips: one RoomPlan "room" can be up to about 9 × 9 m — scan a large open space as two rooms.
 Scanning is demanding: a full apartment is fine, but if the phone gets hot it pauses; let it cool.
 
-For good photos: move slowly (blur shows), sweep every wall from floor to ceiling, and point at
-the floor and ceiling too, not just ahead. Surfaces no photo saw are filled in from their
-surroundings; the scan screen says how much your photos covered.
+For good photos, take your time — a slow scan looks much better than a quick one. The app takes
+a full-resolution photo whenever the phone is still (at most about one a second), so pause for
+a moment on each stretch of wall, then on the floor and ceiling, rather than sweeping
+continuously. The scan screen counts the photos and says **Slow down for sharp photos** when
+you're moving too fast for them. Get close-ish (1–3 m) to furniture and look at it straight on
+from a couple of sides. Surfaces no photo saw are filled in from their surroundings; the scan's
+page says how much your photos covered.
 
 **A scan from an earlier version?** Builds 1–2 took each room where RoomPlan reported it, and
 RoomPlan reports every room relative to where its scan started, so rooms piled up; builds 1–3
-didn't use the photos. Install the latest build over the old one (your scans stay), open the scan
-and tap **Rebuild walkthrough** (*Fix overlapping rooms* / *Add your photos to the walkthrough*),
-then **Send to Atrium** again. No rescanning: the rebuild uses the RoomPlan data and photos saved
-on the phone. The lines under the scan's numbers say how the rooms were placed and how much the
-photos cover.
+didn't use the photos; build 4 blended several photos per spot (soft, sometimes doubled) and
+painted furniture as plain boxes. Install the latest build over the old one (your scans stay),
+open the scan and tap **Rebuild walkthrough** (*Fix overlapping rooms* / *Add your photos to the
+walkthrough* / *Sharpen the photo walkthrough*), then **Send to Atrium** again. No rescanning:
+the rebuild uses the RoomPlan data and photos saved on the phone. The lines under the scan's
+numbers say how the rooms were placed and how much the photos cover. Scans made with build 5 or
+later also get the sharper full-resolution photos.
 
 **No LiDAR?** **Create a demo scan** builds a sample two-bedroom apartment on the phone so you
 can try pairing and sending on any iPhone.
@@ -105,8 +110,8 @@ can try pairing and sending on any iPhone.
 
 | File | What it is |
 | --- | --- |
-| `scan.glb` | The 3D walkthrough (a few MB): walls, floors, ceilings and furniture painted with your photos (or, if the photos cover too little, a styled model with lights), plus the room/viewpoint/route data. Opens in the dashboard's *As captured* look. |
-| `package.zip` | Raw data for future reprocessing: RoomPlan's rooms and merged structure, the scan in Atrium's format, the walked path, and a photo every ~1.5 s. Optional — if the server refuses it (Supabase's free plan limits files to 50 MB) the walkthrough is sent without it. |
+| `scan.glb` | The 3D walkthrough (5–10 MB): walls, floors, ceilings and furniture painted with your photos (or, if the photos cover too little, a styled model with lights), plus the room/viewpoint/route data. Opens in the dashboard's *As captured* look. |
+| `package.zip` | Raw data for future reprocessing: RoomPlan's rooms and merged structure, the scan in Atrium's format, the walked path and the photos' positions. The photos themselves stay on the phone (they're already painted into `scan.glb`). Optional — if the server refuses it (Supabase's free plan limits files to 50 MB) the walkthrough is sent without it. |
 
 Everything also stays on the phone (**Files → On My iPhone → Atrium Capture → Scans**), and
 **Share 3D model** exports the `.glb` (e.g. to upload it to a listing by hand).

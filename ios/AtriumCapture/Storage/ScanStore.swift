@@ -108,18 +108,19 @@ final class ScanStore: @unchecked Sendable {
         try FileManager.default.removeItem(at: directory(for: id))
     }
 
-    /// The scan package (docs/iphone-capture.md §3.3), zipped on first use.
+    /// The scan package (docs/iphone-capture.md §3.3), zipped on first use. The photos stay on
+    /// the phone (hundreds of MB at full resolution; the walkthrough already carries them).
     func ensurePackage(for id: UUID) throws -> URL {
         let zip = packageURL(for: id)
         if FileManager.default.fileExists(atPath: zip.path) { return zip }
         let folder = directory(for: id)
-        let skip: Set<String> = ["package.zip", "record.json", "scan.glb"]
+        let skip: Set<String> = ["package.zip", "package.zip.partial", "record.json", "scan.glb"]
         var files: [(path: String, url: URL)] = []
         if let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey]) {
             for case let url as URL in walker {
                 guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
                 let relative = String(url.standardizedFileURL.path.dropFirst(folder.standardizedFileURL.path.count + 1))
-                if skip.contains(relative) { continue }
+                if skip.contains(relative) || (relative.hasPrefix("frames/") && relative.hasSuffix(".jpg")) { continue }
                 files.append((relative, url))
             }
         }

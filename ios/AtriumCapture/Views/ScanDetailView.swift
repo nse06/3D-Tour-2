@@ -97,21 +97,24 @@ struct ScanDetailView: View {
         .card()
     }
 
-    /// Scans built before rooms were aligned into one frame (builds 1–2).
+    /// Scans built by an older pipeline (see ScanBuilder.pipelineVersion).
     private func needsRebuild(_ scan: ScanRecord) -> Bool {
         (scan.pipeline ?? 1) < ScanBuilder.pipelineVersion && ScanBuilder.canRebuild(scan, directory: model.store.directory(for: scan.id))
     }
 
     private func rebuildCard(_ scan: ScanRecord) -> some View {
-        let overlapping = (scan.pipeline ?? 1) < 3
+        let pipeline = scan.pipeline ?? 1
+        let title = pipeline < 3 ? "Fix overlapping rooms" : pipeline < 4 ? "Add your photos to the walkthrough" : "Sharpen the photo walkthrough"
+        let text =
+            pipeline < 3
+            ? "This scan was built before Atrium Capture lined rooms up with each other or used your photos, so rooms may overlap. Rebuilding fixes that and paints the photos taken while scanning onto the walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
+            : pipeline < 4
+                ? "This scan was built before Atrium Capture painted the photos taken while scanning onto the model. Rebuild to see your real walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
+                : "Atrium Capture now paints each surface from its sharpest photo instead of blending several, shapes furniture (mattress, headboard, seat, back) and closes gaps under ceilings. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
         return VStack(alignment: .leading, spacing: 12) {
-            Label(overlapping ? "Fix overlapping rooms" : "Add your photos to the walkthrough", systemImage: "wand.and.stars")
+            Label(title, systemImage: "wand.and.stars")
                 .font(.headline)
-            Text(
-                overlapping
-                    ? "This scan was built before Atrium Capture lined rooms up with each other or used your photos, so rooms may overlap. Rebuilding fixes that and paints the photos taken while scanning onto the walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
-                    : "This scan was built before Atrium Capture painted the photos taken while scanning onto the model. Rebuild to see your real walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
-            )
+            Text(text)
             .font(.subheadline)
             .foregroundStyle(.secondary)
             Button {

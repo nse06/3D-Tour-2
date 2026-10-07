@@ -66,7 +66,7 @@ struct HomeView: View {
                 .padding(.top, 4)
                 VStack(alignment: .leading, spacing: 6) {
                     tip("lightbulb", "Turn on the lights and open the doors between rooms.")
-                    tip("figure.walk", "Move slowly along the walls; point at corners, windows and doors.")
+                    tip("figure.walk", "Move slowly along the walls and pause for a moment on each one — photos are taken while the phone is still.")
                     tip("arrow.triangle.turn.up.right.diamond", "Walk between rooms with the phone up — that path becomes the tour route.")
                 }
                 .padding(.top, 4)

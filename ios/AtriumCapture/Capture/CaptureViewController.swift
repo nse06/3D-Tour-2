@@ -84,6 +84,7 @@ final class CaptureViewController: UIViewController, RoomCaptureViewDelegate, Ro
     @objc private func sample() {
         guard isTracking, let frame = captureView.captureSession.arSession.currentFrame else { return }
         model.recorder.record(frame)
+        model.updatePhotoStatus()
     }
 
     // MARK: RoomCaptureSessionDelegate

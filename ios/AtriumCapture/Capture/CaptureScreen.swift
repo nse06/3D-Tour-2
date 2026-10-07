@@ -57,6 +57,21 @@ struct CaptureScreen: View {
         .padding(.top, 8)
     }
 
+    /// Photos are taken whenever the phone is steady; moving slowly gives more, sharper ones.
+    private var photoStatus: some View {
+        HStack(spacing: 6) {
+            Image(systemName: model.movingFast ? "tortoise.fill" : "camera.fill")
+            if model.movingFast {
+                Text("Slow down for sharp photos")
+            } else {
+                Text("\(model.photoCount) photo\(model.photoCount == 1 ? "" : "s") · pause on each wall")
+            }
+        }
+        .font(.footnote.weight(model.movingFast ? .semibold : .regular))
+        .foregroundStyle(model.movingFast ? Color.orange : Color.secondary)
+        .animation(.easeInOut(duration: 0.2), value: model.movingFast)
+    }
+
     @ViewBuilder
     private var bottomPanel: some View {
         switch model.phase {
@@ -67,6 +82,7 @@ struct CaptureScreen: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+                photoStatus
                 Button("Done with this room") { model.finishRoom() }
                     .buttonStyle(PillButtonStyle())
             }

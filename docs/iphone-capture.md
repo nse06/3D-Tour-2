@@ -63,7 +63,8 @@ and glTF `matrix`).
   "trajectory": [{ "t": 12.4, "p": [x,y,z], "f": [x,y,z] }],  // seconds since start, camera position, camera forward (−Z axis) in world
   "frames": [{                        // optional: photos taken while scanning (see §3.3), same frame as everything else
     "file": "frames/000012.jpg", "t": 18.5, "transform": [16 floats],   // camera-to-world (ARKit camera convention)
-    "intrinsics": [9 floats], "width": 1920, "height": 1440, "imageWidth": 1280, "imageHeight": 960
+    "intrinsics": [9 floats], "width": 1920, "height": 1440, "imageWidth": 1920, "imageHeight": 1440,
+    "angularSpeed": 0.08, "exposureDuration": 0.0167   // optional: how fast the phone turned (rad/s) and the exposure (s)
   }]
 }
 ```
@@ -128,7 +129,8 @@ only one side is cut through both faces.
 
 ### 2.1 Geometry (meshes, one primitive per material)
 
-* **Walls**: a slab of `wallThickness` centered on the wall plane, with rectangular holes for its openings
+* **Walls**: a slab of `wallThickness` centered on the wall plane (a full-height wall that RoomPlan measured up to
+  60 cm short of its room's ceiling, or 30 cm off its floor, is extended to meet it, so no gap shows), with rectangular holes for its openings
   (assigned by `wallId`, else the nearest coplanar wall whose span contains the opening). Pieces: full-height
   segments between openings, plus a sill piece below and a header piece above each opening. Door/opening holes get
   white casing trim on both faces; windows get a sill, a thin dark frame with a mullion, and an emissive
@@ -169,29 +171,45 @@ Identical to the web's `ScanManifest` (`src/lib/tour/scan-manifest.ts`):
 
 ### 2.4 Photo-textured model (`PhotoTexturing.swift`)
 
-The photos taken while scanning (`CaptureScan.frames`, ~1 every 1.5 s) are painted onto the model, so the
-walkthrough shows the real walls, floors, art, windows and furniture:
+The photos taken while scanning (`CaptureScan.frames`: full resolution, taken whenever the phone is steady) are
+painted onto the model, so the walkthrough shows the real walls, floors, art, windows and furniture:
 
-* **Geometry**: every wall's inside face is one flat *chart* (pieces between holes share it, so no seams), each
-  room's floor and ceiling is a chart, and each object is a box with a chart per visible face. Only doorways with a
-  scanned room on both sides are cut; other doors and windows stay on the wall, where the photos show them (and the
-  view through the window). Outsides and tops of walls and reveals get a plain material.
-* **Atlases**: charts are packed (shelf packing, 4-texel padding) into up to `maxAtlases` atlases of `atlasSize`²
-  (defaults 3 × 2048²) at `texelSize` (1.2 cm), coarsened until everything fits.
-* **Baking**, two passes so only one photo is decoded at a time: (1) geometry only — for every texel the up to three
-  photos that see it best: facing it, close, near the image center, and not hidden by other surfaces (a 192-pixel
-  depth image per photo, rasterized from the model; a texel counts as hidden if the nearest of the four depth pixels
-  around it is clearly nearer); (2) photo by photo — each photo's pixels are blended into the texels that chose it,
-  weighted toward the best view, after **exposure matching**: the phone's auto-exposure makes one photo darker than the
-  next, so every texel two photos both saw gives a brightness ratio, and one gain per photo is solved by least
-  squares (centered on the typical photo). Texels no photo saw are filled smoothly from their neighbours (pull-push); charts
-  no photo saw get a neutral color. If the photos cover less than 15% of the surfaces, the styled model is built
-  instead.
+* **Geometry**: every wall's inside face is one flat *chart* (pieces between holes share it, so no seams), and each
+  room's floor and ceiling is a chart. Furniture is built in parts like the styled model (§3.4: a bed's base,
+  mattress and headboard, a sofa's seat, back and arms, a chair's seat, legs and back), with a chart per face, so a
+  photo of a duvet lands on the mattress rather than on top of a box as tall as the headboard. Made-up decor (pillows,
+  counter tops, a fridge's door gap) is left out, and a headboard only appears if the bed was measured taller than a
+  mattress. Only doorways with a scanned room on both sides are cut; other doors and windows stay on the wall, where
+  the photos show them (and the view through the window). A wall's back, top, ends and doorway sides form one
+  *solid* chart painted the median color of its inside face, so they don't stand out as bright strips.
+* **Atlases**: charts are packed (shelf packing, 4-texel padding; solid charts are a 16-texel square) into up to
+  `maxAtlases` atlases of `atlasSize`² (defaults 4 × 2048²) at `texelSize` (8 mm), coarsened until everything fits.
+  Only texels on a chart's faces take photo colors; padding and holes are filled from them.
+* **Choosing photos**: a photo's *score* at a point is high when it faces the surface, is close, has the point near
+  the image center, is not hidden by other surfaces (a 192-pixel depth image per photo, rasterized from the model; a
+  point counts as hidden if the nearest of the four depth pixels around it is clearly nearer) and was taken with the
+  phone steady: the score is divided by 1 + (smear / 1.2 cm)², where smear = turn rate × exposure time × distance
+  (exposure 1/50 s if unknown; older scans get the turn rate from the recorded path). Furniture asks for photos
+  taken square on (score × facing², at least 0.2), since its shape is only approximate. Each chart is split into
+  cells of 4 × 4 texels; each cell keeps its six best photos and picks one, leaning toward its neighbours' choice
+  (a photo counts up to 1.5 × more when all eight neighbours chose it; four rounds), so a surface becomes a few
+  large patches, each from a single photo — sharp, with no double images. A texel blends the photos of the four
+  cells around it by distance, which mixes photos only in a band about a cell wide along the seams; photos that
+  can't see the texel drop out, and a texel no chosen photo sees takes its cell's next best that does.
+* **Baking**, two passes so only one photo is decoded at a time: (1) geometry only, as above; (2) photo by photo —
+  each photo's pixels are sampled into the texels that chose it and into every cell that listed it. **Exposure
+  matching**: the phone's auto-exposure makes one photo darker than the next, so every cell two photos both see gives
+  a brightness ratio (weighted by the weaker photo's score), and one gain per photo is solved by least squares
+  (centered on the typical photo). Texels no photo saw are filled smoothly from their neighbours (pull-push); charts
+  no photo saw take the typical color of their kind of surface. If the photos cover less than 15% of the surfaces,
+  the styled model is built instead.
 * **Output**: one material per atlas with the photo as base color (JPEG from the app, PNG elsewhere), clamped
   sampling, `KHR_materials_unlit` on every material and no lights (the lighting is in the photos). The manifest says
   `"appearance": "captured"`, which the web app uses as the tour's default look; `ScanStats.photoCoverage` is the
   share of surfaces the photos covered. Tested by ray-casting photos of a room whose surfaces are colored by
-  position: seen texels reproduce the pattern, and a cabinet never leaks onto the wall behind it.
+  position: seen texels reproduce the pattern, a cabinet never leaks onto the wall behind it, under 20% of texels mix
+  photos, exposure differences are evened out, steady photos win over blurry ones from the same spot, and a wall's
+  edges take its color.
 * **Lights**: one warm point light per room (`KHR_lights_punctual`), 0.6 m below the ceiling at the room's visual
   center, intensity scaled by floor area.
 
@@ -232,9 +250,13 @@ roomplan/structure.usdz   RoomPlan's own USDZ export
 roomplan/capture.json     what a rebuild needs besides RoomPlan's files: startedAt, device, rooms
                           [{ name, file: "room-N.json", segment }], path (raw: each sample in its run's frame)
 frames/frames.json   [{ file, t, transform[16], intrinsics[9], width, height, imageWidth, imageHeight, segment }]
-                     (raw: each pose in its run's frame; images are downscaled, in sensor orientation;
-                     intrinsics refer to width × height; scan.json has the same photos in the shared frame)
-frames/000123.jpg    RGB keyframes (~every 1.5 s, ≤1280 px) for photo texturing
+                     (raw: each pose in its run's frame; images in sensor orientation; intrinsics refer to
+                     width × height; scan.json has the same photos in the shared frame; build 5 on also records
+                     angularSpeed and exposureDuration)
+frames/000123.jpg    RGB keyframes for photo texturing: full resolution (≤1920 px), taken when the phone is
+                     steady (turning < 0.2 rad/s, moving < 0.3 m/s, limits relaxing while it keeps moving), at
+                     most every 0.8 s, up to 600. Kept on the phone: package.zip leaves the JPEGs out (the
+                     walkthrough carries the painted photos); older builds took one every 1.5 s at ≤1280 px
 alignment.json       AlignmentReport: how each room was placed (§1.1)
 info.json            app / device / capture metadata, pipeline version, alignment summary
 ```

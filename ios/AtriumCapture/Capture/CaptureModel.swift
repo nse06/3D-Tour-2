@@ -33,6 +33,9 @@ final class CaptureModel: ObservableObject {
     @Published var detectedName: String?
     /// Name field of the naming sheet.
     @Published var draftName = ""
+    /// Photos taken so far, and whether the phone is moving too fast for sharp ones.
+    @Published private(set) var photoCount = 0
+    @Published private(set) var movingFast = false
 
     /// Names the scan's folder (Documents/Scans/<scanId>) and its record.
     let scanId: UUID
@@ -109,6 +112,13 @@ final class CaptureModel: ObservableObject {
     private func close() {
         closed = true
         controller?.stopTracking()
+    }
+
+    /// After each recorded AR frame: publishes the photo count and the "slow down" hint when they change.
+    func updatePhotoStatus() {
+        let count = recorder.keyframes.count, fast = recorder.movingFast
+        if photoCount != count { photoCount = count }
+        if movingFast != fast { movingFast = fast }
     }
 
     // MARK: Events (from RoomPlan)

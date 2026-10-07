@@ -34,7 +34,8 @@ Branch: `claude/3d-real-estate-tour-mvp-pxgyqw`
 | Simulator e2e in CI (pair → demo scan → send to mock server) | added |
 | On-device test in a real apartment | done by the user: 4 rooms, 72 m² — sending failed (build 1, fixed in build 2), rooms overlapped (fixed in build 3) |
 | Rooms in one frame (build 3): RoomPlan restarts every room at the phone's position; `RoomAlignment` places rooms on RoomPlan's merged structure, else along the walked path, with doorway checks | done — 10 XCTests; Apple's 11-room sample, rooms shifted into their own frames, comes back exactly; CI rebuilds it in the simulator |
-| Rebuild saved scans without rescanning | done (build 3) — waiting on the user to rebuild their apartment scan |
-| Photos painted on the model (build 4): charts + atlases, two-pass baking with depth-tested best views, exposure matching, unlit model, captured look by default | done — 4 XCTests with ray-cast photos; CI rebuilds a scan with photos in the simulator |
+| Rebuild saved scans without rescanning | done (build 3) — the user rebuilt their apartment: floor plans line up |
+| Photos painted on the model (build 4): charts + atlases, two-pass baking with depth-tested best views, exposure matching, unlit model, captured look by default | done — the user's verdict: works and makes the space feel real, but soft; ghosting on appliances, stretched bed/armchair, bright band under the kitchen ceiling, white strips on wall edges |
+| Sharper photo painting (build 5): one photo per ~3 cm cell with neighbour smoothing and seam-only blending, blur-aware scores, furniture in parts, face-only sampling, wall-colored edges, walls extended to the ceiling, 8 mm texels; app takes full-resolution photos when the phone is steady and shows a photo count / slow-down hint | done — 9 photo XCTests + turn-rate test; waiting on the user's rebuild and a new slow scan |
 
-Next: the user's verdict on the photo model; 360° photo spots (the user's other option), navmesh free roaming, analytics.
+Next (agreed order): 360° photo spots at the waypoints; LiDAR furniture shapes; turn email confirmation back on before opening sign-ups.
