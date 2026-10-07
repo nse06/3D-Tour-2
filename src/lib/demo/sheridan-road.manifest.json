@@ -1,0 +1,648 @@
+{
+  "schema": "atrium.scan-manifest/v1",
+  "source": {
+    "kind": "synthetic",
+    "generator": "scripts/generate-demo-property.mjs",
+    "note": "Hand-authored stand-in for an iPhone LiDAR/RoomPlan capture."
+  },
+  "units": "meters",
+  "upAxis": "y",
+  "eyeHeight": 1.6,
+  "floors": [
+    {
+      "key": "main",
+      "name": "Main Level",
+      "level": 1,
+      "elevation": 0,
+      "outline": [
+        [
+          -8,
+          -6.5
+        ],
+        [
+          9,
+          -6.5
+        ],
+        [
+          9,
+          6.5
+        ],
+        [
+          -8,
+          6.5
+        ]
+      ],
+      "features": [
+        {
+          "type": "stairs",
+          "polygon": [
+            [
+              -2.425,
+              0.7399999999999993
+            ],
+            [
+              -1.25,
+              0.7399999999999993
+            ],
+            [
+              -1.25,
+              5.6
+            ],
+            [
+              -2.425,
+              5.6
+            ]
+          ],
+          "direction": "up",
+          "treads": 18
+        }
+      ]
+    },
+    {
+      "key": "upper",
+      "name": "Upper Level",
+      "level": 2,
+      "elevation": 3.3,
+      "outline": [
+        [
+          -8,
+          -6.5
+        ],
+        [
+          9,
+          -6.5
+        ],
+        [
+          9,
+          6.5
+        ],
+        [
+          -8,
+          6.5
+        ]
+      ],
+      "features": [
+        {
+          "type": "stairs",
+          "polygon": [
+            [
+              -2.425,
+              0.7399999999999993
+            ],
+            [
+              -1.25,
+              0.7399999999999993
+            ],
+            [
+              -1.25,
+              5.6
+            ],
+            [
+              -2.425,
+              5.6
+            ]
+          ],
+          "direction": "down",
+          "treads": 18
+        },
+        {
+          "type": "void",
+          "label": "Open to below",
+          "polygon": [
+            [
+              -1.25,
+              0.8
+            ],
+            [
+              2.5,
+              0.8
+            ],
+            [
+              2.5,
+              6.5
+            ],
+            [
+              -1.25,
+              6.5
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "rooms": [
+    {
+      "key": "entry",
+      "name": "Entry",
+      "floor": "main",
+      "order": 0,
+      "footprint": [
+        [
+          -2.5,
+          -1
+        ],
+        [
+          2.5,
+          -1
+        ],
+        [
+          2.5,
+          6.5
+        ],
+        [
+          -2.5,
+          6.5
+        ]
+      ],
+      "waypoint": {
+        "position": [
+          0.95,
+          1.6,
+          5.75
+        ],
+        "yaw": 0.322,
+        "pitch": 0.119
+      }
+    },
+    {
+      "key": "living",
+      "name": "Living Room",
+      "floor": "main",
+      "order": 1,
+      "footprint": [
+        [
+          2.5,
+          0.5
+        ],
+        [
+          9,
+          0.5
+        ],
+        [
+          9,
+          6.5
+        ],
+        [
+          2.5,
+          6.5
+        ]
+      ],
+      "waypoint": {
+        "position": [
+          3.3,
+          1.6,
+          6
+        ],
+        "yaw": -0.983,
+        "pitch": -0.057
+      }
+    },
+    {
+      "key": "dining",
+      "name": "Dining Room",
+      "floor": "main",
+      "order": 2,
+      "footprint": [
+        [
+          2.5,
+          -6.5
+        ],
+        [
+          9,
+          -6.5
+        ],
+        [
+          9,
+          0.5
+        ],
+        [
+          2.5,
+          0.5
+        ]
+      ],
+      "waypoint": {
+        "position": [
+          3.3,
+          1.6,
+          0.05
+        ],
+        "yaw": -0.715,
+        "pitch": -0.084
+      }
+    },
+    {
+      "key": "kitchen",
+      "name": "Kitchen",
+      "floor": "main",
+      "order": 3,
+      "footprint": [
+        [
+          -8,
+          -6.5
+        ],
+        [
+          2.5,
+          -6.5
+        ],
+        [
+          2.5,
+          -1
+        ],
+        [
+          -8,
+          -1
+        ]
+      ],
+      "waypoint": {
+        "position": [
+          2.05,
+          1.6,
+          -1.45
+        ],
+        "yaw": 0.961,
+        "pitch": -0.087
+      }
+    },
+    {
+      "key": "office",
+      "name": "Office",
+      "floor": "main",
+      "order": 4,
+      "footprint": [
+        [
+          -8,
+          -1
+        ],
+        [
+          -2.5,
+          -1
+        ],
+        [
+          -2.5,
+          6.5
+        ],
+        [
+          -8,
+          6.5
+        ]
+      ],
+      "waypoint": {
+        "position": [
+          -3.05,
+          1.6,
+          -0.45
+        ],
+        "yaw": 2.49,
+        "pitch": -0.071
+      }
+    },
+    {
+      "key": "landing",
+      "name": "Upper Landing",
+      "floor": "upper",
+      "order": 5,
+      "footprint": [
+        [
+          -8,
+          -1.2
+        ],
+        [
+          2.5,
+          -1.2
+        ],
+        [
+          2.5,
+          0.8
+        ],
+        [
+          -8,
+          0.8
+        ]
+      ],
+      "waypoint": {
+        "position": [
+          1.75,
+          4.9,
+          -0.65
+        ],
+        "yaw": 2.496,
+        "pitch": -0.125
+      }
+    },
+    {
+      "key": "primary",
+      "name": "Primary Bedroom",
+      "floor": "upper",
+      "order": 6,
+      "footprint": [
+        [
+          2.5,
+          -1.5
+        ],
+        [
+          9,
+          -1.5
+        ],
+        [
+          9,
+          6.5
+        ],
+        [
+          2.5,
+          6.5
+        ]
+      ],
+      "waypoint": {
+        "position": [
+          3.2,
+          4.9,
+          -0.95
+        ],
+        "yaw": -2.351,
+        "pitch": -0.123
+      }
+    },
+    {
+      "key": "primaryBath",
+      "name": "Primary Bathroom",
+      "floor": "upper",
+      "order": 7,
+      "footprint": [
+        [
+          2.5,
+          -6.5
+        ],
+        [
+          9,
+          -6.5
+        ],
+        [
+          9,
+          -1.5
+        ],
+        [
+          2.5,
+          -1.5
+        ]
+      ],
+      "waypoint": {
+        "position": [
+          8.15,
+          4.9,
+          -2
+        ],
+        "yaw": 0.811,
+        "pitch": -0.116
+      }
+    },
+    {
+      "key": "bedroom2",
+      "name": "Bedroom 2",
+      "floor": "upper",
+      "order": 8,
+      "footprint": [
+        [
+          -8,
+          0.8
+        ],
+        [
+          -2.5,
+          0.8
+        ],
+        [
+          -2.5,
+          6.5
+        ],
+        [
+          -8,
+          6.5
+        ]
+      ],
+      "waypoint": {
+        "position": [
+          -3.05,
+          4.9,
+          1.35
+        ],
+        "yaw": 2.233,
+        "pitch": -0.138
+      }
+    },
+    {
+      "key": "bedroom3",
+      "name": "Bedroom 3",
+      "floor": "upper",
+      "order": 9,
+      "footprint": [
+        [
+          -8,
+          -6.5
+        ],
+        [
+          -2.5,
+          -6.5
+        ],
+        [
+          -2.5,
+          -1.2
+        ],
+        [
+          -8,
+          -1.2
+        ]
+      ],
+      "waypoint": {
+        "position": [
+          -7.05,
+          4.9,
+          -1.75
+        ],
+        "yaw": -0.953,
+        "pitch": -0.156
+      }
+    }
+  ],
+  "links": [
+    {
+      "from": "entry",
+      "to": "living",
+      "via": [
+        [
+          2,
+          1.6,
+          3.6
+        ],
+        [
+          3.1,
+          1.6,
+          3.6
+        ]
+      ]
+    },
+    {
+      "from": "living",
+      "to": "dining",
+      "via": [
+        [
+          5.9,
+          1.6,
+          1.1
+        ],
+        [
+          5.9,
+          1.6,
+          -0.1
+        ]
+      ]
+    },
+    {
+      "from": "dining",
+      "to": "kitchen",
+      "via": [
+        [
+          3.1,
+          1.6,
+          -3.6
+        ],
+        [
+          1.9,
+          1.6,
+          -3.6
+        ]
+      ]
+    },
+    {
+      "from": "entry",
+      "to": "kitchen",
+      "via": [
+        [
+          0,
+          1.6,
+          -0.4
+        ],
+        [
+          0,
+          1.6,
+          -1.6
+        ]
+      ]
+    },
+    {
+      "from": "entry",
+      "to": "office",
+      "via": [
+        [
+          -0.4,
+          1.6,
+          0.3
+        ],
+        [
+          -2,
+          1.6,
+          -0.1
+        ],
+        [
+          -3,
+          1.6,
+          -0.1
+        ]
+      ]
+    },
+    {
+      "from": "entry",
+      "to": "landing",
+      "kind": "stairs",
+      "via": [
+        [
+          -1.1,
+          1.6,
+          6.15
+        ],
+        [
+          -1.84,
+          1.6500000000000001,
+          6.05
+        ],
+        [
+          -1.84,
+          1.9200000000000002,
+          5.2
+        ],
+        [
+          -1.84,
+          4.840000000000001,
+          0.8
+        ],
+        [
+          -1.6,
+          4.9,
+          0.1
+        ]
+      ]
+    },
+    {
+      "from": "landing",
+      "to": "primary",
+      "via": [
+        [
+          2,
+          4.9,
+          -0.2
+        ],
+        [
+          3.1,
+          4.9,
+          -0.2
+        ]
+      ]
+    },
+    {
+      "from": "primary",
+      "to": "primaryBath",
+      "via": [
+        [
+          7.8,
+          4.9,
+          -0.9
+        ],
+        [
+          7.8,
+          4.9,
+          -2.1
+        ]
+      ]
+    },
+    {
+      "from": "landing",
+      "to": "bedroom2",
+      "via": [
+        [
+          -4.8,
+          4.9,
+          0.2
+        ],
+        [
+          -4.8,
+          4.9,
+          1.4
+        ]
+      ]
+    },
+    {
+      "from": "landing",
+      "to": "bedroom3",
+      "via": [
+        [
+          -4.8,
+          4.9,
+          -0.6
+        ],
+        [
+          -4.8,
+          4.9,
+          -1.8
+        ]
+      ]
+    }
+  ]
+}
