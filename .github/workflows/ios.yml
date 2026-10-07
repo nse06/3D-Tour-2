@@ -65,3 +65,79 @@ jobs:
         with:
           name: xcodebuild-log
           path: build.log
+
+  simulator:
+    name: Simulator test (pair → demo scan → send)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build for the simulator (Debug)
+        run: |
+          set +e
+          xcodebuild \
+            -project ios/AtriumCapture.xcodeproj \
+            -scheme AtriumCapture \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build > build.log 2>&1
+          status=$?
+          grep -E -B2 -A6 "error: " build.log | grep -v "^--$" | head -200
+          grep -E "BUILD (SUCCEEDED|FAILED)" build.log
+          exit $status
+      - name: Boot an iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          phones = [(runtime, d) for runtime, ds in devices.items() if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")]
+          phones.sort(key=lambda x: x[0], reverse=True)
+          pro = [p for p in phones if "Pro" in p[1]["name"]] or phones
+          print(pro[0][1]["udid"])
+          print(pro[0][1]["name"], pro[0][0], file=sys.stderr)')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+      - name: Launch
+        run: |
+          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/AtriumCapture.app
+          mkdir -p shots
+          xcrun simctl launch "$UDID" com.atrium.capture
+          sleep 10
+          xcrun simctl io "$UDID" screenshot shots/1-home.png
+          xcrun simctl terminate "$UDID" com.atrium.capture
+      - name: Pair, build the demo scan and send it to a mock Atrium server
+        run: |
+          python3 ios/ci/mock_atrium_server.py --port 8765 --out results > mock.log 2>&1 &
+          sleep 1
+          TOKEN=$(python3 -c "print('T' * 43)")
+          LINK="atriumcapture://pair?server=http%3A%2F%2F127.0.0.1%3A8765&token=$TOKEN"
+          xcrun simctl launch "$UDID" com.atrium.capture -atrium-automation "pair=$LINK|wait=2|demo|wait=3|send|wait=2"
+          STATUS="$(xcrun simctl get_app_container "$UDID" com.atrium.capture data)/Documents/automation-status.json"
+          seen=""
+          stage=none
+          for i in $(seq 1 300); do
+            stage=$(python3 -c "import json; print(json.load(open('$STATUS'))['stage'])" 2>/dev/null || echo none)
+            if [ "$stage" != "$seen" ]; then
+              echo "stage: $(cat "$STATUS" 2>/dev/null)"
+              seen=$stage
+              sleep 1.5
+              xcrun simctl io "$UDID" screenshot "shots/2-$stage.png" > /dev/null 2>&1 || true
+            fi
+            case "$stage" in done|failed) break ;; esac
+            sleep 1
+          done
+          tail -20 mock.log
+          test "$stage" = done
+          python3 -c "import json; r = json.load(open('results/results.json')); print(r); assert r['ok'] and r['rooms'] == 6 and r['links'] >= 5, r"
+      - name: Upload screenshots and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-test
+          path: |
+            shots
+            results/results.json
+            mock.log
+            build.log

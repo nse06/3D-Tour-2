@@ -24,6 +24,7 @@
 		DF1A95BDCF38BCCFEB01A6DA /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F670F478F99DC65E5116018 /* HomeView.swift */; };
 		ECB09D58FC16EE294B318597 /* ScanStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E483D89A8ED1BD77985EA5C4 /* ScanStore.swift */; };
 		F73A37FCA445BD9C750E240E /* ZipWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63B3AB195F6307727C6E214 /* ZipWriter.swift */; };
+		FB2499D28A7A080E5A812018 /* Automation.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE42C3F8C91EB98EF5740774 /* Automation.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +46,7 @@
 		9F93BBC1793430415D527F39 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		B63B3AB195F6307727C6E214 /* ZipWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipWriter.swift; sourceTree = "<group>"; };
 		CF141B11A199D88E6CF44A71 /* ScanDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanDetailView.swift; sourceTree = "<group>"; };
+		DE42C3F8C91EB98EF5740774 /* Automation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Automation.swift; sourceTree = "<group>"; };
 		E483D89A8ED1BD77985EA5C4 /* ScanStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -121,6 +123,7 @@
 			children = (
 				0BB5056DBF97032377D64DB6 /* AppModel.swift */,
 				5A01CABDBEE21531813C3BF6 /* AtriumCaptureApp.swift */,
+				DE42C3F8C91EB98EF5740774 /* Automation.swift */,
 				9F93BBC1793430415D527F39 /* Theme.swift */,
 			);
 			path = App;
@@ -243,6 +246,7 @@
 				26A494D8D273CDEB3261DA7E /* AppModel.swift in Sources */,
 				5DF5D7E651DDD8F9A8482652 /* AtriumAPI.swift in Sources */,
 				3C49EDB7A0FEB1EC258EEF75 /* AtriumCaptureApp.swift in Sources */,
+				FB2499D28A7A080E5A812018 /* Automation.swift in Sources */,
 				C0BD810058883B4BCD0F9A1C /* CaptureModel.swift in Sources */,
 				600FA14EBAC14CF6C7177629 /* CaptureScreen.swift in Sources */,
 				D4A376C01A925412D87A013F /* CaptureViewController.swift in Sources */,

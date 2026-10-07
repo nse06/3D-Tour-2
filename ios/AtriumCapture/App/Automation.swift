@@ -1,0 +1,52 @@
+#if DEBUG
+    import Foundation
+
+    /// Drives the app from launch arguments for the simulator smoke test in CI
+    /// (.github/workflows/ios.yml):
+    ///
+    ///     -atrium-automation "pair=<atriumcapture://pair?…>|demo|send"
+    ///
+    /// Progress goes to Documents/automation-status.json so the test can wait
+    /// on each stage and take screenshots. Debug builds only.
+    extension AppModel {
+        func runAutomationIfRequested() async {
+            let args = ProcessInfo.processInfo.arguments
+            guard let index = args.firstIndex(of: "-atrium-automation"), index + 1 < args.count else { return }
+            let steps = args[index + 1].split(separator: "|").map(String.init)
+            report("started")
+            for step in steps {
+                if step.hasPrefix("pair=") {
+                    guard let url = URL(string: String(step.dropFirst(5))), let link = PairingLink(url: url) else {
+                        return report("failed", "not a pairing link: \(step)")
+                    }
+                    await pair(with: link)
+                    guard let pairing else { return report("failed", banner?.message ?? "pairing failed") }
+                    report("paired", pairing.propertyLabel)
+                } else if step == "demo" {
+                    guard let record = await makeDemoScan() else { return report("failed", banner?.message ?? "demo scan failed") }
+                    report("built", "\(record.stats.rooms) rooms, \(record.stats.glbBytes) bytes")
+                } else if step == "send" {
+                    guard let record = scans.first else { return report("failed", "no scan to send") }
+                    await performSend(record)
+                    switch uploads[record.id] {
+                    case let .done(result)?: report("sent", "\(result.rooms) rooms on \(result.floors) floor(s)")
+                    case let .failed(message)?: return report("failed", message)
+                    default: return report("failed", "upload did not finish")
+                    }
+                } else if step.hasPrefix("wait=") {
+                    try? await Task.sleep(for: .seconds(Double(step.dropFirst(5)) ?? 1))
+                }
+            }
+            report("done")
+        }
+
+        private func report(_ stage: String, _ detail: String = "") {
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let status: [String: Any] = ["stage": stage, "detail": detail, "time": Date().timeIntervalSince1970]
+            if let data = try? JSONSerialization.data(withJSONObject: status) {
+                try? data.write(to: documents.appendingPathComponent("automation-status.json"), options: .atomic)
+            }
+            print("[automation] \(stage) \(detail)")
+        }
+    }
+#endif

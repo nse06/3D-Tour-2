@@ -1,0 +1,126 @@
+# Atrium Capture — scan a home with your iPhone
+
+Atrium Capture walks you through a home room by room. Apple's RoomPlan measures each room with
+the iPhone's LiDAR scanner (walls, doors, windows, furniture), the app records the path you walk
+between rooms, and turns it all into the 3D walkthrough Atrium shows buyers — rooms, floor plan,
+viewpoints and the route between them, built automatically. One tap sends it to your listing.
+
+**You need:** an iPhone with LiDAR (iPhone 12 Pro / Pro Max or any newer **Pro** model; iPad Pro
+2020 or newer also works) on iOS 17 or later, and the Atrium dashboard running somewhere the
+phone can reach — your Vercel deployment (works from anywhere) or the dev server on the same Wi‑Fi.
+
+---
+
+## 1. Install the app (no Mac required)
+
+GitHub builds the app on every change (Actions → **iOS capture app**). Pick one way to put it on
+your phone:
+
+### Option A — Sideloadly (free; needs a Windows PC or Mac for five minutes)
+
+1. Download the app: GitHub → **Actions** → **iOS capture app** → the latest green run →
+   **Artifacts** → `AtriumCapture-unsigned-ipa`. Unzip it to get `AtriumCapture-unsigned.ipa`.
+2. Install [Sideloadly](https://sideloadly.io). On Windows, also install iTunes from apple.com
+   (not the Microsoft Store version) so the PC can talk to the iPhone.
+3. Connect the iPhone with a cable and tap **Trust** on the phone.
+4. Drag the `.ipa` into Sideloadly, enter your Apple ID, press **Start**.
+5. On the iPhone: **Settings → General → VPN & Device Management** → trust your Apple ID; then
+   **Settings → Privacy & Security → Developer Mode → On** (the phone restarts).
+
+With a free Apple ID the app runs for 7 days; re-run Sideloadly to renew (your scans stay on the
+phone). AltStore works the same way if you prefer it.
+
+### Option B — TestFlight (no computer at all; Apple Developer Program, $99/year)
+
+1. Enroll at [developer.apple.com/programs](https://developer.apple.com/programs/).
+2. In [App Store Connect](https://appstoreconnect.apple.com): **Users and Access → Integrations →
+   App Store Connect API** → create a key with **Admin** access. Note the **Key ID** and **Issuer
+   ID** and download the `.p8` file (you can only download it once).
+3. Find your **Team ID** at [developer.apple.com/account](https://developer.apple.com/account) →
+   Membership details.
+4. In this GitHub repository: **Settings → Secrets and variables → Actions**
+   * secrets: `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8` (paste the whole `.p8` file);
+   * variable: `BUNDLE_ID` — something unique to you, e.g. `com.yourname.atriumcapture`.
+5. **Actions → iOS TestFlight → Run workflow.** The first run registers the app ID with Apple.
+6. App Store Connect → **Apps → + → New App**: iOS, any unique name ("Atrium Capture – Your Name"),
+   pick your bundle ID, any SKU. If the first upload stopped because the app didn't exist yet,
+   run the workflow again.
+7. Install **TestFlight** on the iPhone. In App Store Connect → your app → **TestFlight → Internal
+   Testing**, add yourself; open the invite on the phone and install. New builds arrive the same way.
+
+## 2. Connect the app to a listing
+
+1. In the Atrium dashboard open a listing (or create one and choose **Scan with iPhone**).
+2. Click **Connect an iPhone**. A QR code appears.
+3. Point the iPhone's **Camera** at the code and tap **Open in Atrium Capture** (or use **Scan
+   pairing code** inside the app, or copy the link to the phone and **Paste pairing link**).
+4. The app shows **Connected — scans will go to *your listing***. The code works for 24 hours.
+
+Using a dev server on your computer instead of Vercel? Keep the iPhone on the same Wi‑Fi and
+allow **Local Network** access when the app asks. On Vercel, open the dashboard on your
+production address (`your-project.vercel.app`): preview deployments are behind Vercel's login,
+which the phone can't pass.
+
+## 3. Scan your home
+
+* **Before you start:** turn on the lights and open interior doors. Begin in the entry or the
+  living room.
+* Tap **Start a scan**. Move slowly along the walls, pointing at the edges where walls meet the
+  floor and ceiling, at windows, doors and large furniture. RoomPlan shows what it has measured
+  and coaches you ("Move closer to the wall", "Slow down").
+* When the outline of the room is complete, tap **Done with this room** and give it a name — the
+  app suggests one when RoomPlan recognises a kitchen, bedroom, bathroom…
+* Tap **Scan the next room** and **walk** to it with the phone held up and pointing ahead: that
+  walk becomes the route buyers glide along. Tap **Start scanning room N** once you're inside.
+* After the last room tap **Finish and build the tour**. The phone combines the rooms and builds
+  the walkthrough (10–60 seconds).
+* Open the scan and tap **Send to Atrium**. The listing page in the dashboard updates by itself;
+  use **Walk through it** to preview, adjust room names or viewpoints in **Rooms & viewpoints**,
+  then **Publish**.
+
+Tips: one RoomPlan "room" can be up to about 9 × 9 m — scan a large open space as two rooms.
+Scanning is demanding: a full apartment is fine, but if the phone gets hot it pauses; let it cool.
+
+**No LiDAR?** **Create a demo scan** builds a sample two-bedroom apartment on the phone so you
+can try pairing and sending on any iPhone.
+
+## What gets sent
+
+| File | What it is |
+| --- | --- |
+| `scan.glb` | The 3D walkthrough (a few MB): walls with doors and windows, floors, furniture, lights, plus the room/viewpoint/route data. |
+| `package.zip` | Raw data for future reprocessing: RoomPlan's rooms and merged structure, the scan in Atrium's format, the walked path, and a photo every ~1.5 s. Optional — if the server refuses it (Supabase's free plan limits files to 50 MB) the walkthrough is sent without it. |
+
+Everything also stays on the phone (**Files → On My iPhone → Atrium Capture → Scans**), and
+**Share 3D model** exports the `.glb` (e.g. to upload it to a listing by hand).
+
+## Troubleshooting
+
+| Message | Fix |
+| --- | --- |
+| *Can't reach …* | The phone can't see the server: same Wi‑Fi for a dev server, or use the deployed https address. |
+| *This pairing code has expired* | Codes last 24 hours — click **Connect an iPhone** again and rescan. |
+| *iPhone uploads need SUPABASE_SERVICE_ROLE_KEY…* | Add the Supabase service-role (or secret) key to the Vercel project's environment variables and redeploy. |
+| *Atrium's database isn't set up for iPhone scans yet* | Open `/setup` on your site and run the SQL it shows (safe to run again). |
+| *Scanning stopped* (tracking lost / too hot) | Choose **Keep what was scanned** or **Scan this room again**. |
+
+---
+
+## For developers
+
+```
+ios/
+  project.yml              XcodeGen spec (cd ios && xcodegen regenerates AtriumCapture.xcodeproj)
+  AtriumCapture/           SwiftUI app: pairing, RoomPlan capture, processing, upload
+  ScanCore/                Swift package (Foundation only — builds and tests on Linux too)
+    Sources/AtriumScanCore CaptureScan → .glb walkthrough + scan manifest
+    Sources/scanproc       CLI: scanproc process scan.json out.glb --manifest out.json
+```
+
+* `cd ios/ScanCore && swift test` — unit tests (macOS or Linux).
+* `swift run scanproc demo-scan apartment.json && swift run scanproc process apartment.json apartment.glb`
+  builds the synthetic apartment exactly as the phone would.
+* The phone ⇄ server contract, the scan format and the processing rules are in
+  [`docs/iphone-capture.md`](../docs/iphone-capture.md).
+* CI (`.github/workflows/ios.yml`) runs the ScanCore tests and builds an unsigned Release `.ipa`;
+  `.github/workflows/ios-testflight.yml` signs and uploads to TestFlight when the secrets exist.

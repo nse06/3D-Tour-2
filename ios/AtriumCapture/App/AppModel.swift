@@ -145,19 +145,24 @@ final class AppModel: ObservableObject {
     }
 
     func createDemoScan() {
+        Task { await makeDemoScan() }
+    }
+
+    @discardableResult
+    func makeDemoScan() async -> ScanRecord? {
         let id = UUID()
         building = (id, .modeling)
-        Task {
-            do {
-                let record = try await ScanBuilder.buildDemo(scanId: id, directory: store.directory(for: id))
-                try store.save(record)
-                reloadScans()
-                building = nil
-                openScan = id
-            } catch {
-                building = nil
-                banner = Banner(message: error.localizedDescription, isError: true)
-            }
+        do {
+            let record = try await ScanBuilder.buildDemo(scanId: id, directory: store.directory(for: id))
+            try store.save(record)
+            reloadScans()
+            building = nil
+            openScan = id
+            return record
+        } catch {
+            building = nil
+            banner = Banner(message: error.localizedDescription, isError: true)
+            return nil
         }
     }
 
@@ -170,6 +175,10 @@ final class AppModel: ObservableObject {
     // MARK: Sending to Atrium
 
     func send(_ record: ScanRecord) {
+        Task { await performSend(record) }
+    }
+
+    func performSend(_ record: ScanRecord) async {
         guard let pairing else { return }
         guard !pairing.isExpired else {
             banner = Banner(message: "The pairing code has expired. Scan a new code from the listing in the Atrium dashboard.", isError: true)
@@ -180,45 +189,43 @@ final class AppModel: ObservableObject {
         let api = AtriumAPI(server: pairing.server, token: pairing.token)
         let store = self.store
         let id = record.id
-        Task {
-            do {
-                _ = try await api.session()  // still valid?
-                let model = store.modelURL(for: id)
-                let manifest = try Data(contentsOf: store.manifestURL(for: id))
-                // The raw package is optional for the walkthrough; demo scans have none.
-                var package: URL?
-                if !record.isDemo {
-                    package = try await Task.detached(priority: .userInitiated) { try store.ensurePackage(for: id) }.value
-                }
-
-                let modelTarget = try await api.uploadTarget(kind: "capture", filename: "scan.glb", size: store.fileSize(model))
-                let modelShare = package == nil ? 0.9 : 0.35
-                try await api.put(model, to: modelTarget) { fraction in
-                    Task { @MainActor [weak self] in self?.setProgress(id, modelShare * fraction) }
-                }
-                var packageUrl: String?
-                if let package {
-                    do {
-                        let target = try await api.uploadTarget(kind: "package", filename: "package.zip", size: store.fileSize(package))
-                        try await api.put(package, to: target) { fraction in
-                            Task { @MainActor [weak self] in self?.setProgress(id, 0.35 + 0.55 * fraction) }
-                        }
-                        packageUrl = target.assetUrl
-                    } catch {
-                        // The walkthrough doesn't need the raw data; send the scan without it.
-                        packageUrl = nil
-                    }
-                }
-                uploads[id] = .finishing
-                let done = try await api.complete(assetUrl: modelTarget.assetUrl, packageUrl: packageUrl, manifest: manifest)
-                uploads[id] = .done(done)
-                var updated = record
-                updated.delivery = ScanRecord.Delivery(propertyLabel: pairing.propertyLabel, propertyUrl: done.propertyUrl, previewUrl: done.previewUrl, sentAt: Date())
-                try? store.save(updated)
-                reloadScans()
-            } catch {
-                uploads[id] = .failed(error.localizedDescription)
+        do {
+            _ = try await api.session()  // still valid?
+            let model = store.modelURL(for: id)
+            let manifest = try Data(contentsOf: store.manifestURL(for: id))
+            // The raw package is optional for the walkthrough; demo scans have none.
+            var package: URL?
+            if !record.isDemo {
+                package = try await Task.detached(priority: .userInitiated) { try store.ensurePackage(for: id) }.value
             }
+
+            let modelTarget = try await api.uploadTarget(kind: "capture", filename: "scan.glb", size: store.fileSize(model))
+            let modelShare = package == nil ? 0.9 : 0.35
+            try await api.put(model, to: modelTarget) { fraction in
+                Task { @MainActor [weak self] in self?.setProgress(id, modelShare * fraction) }
+            }
+            var packageUrl: String?
+            if let package {
+                do {
+                    let target = try await api.uploadTarget(kind: "package", filename: "package.zip", size: store.fileSize(package))
+                    try await api.put(package, to: target) { fraction in
+                        Task { @MainActor [weak self] in self?.setProgress(id, 0.35 + 0.55 * fraction) }
+                    }
+                    packageUrl = target.assetUrl
+                } catch {
+                    // The walkthrough doesn't need the raw data; send the scan without it.
+                    packageUrl = nil
+                }
+            }
+            uploads[id] = .finishing
+            let done = try await api.complete(assetUrl: modelTarget.assetUrl, packageUrl: packageUrl, manifest: manifest)
+            uploads[id] = .done(done)
+            var updated = record
+            updated.delivery = ScanRecord.Delivery(propertyLabel: pairing.propertyLabel, propertyUrl: done.propertyUrl, previewUrl: done.previewUrl, sentAt: Date())
+            try? store.save(updated)
+            reloadScans()
+        } catch {
+            uploads[id] = .failed(error.localizedDescription)
         }
     }
 

@@ -11,6 +11,9 @@ struct AtriumCaptureApp: App {
                 .tint(Theme.gold)
                 // atriumcapture://pair?server=…&token=… from the dashboard's QR code.
                 .onOpenURL { url in model.handleOpenURL(url) }
+                #if DEBUG
+                    .task { await model.runAutomationIfRequested() }
+                #endif
         }
     }
 }
