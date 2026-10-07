@@ -11,8 +11,9 @@ This document is the contract between the three pieces of the iPhone capture pip
           └────────────── scan package (.zip) ─────────────────────────────────────────▶ tours.scan_package_url
 ```
 
-* **AtriumCapture** (`ios/AtriumCapture`, iOS 17+, SwiftUI): runs the scan, names rooms, converts Apple's
-  `CapturedStructure` into the portable `CaptureScan` model, calls ScanCore, uploads.
+* **AtriumCapture** (`ios/AtriumCapture`, iOS 17+, SwiftUI): runs the scan, names rooms, converts each Apple
+  `CapturedRoom` into a portable `RoomPart`, has ScanCore put the rooms into one frame (§1.1) and build the
+  walkthrough, uploads.
 * **ScanCore** (`ios/ScanCore`, Swift package, no Apple-only frameworks): turns a `CaptureScan` into a glTF binary
   with an embedded *scan manifest*. Builds and tests on Linux and macOS; also ships a `scanproc` CLI so the same
   processing can run on a server later.
@@ -59,7 +60,11 @@ and glTF `matrix`).
     "roomId": "…",                    // optional
     "transform": [16 floats], "size": [x, y, z]
   }],
-  "trajectory": [{ "t": 12.4, "p": [x,y,z], "f": [x,y,z] }]   // seconds since start, camera position, camera forward (−Z axis) in world
+  "trajectory": [{ "t": 12.4, "p": [x,y,z], "f": [x,y,z] }],  // seconds since start, camera position, camera forward (−Z axis) in world
+  "frames": [{                        // optional: photos taken while scanning (see §3.3), same frame as everything else
+    "file": "frames/000012.jpg", "t": 18.5, "transform": [16 floats],   // camera-to-world (ARKit camera convention)
+    "intrinsics": [9 floats], "width": 1920, "height": 1440, "imageWidth": 1280, "imageHeight": 960
+  }]
 }
 ```
 
@@ -68,6 +73,35 @@ walls and openings column 0 (X) runs **along the width**, column 1 (Y) is **up**
 `width`/`height` are the full extents. Objects: `size` is the full bounding-box extent along the transform's X/Y/Z.
 ScanCore must not assume the normal points into any particular room, and must tolerate transforms with tiny
 non-orthogonality.
+
+### 1.1 Rooms arrive in separate frames — `RoomAlignment`
+
+RoomPlan moves the AR world origin to the phone's position each time a room capture starts (RoomCaptureView calls
+`ARSession.setWorldOrigin`, a pure shift), even though the AR session keeps running between rooms. Every room of a
+multi-room scan — and the path and photos recorded from its start until the next room starts, its *segment* — is
+therefore expressed relative to where that room's scan began. Taken as-is, the rooms pile up on top of each other
+(`docs/img/alignment-before.png`). RoomPlan's `StructureBuilder` merges them using tracking data apps can't read.
+
+The app records, with every raw path sample and photo, the RoomPlan run it was taken in (`"segment": 2`; raw files
+only), and samples the path at 30 Hz for 3 s after each run starts. `RoomAlignment.align(parts:structure:path:frames:)`
+then places each room, best method first:
+
+1. **Structure fit** — the merged `CapturedStructure` keeps the identifiers of walls, doors, windows, openings and
+   objects. The turn about +Y and shift that best map a room's elements onto the merged ones place the room (walls
+   only constrain their normal, since the merge may resize them; a 180°-flipped answer is ruled out by positions).
+2. **Path links** — at each origin reset the recorded path jumps back to (0, 0, 0); the jump measures the shift
+   between consecutive frames. Rooms without a structure fit, and path samples and photos of runs without a room
+   (rescans), are chained through these links. Scans from builds 1–2 have no run tags: resets are found in the
+   path, and extra runs left by rescanned rooms are skipped by trying each assignment and keeping the one where
+   rooms don't overlap and the path stays continuous.
+3. **Doorway snapping** — for path-placed rooms only, a doorway seen from both of its rooms pulls the rooms back
+   together when the two views are further apart than RoomPlan's own noise (~0.2 m along the wall; the gap between
+   the views, i.e. the partition, from −0.4 to +0.12 m). Rooms on the merged structure never move.
+
+The result is a `CaptureScan` in one frame plus an `AlignmentReport` (method, matched elements and residual per
+room), saved as `alignment.json`. Checked on Apple's 11-room sample with each room shifted into its own frame:
+every room returns exactly with the merged structure, and within 0.12 m from a 4 Hz path alone
+(`scanproc align … --scramble [--walk --no-structure]`).
 
 ## 2. ScanCore API
 
@@ -164,10 +198,14 @@ roomplan/structure.json   CapturedStructure (JSONEncoder) — raw Apple data for
 roomplan/room-N.json      each CapturedRoom (RoomBuilder output)
 roomplan/room-N-data.json each CapturedRoomData (raw capture, can be rebuilt with RoomBuilder)
 roomplan/structure.usdz   RoomPlan's own USDZ export
-frames/frames.json   [{ file, t, transform[16], intrinsics[9], width, height, imageWidth, imageHeight }]
-                     (images are downscaled, in sensor orientation; intrinsics refer to width × height)
-frames/000123.jpg    RGB keyframes (~every 1.5 s, ≤1280 px) for future photo texturing
-info.json            app / device / capture metadata
+roomplan/capture.json     what a rebuild needs besides RoomPlan's files: startedAt, device, rooms
+                          [{ name, file: "room-N.json", segment }], path (raw: each sample in its run's frame)
+frames/frames.json   [{ file, t, transform[16], intrinsics[9], width, height, imageWidth, imageHeight, segment }]
+                     (raw: each pose in its run's frame; images are downscaled, in sensor orientation;
+                     intrinsics refer to width × height; scan.json has the same photos in the shared frame)
+frames/000123.jpg    RGB keyframes (~every 1.5 s, ≤1280 px) for photo texturing
+alignment.json       AlignmentReport: how each room was placed (§1.1)
+info.json            app / device / capture metadata, pipeline version, alignment summary
 ```
 
 ### 3.4 Object categories → styles
@@ -193,12 +231,15 @@ info.json            app / device / capture metadata
    RoomPlan's detected label and quick chips (Living Room, Kitchen, Dining Room, Bedroom, Primary Bedroom, Bathroom,
    Office, Hallway, Entry, Laundry), then **Scan next room** or **Finish**. Between rooms: "Walk to the next room —
    keep the phone pointed ahead. Your path becomes the tour route." The ARKit session (and the trajectory
-   recording) keeps running between rooms so every room shares one coordinate space.
+   recording) keeps running between rooms; RoomPlan still starts each room in a new frame, which §1.1 undoes.
 3. **Processing** — steps with checkmarks: Combining rooms → Building 3D model → Packaging scan.
 4. **Scan detail** — summary (rooms, floors, floor area), then:
    * **Send to Atrium** (when paired) with upload progress → success with **Open listing in Atrium**;
    * **Share 3D model (.glb)** (AirDrop / Files — can be uploaded in the dashboard by hand);
    * **Preview** (AR Quick Look of RoomPlan's USDZ);
+   * **Rebuild walkthrough** — re-processes the saved RoomPlan data with the current pipeline (no rescanning);
+     scans built by an older pipeline (`record.pipeline` < `ScanBuilder.pipelineVersion`) show it as a
+     "Fix overlapping rooms" card. A rebuilt scan has to be sent again;
    * **Delete**.
 
 ### 4.2 Deep link
@@ -208,8 +249,9 @@ stores the pairing (server, token, property label, expiry) and shows it on Home.
 
 ### 4.3 Storage on device
 
-`Documents/Scans/<scan-id>/`: `scan.json`, `scan.glb`, `manifest.json`, `roomplan/…`, `frames/…`, `info.json`,
-`package.zip` (built on demand), and `record.json` (app metadata: name, created, stats, upload state).
+`Documents/Scans/<scan-id>/`: `scan.json`, `scan.glb`, `manifest.json`, `alignment.json`, `roomplan/…`
+(including `capture.json`), `frames/…`, `info.json`, `package.zip` (built on demand, deleted on rebuild), and
+`record.json` (app metadata: name, created, stats, upload state, pipeline version, alignment summary).
 
 ### 4.4 Requirements
 

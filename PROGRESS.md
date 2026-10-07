@@ -32,6 +32,8 @@ Branch: `claude/3d-real-estate-tour-mvp-pxgyqw`
 | ScanCore (Swift): CaptureScan → .glb + manifest | done — 14 XCTests (Linux + macOS CI), checked on Apple's 11-room RoomPlan sample |
 | Atrium Capture app (SwiftUI + RoomPlan) | done — builds in CI (unsigned .ipa artifact) |
 | Simulator e2e in CI (pair → demo scan → send to mock server) | added |
-| On-device test in a real apartment | waiting on the user (install via Sideloadly or TestFlight, see ios/README.md) |
+| On-device test in a real apartment | done by the user: 4 rooms, 72 m² — sending failed (build 1, fixed in build 2), rooms overlapped (fixed in build 3) |
+| Rooms in one frame (build 3): RoomPlan restarts every room at the phone's position; `RoomAlignment` places rooms on RoomPlan's merged structure, else along the walked path, with doorway checks | done — 10 XCTests; Apple's 11-room sample, rooms shifted into their own frames, comes back exactly; CI rebuilds it in the simulator |
+| Rebuild saved scans without rescanning | done (build 3) — waiting on the user to rebuild their apartment scan |
 
-Next ideas: photo-textured meshes from the uploaded keyframes, navmesh free roaming, analytics.
+Next: photo-textured meshes from the saved keyframes (in progress), 360° photo spots, navmesh free roaming, analytics.

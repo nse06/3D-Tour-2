@@ -71,7 +71,10 @@ which the phone can't pass.
 * When the outline of the room is complete, tap **Done with this room** and give it a name — the
   app suggests one when RoomPlan recognises a kitchen, bedroom, bathroom…
 * Tap **Scan the next room** and **walk** to it with the phone held up and pointing ahead: that
-  walk becomes the route buyers glide along. Tap **Start scanning room N** once you're inside.
+  walk becomes the route buyers glide along. Tap **Start scanning room N** once you're inside,
+  ideally standing still for a moment as you tap. RoomPlan starts every room in its own
+  coordinate frame; the app lines the rooms up again afterwards from RoomPlan's merged layout and
+  your walk, so keep the app open and the camera uncovered between rooms.
 * After the last room tap **Finish and build the tour**. The phone combines the rooms and builds
   the walkthrough (10–60 seconds).
 * Open the scan and tap **Send to Atrium**. The listing page in the dashboard updates by itself;
@@ -80,6 +83,13 @@ which the phone can't pass.
 
 Tips: one RoomPlan "room" can be up to about 9 × 9 m — scan a large open space as two rooms.
 Scanning is demanding: a full apartment is fine, but if the phone gets hot it pauses; let it cool.
+
+**Rooms overlapping in a scan from an earlier version?** Builds 1–2 took each room where RoomPlan
+reported it, and RoomPlan reports every room relative to where its scan started, so rooms piled
+up. Install the latest build over the old one (your scans stay), open the scan and tap
+**Rebuild walkthrough** under *Fix overlapping rooms*, then **Send to Atrium** again. No
+rescanning: the rebuild uses the RoomPlan data saved on the phone. The line under the scan's
+numbers says how the rooms were placed.
 
 **No LiDAR?** **Create a demo scan** builds a sample two-bedroom apartment on the phone so you
 can try pairing and sending on any iPhone.
@@ -103,6 +113,7 @@ Everything also stays on the phone (**Files → On My iPhone → Atrium Capture 
 | *iPhone uploads need SUPABASE_SERVICE_ROLE_KEY…* | Add the Supabase service-role (or secret) key to the Vercel project's environment variables and redeploy. |
 | *Atrium's database isn't set up for iPhone scans yet* | Open `/setup` on your site and run the SQL it shows (safe to run again). |
 | *Scanning stopped* (tracking lost / too hot) | Choose **Keep what was scanned** or **Scan this room again**. |
+| Rooms overlap in the walkthrough | Open the scan on the phone, tap **Rebuild walkthrough**, then send it again. |
 
 ---
 
@@ -115,6 +126,8 @@ ios/
   ScanCore/                Swift package (Foundation only — builds and tests on Linux too)
     Sources/AtriumScanCore CaptureScan → .glb walkthrough + scan manifest
     Sources/scanproc       CLI: scanproc process scan.json out.glb --manifest out.json
+                                scanproc align room-*.json --out scan.json (RoomPlan JSON → one frame)
+  ci/                      simulator-test helpers (mock server, legacy multi-room scan, rebuild check)
 ```
 
 * `cd ios/ScanCore && swift test` — unit tests (macOS or Linux).
@@ -122,5 +135,7 @@ ios/
   builds the synthetic apartment exactly as the phone would.
 * The phone ⇄ server contract, the scan format and the processing rules are in
   [`docs/iphone-capture.md`](../docs/iphone-capture.md).
-* CI (`.github/workflows/ios.yml`) runs the ScanCore tests and builds an unsigned Release `.ipa`;
-  `.github/workflows/ios-testflight.yml` signs and uploads to TestFlight when the secrets exist.
+* CI (`.github/workflows/ios.yml`) runs the ScanCore tests, builds an unsigned Release `.ipa`, and
+  in the simulator pairs/sends a demo scan and rebuilds Apple's multi-room RoomPlan sample with
+  every room shifted into its own frame; `.github/workflows/ios-testflight.yml` signs and uploads
+  to TestFlight when the secrets exist.
