@@ -21,6 +21,13 @@ final class PhotoTexturingTests: XCTestCase {
     /// the JPEG: ScanProcessor may hand over the frame moved into its normalized frame).
     struct Raycast: PhotoSource {
         let poses = Dictionary(uniqueKeysWithValues: PhotoTexturingTests.frames().map { ($0.file, $0.transform) })
+        /// Auto-exposure: each photo comes out up to this much brighter or darker.
+        var exposureSpread: Float = 0
+
+        func exposure(_ file: String) -> Float {
+            let h = file.unicodeScalars.reduce(UInt32(2166136261)) { ($0 ^ $1.value) &* 16777619 }
+            return 1 + exposureSpread * (Float(h % 1000) / 500 - 1)
+        }
 
         func image(for frame: CameraFrame) -> RGBImage? {
             let w = frame.imageWidth, h = frame.imageHeight
@@ -31,7 +38,9 @@ final class PhotoTexturingTests: XCTestCase {
                 for u in 0..<w {
                     let dc = Vec3((Float(u) + 0.5 - k[6]) / k[0], -(Float(v) + 0.5 - k[7]) / k[4], -1)
                     let d = vnormalize(t.applyDirection(dc))
-                    let (r, g, b) = PhotoTexturingTests.trace(from: t.translation, d)
+                    var (r, g, b) = PhotoTexturingTests.trace(from: t.translation, d)
+                    let e = exposure(frame.file)
+                    (r, g, b) = (r * e, g * e, b * e)
                     let i = (v * w + u) * 3
                     pixels[i] = UInt8(clamp(r, 0, 255))
                     pixels[i + 1] = UInt8(clamp(g, 0, 255))
@@ -153,6 +162,47 @@ final class PhotoTexturingTests: XCTestCase {
         XCTAssertLessThan(p95, 30, "95th percentile error \(p95)")
         XCTAssertGreaterThan(behindCabinet, 50)
         XCTAssertEqual(leaks, 0, "\(leaks) of \(behindCabinet) hidden wall texels took the cabinet's color")
+    }
+
+    func testExposureDifferencesBetweenPhotosAreEvenedOut() throws {
+        var scan = Self.room()
+        scan.frames = Self.frames()
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        var model = PhotoModel.build(scan: scan, rooms: rooms, walls: walls, defaultThickness: 0.12, includeCeilings: true)
+        model.measureCharts()
+        let options = PhotoTexturingOptions(atlasSize: 1024, maxAtlases: 2, texelSize: 0.02, depthWidth: 160)
+        let atlases = try XCTUnwrap(PhotoBaker.pack(&model.charts, options: options))
+        let cameras = scan.frames.compactMap { PhotoCamera($0, depthWidth: options.depthWidth) }
+        let source = Raycast(exposureSpread: 0.2)
+        let spread = Set(scan.frames.map { (source.exposure($0.file) * 100).rounded() })
+        XCTAssertGreaterThan(spread.count, 8, "photos should differ in exposure")
+        let baked = PhotoBaker.bake(model: model, cameras: cameras, photos: source, atlasCount: atlases, options: options)
+
+        // After one overall brightness factor, the surfaces match the pattern again.
+        var pairs: [(got: Float, want: Float)] = []
+        for (ci, chart) in model.charts.enumerated() where chart.fallback != PhotoModel.objectColor && chart.w > 2 * PhotoChart.pad + 4 && chart.h > 2 * PhotoChart.pad + 4 {
+            for j in (PhotoChart.pad + 2)..<(chart.h - PhotoChart.pad - 2) {
+                for i in (PhotoChart.pad + 2)..<(chart.w - PhotoChart.pad - 2) where baked.seen[ci][j * chart.w + i] {
+                    let p = chart.point(i, j)
+                    let near = p.x > Self.cabinet.lo.x - 0.06 && p.x < Self.cabinet.hi.x + 0.06 && p.z < Self.cabinet.hi.z + 0.06 && p.y < Self.cabinet.hi.y + 0.06
+                    if near { continue }
+                    let a = ((chart.y + j) * options.atlasSize + chart.x + i) * 3
+                    let want = Self.color(at: p)
+                    pairs.append((Float(baked.atlases[chart.atlas].pixels[a]), want.0))
+                    pairs.append((Float(baked.atlases[chart.atlas].pixels[a + 1]), want.1))
+                    pairs.append((Float(baked.atlases[chart.atlas].pixels[a + 2]), want.2))
+                }
+            }
+        }
+        let ratios = pairs.filter { $0.want > 60 && $0.want < 200 }.map { $0.got / $0.want }.sorted()
+        let scale = ratios[ratios.count / 2]
+        var errors = pairs.map { abs($0.got - $0.want * scale) }
+        errors.sort()
+        let median = errors[errors.count / 2], p95 = errors[errors.count * 95 / 100]
+        // Without matching: median ≈ 5.5, 95th percentile ≈ 23.
+        XCTAssertLessThan(median, 2, "median error \(median) after scale \(scale)")
+        XCTAssertLessThan(p95, 6, "95th percentile error \(p95) after scale \(scale)")
     }
 
     func testPhotoTexturedModelIsUnlitAndAsksForTheCapturedLook() throws {

@@ -514,36 +514,54 @@ struct PhotoBaker {
             for k in used { chartsOfCamera[k].append(ci) }
         }
 
-        // Pass 2: photo by photo, blend colors into the texels that chose it.
-        let frameOfSlot = slotFrame, weightOfSlot = slotWeight
-        var accumulated = [Float](repeating: 0, count: total * 4)
+        // Pass 2: photo by photo, sample each texel that chose the photo.
+        let frameOfSlot = slotFrame
+        var slotRGB = [UInt8](repeating: 0, count: total * slots * 3)
+        var sampled = [Bool](repeating: false, count: total * slots)
         var photosUsed = 0
         for (k, cam) in cams.enumerated() where !chartsOfCamera[k].isEmpty {
             guard let image = photos.image(for: cam.frame), image.width > 1, image.height > 1 else { continue }
             photosUsed += 1
             let scaleX = Float(image.width) / Float(cam.width), scaleY = Float(image.height) / Float(cam.height)
             let list = chartsOfCamera[k]
-            accumulated.withUnsafeMutableBufferPointer { acc in
-                let aBase = acc.baseAddress!
-                image.pixels.withUnsafeBufferPointer { px in
-                    DispatchQueue.concurrentPerform(iterations: list.count) { n in
-                        let ci = list[n]
-                        let chart = charts[ci]
-                        for j in 0..<chart.h {
-                            for i in 0..<chart.w {
-                                let texel = offsets[ci] + j * chart.w + i
-                                var weight: Float = 0
-                                for s in 0..<slots where frameOfSlot[texel * slots + s] == UInt16(k) { weight = weightOfSlot[texel * slots + s] }
-                                guard weight > 0, let q = cam.project(chart.point(i, j)) else { continue }
-                                let (r, g, b) = bilinear(px, image.width, image.height, q.u * scaleX - 0.5, q.v * scaleY - 0.5)
-                                aBase[texel * 4] += r * weight
-                                aBase[texel * 4 + 1] += g * weight
-                                aBase[texel * 4 + 2] += b * weight
-                                aBase[texel * 4 + 3] += weight
+            slotRGB.withUnsafeMutableBufferPointer { rgbBuffer in
+                sampled.withUnsafeMutableBufferPointer { sampledBuffer in
+                    let rgbBase = rgbBuffer.baseAddress!, sampledBase = sampledBuffer.baseAddress!
+                    image.pixels.withUnsafeBufferPointer { px in
+                        DispatchQueue.concurrentPerform(iterations: list.count) { n in
+                            let ci = list[n]
+                            let chart = charts[ci]
+                            for j in 0..<chart.h {
+                                for i in 0..<chart.w {
+                                    let texel = offsets[ci] + j * chart.w + i
+                                    var slot = -1
+                                    for s in 0..<slots where frameOfSlot[texel * slots + s] == UInt16(k) { slot = texel * slots + s }
+                                    guard slot >= 0, let q = cam.project(chart.point(i, j)) else { continue }
+                                    let (r, g, b) = bilinear(px, image.width, image.height, q.u * scaleX - 0.5, q.v * scaleY - 0.5)
+                                    rgbBase[slot * 3] = UInt8(clamp(r.rounded(), 0, 255))
+                                    rgbBase[slot * 3 + 1] = UInt8(clamp(g.rounded(), 0, 255))
+                                    rgbBase[slot * 3 + 2] = UInt8(clamp(b.rounded(), 0, 255))
+                                    sampledBase[slot] = true
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
+
+        // The phone's auto-exposure makes one photo darker than the next; match them where they overlap.
+        let gains = exposureGains(slotFrame: slotFrame, slotWeight: slotWeight, slotRGB: slotRGB, sampled: sampled, cameras: cams.count)
+        var accumulated = [Float](repeating: 0, count: total * 4)
+        for t in 0..<total {
+            for s in 0..<slots {
+                let slot = t * slots + s
+                guard sampled[slot] else { continue }
+                let w = slotWeight[slot], g = gains[Int(slotFrame[slot])]
+                accumulated[t * 4] += min(255, Float(slotRGB[slot * 3]) * g) * w
+                accumulated[t * 4 + 1] += min(255, Float(slotRGB[slot * 3 + 1]) * g) * w
+                accumulated[t * 4 + 2] += min(255, Float(slotRGB[slot * 3 + 2]) * g) * w
+                accumulated[t * 4 + 3] += w
             }
         }
 
@@ -584,6 +602,66 @@ struct PhotoBaker {
             }
         }
         return Result(atlases: atlases, coverage: total > 0 ? Double(seen) / Double(total) : 0, photosUsed: photosUsed, seen: seenMasks)
+    }
+
+    /// A brightness factor per photo, so overlapping photos agree: for every texel two photos
+    /// both saw, their brightness ratio is one observation; the log-gains are solved by least
+    /// squares (lightly pulled to 1) and centered so the typical photo keeps its exposure.
+    static func exposureGains(slotFrame: [UInt16], slotWeight: [Float], slotRGB: [UInt8], sampled: [Bool], cameras n: Int) -> [Float] {
+        guard n > 1 else { return [Float](repeating: 1, count: max(n, 0)) }
+        var weight = [Double](repeating: 0, count: n * n), delta = [Double](repeating: 0, count: n * n)
+        let texels = slotFrame.count / slots
+        func luminance(_ slot: Int) -> Double {
+            0.299 * Double(slotRGB[slot * 3]) + 0.587 * Double(slotRGB[slot * 3 + 1]) + 0.114 * Double(slotRGB[slot * 3 + 2])
+        }
+        for t in 0..<texels {
+            for a in 0..<slots {
+                let sa = t * slots + a
+                guard sampled[sa] else { continue }
+                let la = luminance(sa)
+                guard la > 12, la < 243 else { continue }
+                for b in (a + 1)..<slots {
+                    let sb = t * slots + b
+                    guard sampled[sb] else { continue }
+                    let lb = luminance(sb)
+                    guard lb > 12, lb < 243 else { continue }
+                    var ca = Int(slotFrame[sa]), cb = Int(slotFrame[sb])
+                    var d = log(lb) - log(la)  // wanted: g[ca] − g[cb]
+                    if ca > cb {
+                        swap(&ca, &cb)
+                        d = -d
+                    }
+                    let w = Double(min(slotWeight[sa], slotWeight[sb]))
+                    weight[ca * n + cb] += w
+                    delta[ca * n + cb] += w * d
+                }
+            }
+        }
+        var pairs: [(a: Int, b: Int, w: Double, d: Double)] = []
+        for a in 0..<n {
+            for b in (a + 1)..<n where weight[a * n + b] > 2 { pairs.append((a, b, weight[a * n + b], delta[a * n + b] / weight[a * n + b])) }
+        }
+        guard !pairs.isEmpty else { return [Float](repeating: 1, count: n) }
+        var g = [Double](repeating: 0, count: n)
+        var linked = [Bool](repeating: false, count: n)
+        for p in pairs {
+            linked[p.a] = true
+            linked[p.b] = true
+        }
+        let pull = 0.5
+        for _ in 0..<200 {
+            var sum = [Double](repeating: 0, count: n), total = [Double](repeating: pull, count: n)
+            for p in pairs {
+                sum[p.a] += p.w * (g[p.b] + p.d)
+                total[p.a] += p.w
+                sum[p.b] += p.w * (g[p.a] - p.d)
+                total[p.b] += p.w
+            }
+            for k in 0..<n { g[k] = sum[k] / total[k] }
+        }
+        let center = g.enumerated().filter { linked[$0.offset] }.map(\.element).sorted()
+        let median = center.isEmpty ? 0 : center[center.count / 2]
+        return g.map { Float(exp(clamp($0 - median, -0.8, 0.8))) }
     }
 
     /// Photos that can see part of the chart: in front of it, close enough, and pointed at it.

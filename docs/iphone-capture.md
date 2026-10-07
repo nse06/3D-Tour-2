@@ -182,7 +182,9 @@ walkthrough shows the real walls, floors, art, windows and furniture:
   photos that see it best: facing it, close, near the image center, and not hidden by other surfaces (a 192-pixel
   depth image per photo, rasterized from the model; a texel counts as hidden if the nearest of the four depth pixels
   around it is clearly nearer); (2) photo by photo — each photo's pixels are blended into the texels that chose it,
-  weighted toward the best view. Texels no photo saw are filled smoothly from their neighbours (pull-push); charts
+  weighted toward the best view, after **exposure matching**: the phone's auto-exposure makes one photo darker than the
+  next, so every texel two photos both saw gives a brightness ratio, and one gain per photo is solved by least
+  squares (centered on the typical photo). Texels no photo saw are filled smoothly from their neighbours (pull-push); charts
   no photo saw get a neutral color. If the photos cover less than 15% of the surfaces, the styled model is built
   instead.
 * **Output**: one material per atlas with the photo as base color (JPEG from the app, PNG elsewhere), clamped
