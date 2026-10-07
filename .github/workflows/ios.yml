@@ -67,7 +67,7 @@ jobs:
           path: build.log
 
   simulator:
-    name: Simulator test (pair → demo scan → send)
+    name: Simulator test (pair → demo scan → send; rebuild a multi-room scan)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -131,6 +131,29 @@ jobs:
           tail -20 mock.log
           test "$stage" = done
           python3 -c "import json; r = json.load(open('results/results.json')); print(r); assert r['ok'] and r['rooms'] == 6 and r['links'] >= 5, r"
+      - name: Rebuild an old multi-room scan (Apple's RoomPlan sample, each room in its own frame)
+        run: |
+          curl -fsSL --retry 3 -o merging.zip https://docs-assets.developer.apple.com/published/3e2b731b0ef7/MergingMultipleScansIntoASingleStructure.zip
+          mkdir -p sample && unzip -q merging.zip -d sample
+          xcrun simctl terminate "$UDID" com.atrium.capture || true
+          DATA="$(xcrun simctl get_app_container "$UDID" com.atrium.capture data)"
+          ID=$(python3 ios/ci/make_legacy_scan.py sample "$DATA/Documents/Scans")
+          echo "legacy scan $ID"
+          STATUS="$DATA/Documents/automation-status.json"
+          rm -f "$STATUS"
+          xcrun simctl launch "$UDID" com.atrium.capture -atrium-automation "rebuild|wait=1"
+          stage=none
+          for i in $(seq 1 300); do
+            stage=$(python3 -c "import json; print(json.load(open('$STATUS'))['stage'])" 2>/dev/null || echo none)
+            case "$stage" in done|failed) break ;; esac
+            sleep 1
+          done
+          cat "$STATUS"; echo
+          xcrun simctl io "$UDID" screenshot shots/3-rebuilt.png > /dev/null 2>&1 || true
+          mkdir -p results/rebuild && cp "$DATA/Documents/Scans/$ID"/{alignment.json,info.json,manifest.json} results/rebuild/ 2>/dev/null || true
+          test "$stage" = done
+          python3 ios/ci/check_rebuild.py "$DATA/Documents/Scans/$ID" sample
+
       - name: Upload screenshots and results
         if: always()
         uses: actions/upload-artifact@v4
@@ -139,5 +162,6 @@ jobs:
           path: |
             shots
             results/results.json
+            results/rebuild
             mock.log
             build.log

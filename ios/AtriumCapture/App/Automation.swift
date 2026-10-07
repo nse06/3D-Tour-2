@@ -5,6 +5,7 @@
     /// (.github/workflows/ios.yml):
     ///
     ///     -atrium-automation "pair=<atriumcapture://pair?…>|demo|send"
+    ///     -atrium-automation "rebuild"       (rebuilds the first real scan)
     ///
     /// Progress goes to Documents/automation-status.json so the test can wait
     /// on each stage and take screenshots. Debug builds only.
@@ -33,6 +34,13 @@
                     case let .failed(message)?: return report("failed", message)
                     default: return report("failed", "upload did not finish")
                     }
+                } else if step == "rebuild" {
+                    guard let record = scans.first(where: { !$0.isDemo }) else { return report("failed", "no scan to rebuild") }
+                    await performRebuild(record)
+                    guard let rebuilt = scans.first(where: { $0.id == record.id }), rebuilt.pipeline == ScanBuilder.pipelineVersion else {
+                        return report("failed", banner?.message ?? "rebuild failed")
+                    }
+                    report("rebuilt", "\(rebuilt.stats.rooms) rooms · \(rebuilt.alignment ?? "")")
                 } else if step.hasPrefix("wait=") {
                     try? await Task.sleep(for: .seconds(Double(step.dropFirst(5)) ?? 1))
                 }

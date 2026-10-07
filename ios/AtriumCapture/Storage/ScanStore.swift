@@ -17,6 +17,10 @@ struct ScanRecord: Codable, Identifiable, Equatable {
     /// Set once the scan was sent to an Atrium listing.
     var delivery: Delivery?
     var isDemo: Bool = false
+    /// ScanBuilder.pipelineVersion that built the walkthrough (nil: builds 1–2).
+    var pipeline: Int?
+    /// How the rooms were put together ("4 rooms placed with RoomPlan's merged layout").
+    var alignment: String?
 
     var title: String {
         if isDemo { return "Demo apartment" }

@@ -3,7 +3,7 @@
 //   scanproc process <scan.json> <out.glb> [--manifest <manifest.json>] [--texture-size <px>]
 //   scanproc <scan.json> <out.glb> [--manifest <manifest.json>]
 //   scanproc demo-scan <scan.json>        write the synthetic two-bedroom apartment scan
-//   scanproc align <room.json|structure.json>... --out <scan.json> [--glb <out.glb>]
+//   scanproc align <room.json|structure.json>... --out <scan.json> [--glb <out.glb>] [--report <alignment.json>]
 //            [--structure <structure.json> [--top-level-only]] [--scramble [--walk] [--no-structure]]
 //        RoomPlan JSON → one aligned scan (RoomAlignment). --scramble re-creates RoomPlan's
 //        per-room origins from rooms that already share a frame, to check the alignment.
@@ -19,7 +19,7 @@ func fail(_ message: String) -> Never {
 let usage = """
     usage: scanproc process <scan.json> <out.glb> [--manifest <manifest.json>] [--texture-size <px>]
            scanproc demo-scan <scan.json>
-           scanproc align <room.json|structure.json>... --out <scan.json> [--glb <out.glb>]
+           scanproc align <room.json|structure.json>... --out <scan.json> [--glb <out.glb>] [--report <alignment.json>]
                 [--structure <structure.json> [--top-level-only]] [--scramble [--walk] [--no-structure]]
     """
 
@@ -44,6 +44,7 @@ case "align":
     args.removeFirst()
     guard let out = option("--out") else { fail(usage) }
     let glbPath = option("--glb")
+    let reportPath = option("--report")
     let structurePath = option("--structure")
     let topLevelOnly = flag("--top-level-only")
     let scramble = flag("--scramble"), walk = flag("--walk"), noStructure = flag("--no-structure")
@@ -103,6 +104,7 @@ case "align":
             print(line)
         }
         try result.scan.jsonData(prettyPrinted: false).write(to: URL(fileURLWithPath: out))
+        if let reportPath { try JSONEncoder().encode(result.report).write(to: URL(fileURLWithPath: reportPath)) }
         if let glbPath {
             let processed = try ScanProcessor.process(result.scan, options: ScanProcessorOptions(textureSize: 256))
             try processed.glb.write(to: URL(fileURLWithPath: glbPath))

@@ -24,12 +24,22 @@ struct ScanDetailView: View {
                         Text(scan.title).font(Theme.display(30))
                     }
                     stats(scan)
+                    if needsRebuild(scan) { rebuildCard(scan) }
                     sendCard(scan)
                     VStack(spacing: 10) {
                         ShareLink(item: model.store.modelURL(for: scan.id)) {
                             Label("Share 3D model (.glb)", systemImage: "square.and.arrow.up")
                         }
                         .buttonStyle(PillButtonStyle(primary: false))
+                        if !needsRebuild(scan) && ScanBuilder.canRebuild(scan, directory: model.store.directory(for: scan.id)) {
+                            Button {
+                                model.rebuild(scan)
+                            } label: {
+                                Label("Rebuild walkthrough", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            .buttonStyle(PillButtonStyle(primary: false))
+                            .disabled(model.building != nil || model.uploads[scan.id]?.isBusy == true)
+                        }
                         if FileManager.default.fileExists(atPath: model.store.previewURL(for: scan.id).path) {
                             Button {
                                 previewURL = model.store.previewURL(for: scan.id)
@@ -64,11 +74,42 @@ struct ScanDetailView: View {
 
     private func stats(_ scan: ScanRecord) -> some View {
         let s = scan.stats
-        return HStack(spacing: 0) {
-            stat("\(s.rooms)", s.rooms == 1 ? "room" : "rooms")
-            stat("\(s.floors)", s.floors == 1 ? "floor" : "floors")
-            stat("\(Int(s.floorArea.rounded()))", "m²")
-            stat("\(s.doors + s.openings)", "doorways")
+        return VStack(spacing: 12) {
+            HStack(spacing: 0) {
+                stat("\(s.rooms)", s.rooms == 1 ? "room" : "rooms")
+                stat("\(s.floors)", s.floors == 1 ? "floor" : "floors")
+                stat("\(Int(s.floorArea.rounded()))", "m²")
+                stat("\(s.doors + s.openings)", "doorways")
+            }
+            if let alignment = scan.alignment, scan.stats.rooms > 1 {
+                Label(alignment, systemImage: "square.3.layers.3d.down.right")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .card()
+    }
+
+    /// Scans built before rooms were aligned into one frame (builds 1–2).
+    private func needsRebuild(_ scan: ScanRecord) -> Bool {
+        (scan.pipeline ?? 1) < ScanBuilder.pipelineVersion && ScanBuilder.canRebuild(scan, directory: model.store.directory(for: scan.id))
+    }
+
+    private func rebuildCard(_ scan: ScanRecord) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Fix overlapping rooms", systemImage: "wand.and.stars")
+                .font(.headline)
+            Text("This scan was built before Atrium Capture lined rooms up with each other, so they may overlap. Rebuilding fixes that from the data already on this iPhone. No rescanning needed. Afterwards, send it to Atrium again.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                model.rebuild(scan)
+            } label: {
+                Label("Rebuild walkthrough", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .buttonStyle(PillButtonStyle())
+            .disabled(model.building != nil || model.uploads[scan.id]?.isBusy == true)
         }
         .card()
     }

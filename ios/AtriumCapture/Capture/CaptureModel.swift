@@ -21,6 +21,8 @@ final class CaptureModel: ObservableObject {
     struct RoomCapture {
         var name: String
         let data: CapturedRoomData
+        /// The RoomPlan run that scanned it (its coordinate frame).
+        let segment: Int
     }
 
     @Published var phase: Phase = .scanning
@@ -44,6 +46,7 @@ final class CaptureModel: ObservableObject {
     var onCancel: (() -> Void)?
 
     private var pendingData: CapturedRoomData?
+    private var pendingSegment = 0
     /// Finished or cancelled: ignore late RoomPlan callbacks.
     private var closed = false
 
@@ -69,7 +72,7 @@ final class CaptureModel: ObservableObject {
     func saveRoom(thenScanAnother another: Bool) {
         guard let data = pendingData else { return }
         let trimmed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
-        rooms.append(RoomCapture(name: trimmed.isEmpty ? "Room \(roomNumber)" : trimmed, data: data))
+        rooms.append(RoomCapture(name: trimmed.isEmpty ? "Room \(roomNumber)" : trimmed, data: data, segment: pendingSegment))
         pendingData = nil
         if another {
             phase = .betweenRooms
@@ -112,6 +115,7 @@ final class CaptureModel: ObservableObject {
 
     func roomEnded(_ data: CapturedRoomData, error: Error?) {
         guard !closed else { return }
+        pendingSegment = max(recorder.segment, 0)
         if let error, phase != .endingRoom {
             // RoomPlan stopped on its own (tracking lost, too hot, …).
             phase = .failed(Self.describe(error))

@@ -126,8 +126,8 @@ final class AppModel: ObservableObject {
 
     private func buildScan(from capture: CaptureModel) {
         let input = ScanBuilder.Input(
-            scanId: capture.scanId, directory: capture.directory, rooms: capture.rooms.map { (name: $0.name, data: $0.data) },
-            trajectory: capture.recorder.samples, startedAt: capture.startedAt, device: ScanBuilder.deviceInfo())
+            scanId: capture.scanId, directory: capture.directory, rooms: capture.rooms.map { (name: $0.name, data: $0.data, segment: $0.segment) },
+            path: capture.recorder.samples, frames: capture.recorder.keyframes, startedAt: capture.startedAt, device: ScanBuilder.deviceInfo())
         try? capture.recorder.writeIndex()
         building = (capture.scanId, .combining)
         Task {
@@ -142,6 +142,31 @@ final class AppModel: ObservableObject {
                 banner = Banner(message: error.localizedDescription, isError: true)
                 reloadScans()
             }
+        }
+    }
+
+    /// Builds the walkthrough again from the scan's saved RoomPlan data with the current
+    /// pipeline (e.g. after an update that places rooms better). Needs sending again.
+    func rebuild(_ record: ScanRecord) {
+        Task { await performRebuild(record) }
+    }
+
+    func performRebuild(_ record: ScanRecord) async {
+        guard building == nil, uploads[record.id]?.isBusy != true else { return }
+        building = (record.id, .combining)
+        do {
+            var rebuilt = try await ScanBuilder.rebuild(record, directory: store.directory(for: record.id)) { [weak self] step in
+                self?.building = (record.id, step)
+            }
+            rebuilt.isDemo = record.isDemo
+            try store.save(rebuilt)
+            uploads[record.id] = nil
+            reloadScans()
+            building = nil
+            banner = Banner(message: "Rebuilt. Send it to Atrium again to update the walkthrough.", isError: false)
+        } catch {
+            building = nil
+            banner = Banner(message: error.localizedDescription, isError: true)
         }
     }
 

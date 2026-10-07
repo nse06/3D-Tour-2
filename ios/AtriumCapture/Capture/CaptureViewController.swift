@@ -3,13 +3,14 @@ import RoomPlan
 import UIKit
 
 /// Hosts RoomPlan's RoomCaptureView. Rooms are scanned one after another in a
-/// single AR session (`stop(pauseARSession: false)` between rooms), so every
-/// room and the recorded path share one coordinate space.
+/// single AR session (`stop(pauseARSession: false)` between rooms). RoomPlan
+/// still moves the world origin to the phone when each room starts, so the
+/// recorder tags everything with its run and samples densely around each start.
 final class CaptureViewController: UIViewController, RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
     private let model: CaptureModel
     private var captureView: RoomCaptureView!
     private let configuration = RoomCaptureSession.Configuration()
-    private var sampler: Timer?
+    private var sampler: CADisplayLink?
     /// AR tracking is on (from the first room until the scan ends).
     private var isTracking = false
     /// A RoomPlan room capture is in progress.
@@ -38,8 +39,11 @@ final class CaptureViewController: UIViewController, RoomCaptureViewDelegate, Ro
         UIApplication.shared.isIdleTimerDisabled = true
         if !isTracking, model.phase == .scanning { startRoom() }
         if sampler == nil {
-            // Selector-based so the callback runs on the main actor.
-            sampler = Timer.scheduledTimer(timeInterval: 0.25, target: self, selector: #selector(sample), userInfo: nil, repeats: true)
+            // 30 Hz polling of the latest AR frame; the recorder keeps what it needs.
+            let link = CADisplayLink(target: self, selector: #selector(sample))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
+            link.add(to: .main, forMode: .common)
+            sampler = link
         }
     }
 
@@ -56,6 +60,7 @@ final class CaptureViewController: UIViewController, RoomCaptureViewDelegate, Ro
     func startRoom() {
         isTracking = true
         roomActive = true
+        model.recorder.beginSegment()
         captureView.captureSession.run(configuration: configuration)
     }
 
