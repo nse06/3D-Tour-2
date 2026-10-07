@@ -119,11 +119,51 @@ public struct PoseSample: Codable, Sendable, Equatable {
     public var p: Vec3
     /// Camera forward direction (the camera's −Z axis) in world space.
     public var f: Vec3
+    /// Raw captures only: the RoomPlan run (0, 1, …) the sample was recorded in or
+    /// after. Each run starts a new coordinate frame (see RoomAlignment).
+    public var segment: Int?
 
-    public init(t: Double, p: Vec3, f: Vec3) {
+    public init(t: Double, p: Vec3, f: Vec3, segment: Int? = nil) {
         self.t = t
         self.p = p
         self.f = f
+        self.segment = segment
+    }
+}
+
+/// A photo taken during the scan (frames/frames.json): a downscaled JPEG in the
+/// camera sensor's orientation, with the pose and intrinsics to project it.
+public struct CameraFrame: Codable, Sendable, Equatable {
+    /// Path of the JPEG inside the scan folder ("frames/000012.jpg").
+    public var file: String
+    /// Seconds since the scan started (matches the path sample taken with it).
+    public var t: Double
+    /// Camera-to-world (ARKit camera convention: −Z forward, +Y up in the sensor image).
+    public var transform: Transform
+    /// Pinhole intrinsics, 9 numbers column-major, for the full sensor resolution.
+    public var intrinsics: [Float]
+    /// Full sensor resolution the intrinsics refer to.
+    public var width: Int
+    public var height: Int
+    /// Size of the saved JPEG.
+    public var imageWidth: Int
+    public var imageHeight: Int
+    /// Raw captures only: the RoomPlan run the photo was taken in (see `PoseSample.segment`).
+    public var segment: Int?
+
+    public init(
+        file: String, t: Double, transform: Transform, intrinsics: [Float], width: Int, height: Int, imageWidth: Int, imageHeight: Int,
+        segment: Int? = nil
+    ) {
+        self.file = file
+        self.t = t
+        self.transform = transform
+        self.intrinsics = intrinsics
+        self.width = width
+        self.height = height
+        self.imageWidth = imageWidth
+        self.imageHeight = imageHeight
+        self.segment = segment
     }
 }
 
@@ -138,6 +178,8 @@ public struct CaptureScan: Codable, Sendable, Equatable {
     public var openings: [ScanOpening]
     public var objects: [ScanObject]
     public var trajectory: [PoseSample]
+    /// Photos taken while scanning, in the same frame as everything else.
+    public var frames: [CameraFrame]
 
     public init(
         rooms: [ScanRoom],
@@ -145,6 +187,7 @@ public struct CaptureScan: Codable, Sendable, Equatable {
         openings: [ScanOpening] = [],
         objects: [ScanObject] = [],
         trajectory: [PoseSample] = [],
+        frames: [CameraFrame] = [],
         capturedAt: String? = nil,
         device: DeviceInfo? = nil
     ) {
@@ -154,6 +197,7 @@ public struct CaptureScan: Codable, Sendable, Equatable {
         self.openings = openings
         self.objects = objects
         self.trajectory = trajectory
+        self.frames = frames
         self.capturedAt = capturedAt
         self.device = device
     }
@@ -169,6 +213,7 @@ public struct CaptureScan: Codable, Sendable, Equatable {
         openings = try c.decodeIfPresent([ScanOpening].self, forKey: .openings) ?? []
         objects = try c.decodeIfPresent([ScanObject].self, forKey: .objects) ?? []
         trajectory = try c.decodeIfPresent([PoseSample].self, forKey: .trajectory) ?? []
+        frames = try c.decodeIfPresent([CameraFrame].self, forKey: .frames) ?? []
     }
 
     /// Reads scan.json.
@@ -200,6 +245,7 @@ public struct CaptureScan: Codable, Sendable, Equatable {
         copy.openings = openings.filter { $0.transform.isFinite && $0.width.isFinite && $0.height.isFinite }
         copy.objects = objects.filter { $0.transform.isFinite && isFinite($0.size) }
         copy.trajectory = trajectory.filter { $0.t.isFinite && isFinite($0.p) && isFinite($0.f) }
+        copy.frames = frames.filter { $0.t.isFinite && $0.transform.isFinite && $0.intrinsics.count == 9 && $0.intrinsics.allSatisfy(\.isFinite) }
         return copy
     }
 
@@ -217,7 +263,8 @@ public struct CaptureScan: Codable, Sendable, Equatable {
         copy.walls = walls.map { var w = $0; w.transform = transform * $0.transform; return w }
         copy.openings = openings.map { var o = $0; o.transform = transform * $0.transform; return o }
         copy.objects = objects.map { var o = $0; o.transform = transform * $0.transform; return o }
-        copy.trajectory = trajectory.map { PoseSample(t: $0.t, p: transform.apply($0.p), f: transform.applyDirection($0.f)) }
+        copy.trajectory = trajectory.map { PoseSample(t: $0.t, p: transform.apply($0.p), f: transform.applyDirection($0.f), segment: $0.segment) }
+        copy.frames = frames.map { var f = $0; f.transform = transform * $0.transform; return f }
         return copy
     }
 }
