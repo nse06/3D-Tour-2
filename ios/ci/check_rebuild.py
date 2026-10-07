@@ -17,10 +17,11 @@ def main():
     parser.add_argument("sample", type=Path)
     parser.add_argument("--method", required=True)
     parser.add_argument("--tolerance", type=float, required=True)
+    parser.add_argument("--photos", action="store_true", help="the rebuild must have painted the scan's photos onto the model")
     args = parser.parse_args()
     folder, sample = args.folder, args.sample
     info = json.loads((folder / "info.json").read_text())
-    print("info:", json.dumps({k: info.get(k) for k in ("pipeline", "alignment", "structure", "structureError")}))
+    print("info:", json.dumps({k: info.get(k) for k in ("pipeline", "alignment", "structure", "photos", "photoCoverage")}))
     report = json.loads((folder / "alignment.json").read_text())
     print("alignment:", json.dumps({k: v for k, v in report.items() if k != "rooms"}))
     for r in report["rooms"]:
@@ -57,6 +58,18 @@ def main():
     bad = {r: round(e, 3) for r, e in worst.items() if e > args.tolerance}
     assert not bad, f"rooms not back in place: {bad}"
     print(f"rooms fit together again ({args.method}, within {args.tolerance} m)")
+
+    if args.photos:
+        manifest = json.loads((folder / "manifest.json").read_text())
+        assert manifest.get("appearance") == "captured", f"manifest appearance: {manifest.get('appearance')}"
+        assert info.get("photoCoverage", 0) >= 0.15, f"photos cover {info.get('photoCoverage')}"
+        glb = (folder / "scan.glb").read_bytes()
+        length = int.from_bytes(glb[12:16], "little")
+        gltf = json.loads(glb[20:20 + length])
+        mimes = [i.get("mimeType") for i in gltf.get("images", [])]
+        assert mimes and all(m == "image/jpeg" for m in mimes), f"atlas images: {mimes}"
+        assert all("KHR_materials_unlit" in m.get("extensions", {}) for m in gltf["materials"]), "materials must be unlit"
+        print(f"photos painted on: {info['photos']} photos cover {info['photoCoverage']:.0%}, {len(mimes)} JPEG atlas(es)")
 
 
 if __name__ == "__main__":

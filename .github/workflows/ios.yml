@@ -152,11 +152,12 @@ jobs:
           cat "$STATUS"; echo
           xcrun simctl io "$UDID" screenshot shots/3-rebuilt.png > /dev/null 2>&1 || true
           for ID in "$WITH_STRUCTURE" "$WITH_PATH"; do
-            mkdir -p "results/rebuild/$ID" && cp "$DATA/Documents/Scans/$ID"/{alignment.json,info.json,manifest.json} "results/rebuild/$ID/" 2>/dev/null || true
+            mkdir -p "results/rebuild/$ID" && cp "$DATA/Documents/Scans/$ID"/{alignment.json,info.json,manifest.json,scan.glb} "results/rebuild/$ID/" 2>/dev/null || true
+            cp "$DATA/Documents/Scans/$ID/roomplan/structure.json" "results/rebuild/$ID/" 2>/dev/null || true
           done
           test "$stage" = done
           python3 ios/ci/check_rebuild.py "$DATA/Documents/Scans/$WITH_STRUCTURE" sample --method structure --tolerance 0.05
-          python3 ios/ci/check_rebuild.py "$DATA/Documents/Scans/$WITH_PATH" sample --method path --tolerance 0.15
+          python3 ios/ci/check_rebuild.py "$DATA/Documents/Scans/$WITH_PATH" sample --method path --tolerance 0.15 --photos
 
       - name: Upload screenshots and results
         if: always()

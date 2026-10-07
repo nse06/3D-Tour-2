@@ -13,7 +13,12 @@ struct PointLight {
 /// Writes glTF 2.0 binary (.glb): one node per material, PNG textures,
 /// KHR_lights_punctual lights, and the scan manifest in the scene's extras.
 enum GLBWriter {
-    static func write(mesh: MeshBuilder, lights: [PointLight], textureSize: Int, sceneExtras: [String: Any], generator: String) throws -> Data {
+    /// `photoTextures`: material name → encoded image used as its base color (clamped, not repeated).
+    /// `unlit`: every material gets KHR_materials_unlit (photo-textured models carry their own lighting).
+    static func write(
+        mesh: MeshBuilder, lights: [PointLight], textureSize: Int, sceneExtras: [String: Any], generator: String,
+        photoTextures: [String: (data: Data, mimeType: String)] = [:], unlit: Bool = false
+    ) throws -> Data {
         var bin = Data()
         var bufferViews: [[String: Any]] = []
         var accessors: [[String: Any]] = []
@@ -56,9 +61,11 @@ enum GLBWriter {
             return accessors.count - 1
         }
 
-        // Textures used by any material.
+        // Textures used by any material: procedural ones repeat (sampler 0), photo atlases are clamped (sampler 1).
         var images: [[String: Any]] = []
+        var imageSampler: [Int] = []
         var textureIndex: [TextureKind: Int] = [:]
+        var photoTextureIndex: [String: Int] = [:]
         let usedKinds = Set(mesh.order.compactMap { materialLibrary[$0]?.texture })
         for kind in TextureKind.allCases where usedKinds.contains(kind) {
             let image: RGBImage
@@ -68,7 +75,15 @@ enum GLBWriter {
             }
             let view = addView(PNG.encode(image), target: nil)
             images.append(["bufferView": view, "mimeType": "image/png", "name": kind.rawValue])
+            imageSampler.append(0)
             textureIndex[kind] = images.count - 1
+        }
+        for key in mesh.order {
+            guard let photo = photoTextures[key] else { continue }
+            let view = addView(photo.data, target: nil)
+            images.append(["bufferView": view, "mimeType": photo.mimeType, "name": key])
+            imageSampler.append(1)
+            photoTextureIndex[key] = images.count - 1
         }
 
         var materials: [[String: Any]] = []
@@ -78,21 +93,25 @@ enum GLBWriter {
 
         for key in mesh.order {
             guard let buffer = mesh.buffers[key], !buffer.isEmpty else { continue }
-            let def = materialLibrary[key] ?? MaterialDef(name: key, color: "#cccccc")
+            let def = materialLibrary[key] ?? MaterialDef(name: key, color: photoTextures[key] != nil ? "#ffffff" : "#cccccc", roughness: 1)
             var pbr: [String: Any] = [
                 "baseColorFactor": linearColor(def.color) + [1.0],
                 "metallicFactor": Double(def.metalness),
                 "roughnessFactor": Double(def.roughness),
             ]
             if let kind = def.texture, let index = textureIndex[kind] { pbr["baseColorTexture"] = ["index": index] }
+            if let index = photoTextureIndex[key] { pbr["baseColorTexture"] = ["index": index] }
             var material: [String: Any] = ["name": def.name, "pbrMetallicRoughness": pbr]
-            if let emissive = def.emissive {
+            var extensions: [String: Any] = [:]
+            if let emissive = def.emissive, !unlit {
                 material["emissiveFactor"] = linearColor(emissive)
                 if def.emissiveStrength != 1 {
-                    material["extensions"] = ["KHR_materials_emissive_strength": ["emissiveStrength": Double(def.emissiveStrength)]]
+                    extensions["KHR_materials_emissive_strength"] = ["emissiveStrength": Double(def.emissiveStrength)]
                     usesEmissiveStrength = true
                 }
             }
+            if unlit { extensions["KHR_materials_unlit"] = [String: Any]() }
+            if !extensions.isEmpty { material["extensions"] = extensions }
             materials.append(material)
 
             let primitive: [String: Any] = [
@@ -123,7 +142,8 @@ enum GLBWriter {
         var textures: [[String: Any]] = []
         if !images.isEmpty {
             samplers.append(["magFilter": 9729, "minFilter": 9987, "wrapS": 10497, "wrapT": 10497])
-            textures = images.indices.map { ["source": $0, "sampler": 0] }
+            samplers.append(["magFilter": 9729, "minFilter": 9987, "wrapS": 33071, "wrapT": 33071])
+            textures = images.indices.map { ["source": $0, "sampler": imageSampler[$0]] }
         }
 
         align()
@@ -149,6 +169,7 @@ enum GLBWriter {
             extensionsUsed.append("KHR_lights_punctual")
         }
         if usesEmissiveStrength { extensionsUsed.append("KHR_materials_emissive_strength") }
+        if unlit { extensionsUsed.append("KHR_materials_unlit") }
         if !extensionsUsed.isEmpty { json["extensionsUsed"] = extensionsUsed }
 
         var jsonData = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])

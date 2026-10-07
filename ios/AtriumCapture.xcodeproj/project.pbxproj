@@ -17,6 +17,7 @@
 		7955FA69097F598EE44083BF /* MotionRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 717E948C59B3606CE25CA54F /* MotionRecorder.swift */; };
 		81F15CE72B68BE9051069022 /* RoomPlanAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A297B9D67013EF721E92BEB /* RoomPlanAdapter.swift */; };
 		8D414731C6B8EAE9F450822B /* PairingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D57A545AA38FB44B74D1E4A /* PairingSheet.swift */; };
+		BB70A4BF706DD11AC8B7E82C /* ScanPhotos.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CC814AE0570AA4059F53508 /* ScanPhotos.swift */; };
 		C0BD810058883B4BCD0F9A1C /* CaptureModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44259BCD1E9C12867870E07C /* CaptureModel.swift */; };
 		CB0E16F8EE5ADD86BDC81927 /* ScanBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13222E40E47F3636C7CDD249 /* ScanBuilder.swift */; };
 		D4A376C01A925412D87A013F /* CaptureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F7668958D2B29EA30541A7D /* CaptureViewController.swift */; };
@@ -38,6 +39,7 @@
 		44259BCD1E9C12867870E07C /* CaptureModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureModel.swift; sourceTree = "<group>"; };
 		5A01CABDBEE21531813C3BF6 /* AtriumCaptureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtriumCaptureApp.swift; sourceTree = "<group>"; };
 		5F947C75117F62511C63B23D /* ScanCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ScanCore; path = ScanCore; sourceTree = SOURCE_ROOT; };
+		6CC814AE0570AA4059F53508 /* ScanPhotos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanPhotos.swift; sourceTree = "<group>"; };
 		717E948C59B3606CE25CA54F /* MotionRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionRecorder.swift; sourceTree = "<group>"; };
 		784E316122445AF7CFC3FD27 /* AtriumCapture.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AtriumCapture.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7B911C94325B3CE971DCEA87 /* CaptureScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureScreen.swift; sourceTree = "<group>"; };
@@ -91,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				13222E40E47F3636C7CDD249 /* ScanBuilder.swift */,
+				6CC814AE0570AA4059F53508 /* ScanPhotos.swift */,
 			);
 			path = Processing;
 			sourceTree = "<group>";
@@ -256,6 +259,7 @@
 				81F15CE72B68BE9051069022 /* RoomPlanAdapter.swift in Sources */,
 				CB0E16F8EE5ADD86BDC81927 /* ScanBuilder.swift in Sources */,
 				2F30A8218D4180ABAC8965E6 /* ScanDetailView.swift in Sources */,
+				BB70A4BF706DD11AC8B7E82C /* ScanPhotos.swift in Sources */,
 				ECB09D58FC16EE294B318597 /* ScanStore.swift in Sources */,
 				DE7833FABD0470AE0DA7FCE0 /* Theme.swift in Sources */,
 				F73A37FCA445BD9C750E240E /* ZipWriter.swift in Sources */,
@@ -320,7 +324,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -406,7 +410,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

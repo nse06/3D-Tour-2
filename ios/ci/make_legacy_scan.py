@@ -14,7 +14,9 @@ would have it. What lets the rebuild put them back together:
   --with path        scan.json with the walked path only: straight from each
                      room's start to the next one's at 4 Hz, each sample in its
                      room's frame (the origin jumps back to the phone as each
-                     room starts).
+                     room starts), plus a photo every 1.5 s along it
+                     (frames/frames.json; small gradient images) so the rebuild
+                     paints photos onto the model.
 
     make_legacy_scan.py <sample-dir> <Documents/Scans> --with structure|path → prints the scan id
 """
@@ -23,7 +25,9 @@ import argparse
 import copy
 import json
 import math
+import struct
 import uuid
+import zlib
 from pathlib import Path
 
 
@@ -69,6 +73,41 @@ def walk(origins: list) -> list:
     return samples
 
 
+def png(width: int, height: int, k: int) -> bytes:
+    """A small RGB gradient (PNG data; ImageIO reads it whatever the file is called)."""
+    rows = b"".join(
+        b"\x00" + bytes(v for x in range(width) for v in ((x * 255 // width + 37 * k) % 256, y * 255 // height, (k * 53) % 256)) for y in range(height)
+    )
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+
+def frames(samples: list, folder: Path) -> None:
+    """A photo every 1.5 s, looking along the walk, posed in the same frame as its path sample."""
+    (folder / "frames").mkdir()
+    out = []
+    for i in range(0, len(samples) - 1, 6):
+        p, q = samples[i]["p"], samples[i + 1]["p"]
+        f = [q[0] - p[0], 0.0, q[2] - p[2]]
+        n = math.hypot(f[0], f[2])
+        if n < 1e-6:
+            continue
+        f = [f[0] / n, 0.0, f[2] / n]
+        right = [-f[2], 0.0, f[0]]  # forward × up
+        name = f"frames/{len(out):06d}.jpg"
+        (folder / name).write_bytes(png(320, 240, len(out)))
+        out.append({
+            "file": name, "t": samples[i]["t"],
+            "transform": right + [0, 0, 1, 0, 0, -f[0], 0, -f[2], 0, p[0], p[1], p[2], 1],
+            "intrinsics": [260, 0, 0, 0, 260, 0, 160, 120, 1], "width": 320, "height": 240, "imageWidth": 320, "imageHeight": 240,
+        })
+    (folder / "frames" / "frames.json").write_text(json.dumps(out))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("sample", type=Path)
@@ -87,8 +126,10 @@ def main():
     if args.mode == "structure":
         (folder / "roomplan" / "structure.json").write_text(json.dumps(structure(rooms)))
     else:
-        scan = {"format": "atrium.capture-scan/v1", "rooms": [], "trajectory": walk(origins)}
+        path = walk(origins)
+        scan = {"format": "atrium.capture-scan/v1", "rooms": [], "trajectory": path}
         (folder / "scan.json").write_text(json.dumps(scan))
+        frames(path, folder)
     names = [p.parent.name for p in paths]
     stats = dict(rooms=len(names), floors=1, walls=0, doors=0, windows=0, openings=0, objects=0, links=0, triangles=0, floorArea=0.0, glbBytes=0)
     record = dict(id=scan_id, createdAt="2026-10-07T12:00:00Z", roomNames=names, stats=stats, isDemo=False)

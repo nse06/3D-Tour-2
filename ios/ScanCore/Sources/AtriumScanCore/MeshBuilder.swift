@@ -26,6 +26,8 @@ enum UVMode {
     case planXZ(scale: Float)
     /// Vertical faces: (distance along `axis`, height) / scale.
     case vertical(axis: Vec3, scale: Float)
+    /// Photo charts: meters along two in-plane axes from `origin` (turned into atlas UVs later).
+    case chart(origin: Vec3, u: Vec3, v: Vec3)
 
     func uv(_ p: Vec3) -> SIMD2<Float> {
         switch self {
@@ -33,6 +35,8 @@ enum UVMode {
             return SIMD2(p.x / scale, p.z / scale)
         case let .vertical(axis, scale):
             return SIMD2(vdot(p, axis) / scale, -p.y / scale)
+        case let .chart(origin, u, v):
+            return SIMD2(vdot(p - origin, u), vdot(p - origin, v))
         }
     }
 }
@@ -73,11 +77,11 @@ struct MeshBuilder {
     }
 
     /// A triangulated plan polygon at height `y`, facing up or down.
-    mutating func addPlanPolygon(_ poly: [P2], y: Double, facingUp: Bool, material: String, uvScale: Float) {
+    mutating func addPlanPolygon(_ poly: [P2], y: Double, facingUp: Bool, material: String, uvScale: Float, uv: UVMode? = nil) {
         let tris = triangulate(poly)
         guard !tris.isEmpty else { return }
         let n = Vec3(0, facingUp ? 1 : -1, 0)
-        let mode = UVMode.planXZ(scale: uvScale)
+        let mode = uv ?? UVMode.planXZ(scale: uvScale)
         withBuffer(material) { buf in
             let base = poly.map { p -> UInt32 in
                 let v = world(p, y: y)
@@ -113,6 +117,21 @@ struct MeshBuilder {
         guard hi.x > lo.x, hi.y > lo.y, hi.z > lo.z else { return }
         addBox(material: material, skipBottom: skipBottom) { sx, sy, sz in
             frame.apply(Vec3(sx == 0 ? lo.x : hi.x, sy == 0 ? lo.y : hi.y, sz == 0 ? lo.z : hi.z))
+        }
+    }
+
+    /// Appends another buffer's triangles under `material`, mapping its UVs.
+    mutating func append(_ other: MeshBuffer, material: String, uv map: (SIMD2<Float>) -> SIMD2<Float>) {
+        guard !other.isEmpty else { return }
+        withBuffer(material) { buf in
+            let base = UInt32(buf.vertexCount)
+            buf.positions += other.positions
+            buf.normals += other.normals
+            for i in stride(from: 0, to: other.uvs.count, by: 2) {
+                let m = map(SIMD2(other.uvs[i], other.uvs[i + 1]))
+                buf.uvs += [m.x, m.y]
+            }
+            buf.indices += other.indices.map { $0 + base }
         }
     }
 

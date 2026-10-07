@@ -108,10 +108,15 @@ every room returns exactly with the merged structure, and within 0.12 m from a 4
 ```swift
 public struct ScanProcessorOptions { eyeHeight = 1.6, wallThickness = 0.12, includeCeilings = true, includeLights = true }
 public struct ProcessedScan { public let glb: Data; public let manifest: ScanManifest; public let stats: ScanStats }
+public protocol PhotoSource { func image(for frame: CameraFrame) -> RGBImage? }   // decoded photo, sensor orientation
 public enum ScanProcessor {
-  public static func process(_ scan: CaptureScan, options: ScanProcessorOptions = .init()) throws -> ProcessedScan
+  public static func process(_ scan: CaptureScan, options: ScanProcessorOptions = .init(),
+                             photos: PhotoSource? = nil, encodeImage: ImageEncoder? = nil,
+                             photoOptions: PhotoTexturingOptions = .init()) throws -> ProcessedScan
 }
 ```
+
+With `photos` and `scan.frames`, the model is **photo-textured** (§2.4); otherwise it is the styled model below.
 
 `scanproc <scan.json> <out.glb> [--manifest out.json]` runs the same function from the command line.
 
@@ -133,8 +138,6 @@ only one side is cut through both faces.
 * **Objects**: category-styled furniture built from boxes (beds with a headboard toward the nearest wall, sofas with
   a back toward the nearest wall, tables with legs, cabinets, appliances in steel/black, white ceramics, stairs as
   steps) — see §3.4. Unknown categories become a neutral box.
-* **Lights**: one warm point light per room (`KHR_lights_punctual`), 0.6 m below the ceiling at the room's visual
-  center, intensity scaled by floor area.
 
 ### 2.2 glTF output
 
@@ -163,6 +166,32 @@ Identical to the web's `ScanManifest` (`src/lib/tour/scan-manifest.ts`):
   ⇒ link through the walked samples around the transition (≤ 8 points); transitions between floors are
   `kind: "stairs"` and keep the climb (≤ 12 points); (3) rooms that flow into each other with no wall between
   them (open plan, overlapping scans) ⇒ link through the middle of the open stretch of their shared edge.
+
+### 2.4 Photo-textured model (`PhotoTexturing.swift`)
+
+The photos taken while scanning (`CaptureScan.frames`, ~1 every 1.5 s) are painted onto the model, so the
+walkthrough shows the real walls, floors, art, windows and furniture:
+
+* **Geometry**: every wall's inside face is one flat *chart* (pieces between holes share it, so no seams), each
+  room's floor and ceiling is a chart, and each object is a box with a chart per visible face. Only doorways with a
+  scanned room on both sides are cut; other doors and windows stay on the wall, where the photos show them (and the
+  view through the window). Outsides and tops of walls and reveals get a plain material.
+* **Atlases**: charts are packed (shelf packing, 4-texel padding) into up to `maxAtlases` atlases of `atlasSize`²
+  (defaults 3 × 2048²) at `texelSize` (1.2 cm), coarsened until everything fits.
+* **Baking**, two passes so only one photo is decoded at a time: (1) geometry only — for every texel the up to three
+  photos that see it best: facing it, close, near the image center, and not hidden by other surfaces (a 192-pixel
+  depth image per photo, rasterized from the model; a texel counts as hidden if the nearest of the four depth pixels
+  around it is clearly nearer); (2) photo by photo — each photo's pixels are blended into the texels that chose it,
+  weighted toward the best view. Texels no photo saw are filled smoothly from their neighbours (pull-push); charts
+  no photo saw get a neutral color. If the photos cover less than 15% of the surfaces, the styled model is built
+  instead.
+* **Output**: one material per atlas with the photo as base color (JPEG from the app, PNG elsewhere), clamped
+  sampling, `KHR_materials_unlit` on every material and no lights (the lighting is in the photos). The manifest says
+  `"appearance": "captured"`, which the web app uses as the tour's default look; `ScanStats.photoCoverage` is the
+  share of surfaces the photos covered. Tested by ray-casting photos of a room whose surfaces are colored by
+  position: seen texels reproduce the pattern, and a cabinet never leaks onto the wall behind it.
+* **Lights**: one warm point light per room (`KHR_lights_punctual`), 0.6 m below the ceiling at the room's visual
+  center, intensity scaled by floor area.
 
 ## 3. Atrium web API (phone ⇄ server)
 

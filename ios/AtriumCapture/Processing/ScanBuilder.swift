@@ -12,7 +12,8 @@ import UIKit
 enum ScanBuilder {
     /// Bumped whenever rebuilding gives a meaningfully better walkthrough.
     /// 1–2: rooms taken as RoomPlan reported them. 3: rooms aligned into one frame.
-    static let pipelineVersion = 3
+    /// 4: the scan's photos painted onto the model.
+    static let pipelineVersion = 4
 
     enum Step: Int, CaseIterable {
         case combining, modeling, packaging
@@ -171,9 +172,11 @@ enum ScanBuilder {
         guard !parts.isEmpty else { throw Failure.noRooms }
         let poses = structure.map(RoomPlanAdapter.structurePoses)
         let capturedAt = ISO8601DateFormatter().string(from: startedAt)
+        let photos = ScanPhotos(directory: dir)
         let (aligned, processed) = try await Task.detached(priority: .userInitiated) {
             let aligned = RoomAlignment.align(parts: parts, structure: poses, path: path, frames: frames, capturedAt: capturedAt, device: device)
-            return (aligned, try ScanProcessor.process(aligned.scan))
+            // The photos are painted onto the model; with too few of them it falls back to the styled model.
+            return (aligned, try ScanProcessor.process(aligned.scan, photos: photos, encodeImage: ScanPhotos.encodeJPEG))
         }.value
 
         await progress(.packaging)
@@ -195,6 +198,8 @@ enum ScanBuilder {
             "trajectorySamples": path.count,
             "alignment": aligned.report.summary,
             "structure": structureNote,
+            "photos": frames.count,
+            "photoCoverage": processed.stats.photoCoverage ?? 0,
         ]
         try JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]).write(to: dir.appendingPathComponent("info.json"))
         // The package zips these files; an old one would be stale.

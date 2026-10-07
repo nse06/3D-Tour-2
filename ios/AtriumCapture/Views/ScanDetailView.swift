@@ -87,6 +87,12 @@ struct ScanDetailView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if let coverage = scan.stats.photoCoverage {
+                Label("Your photos cover \(Int((coverage * 100).rounded()))% of the surfaces", systemImage: "photo.on.rectangle.angled")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .card()
     }
@@ -97,12 +103,17 @@ struct ScanDetailView: View {
     }
 
     private func rebuildCard(_ scan: ScanRecord) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Fix overlapping rooms", systemImage: "wand.and.stars")
+        let overlapping = (scan.pipeline ?? 1) < 3
+        return VStack(alignment: .leading, spacing: 12) {
+            Label(overlapping ? "Fix overlapping rooms" : "Add your photos to the walkthrough", systemImage: "wand.and.stars")
                 .font(.headline)
-            Text("This scan was built before Atrium Capture lined rooms up with each other, so they may overlap. Rebuilding fixes that from the data already on this iPhone. No rescanning needed. Afterwards, send it to Atrium again.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            Text(
+                overlapping
+                    ? "This scan was built before Atrium Capture lined rooms up with each other or used your photos, so rooms may overlap. Rebuilding fixes that and paints the photos taken while scanning onto the walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
+                    : "This scan was built before Atrium Capture painted the photos taken while scanning onto the model. Rebuild to see your real walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
             Button {
                 model.rebuild(scan)
             } label: {

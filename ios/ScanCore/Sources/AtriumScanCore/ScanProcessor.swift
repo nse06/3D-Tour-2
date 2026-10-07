@@ -40,6 +40,9 @@ public struct ScanStats: Codable, Sendable, Equatable {
     /// Sum of the rooms' floor areas, square meters.
     public var floorArea: Double
     public var glbBytes: Int
+    /// Photo-textured models: share of the surfaces the photos covered (0–1), and photos used.
+    public var photoCoverage: Double? = nil
+    public var photosUsed: Int? = nil
 }
 
 public struct ProcessedScan: Sendable {
@@ -68,7 +71,14 @@ public enum ScanProcessingError: Error, LocalizedError, Equatable {
 public enum ScanProcessor {
     public static let generator = "Atrium ScanCore 1.0"
 
-    public static func process(_ input: CaptureScan, options: ScanProcessorOptions = .init()) throws -> ProcessedScan {
+    /// - Parameters:
+    ///   - photos: decoded photos for `input.frames`; with them, surfaces are painted with the
+    ///     photos (falling back to the styled model if the photos cover too little).
+    ///   - encodeImage: how photo atlases are stored in the .glb (default PNG; the app uses JPEG).
+    public static func process(
+        _ input: CaptureScan, options: ScanProcessorOptions = .init(), photos: PhotoSource? = nil, encodeImage: ImageEncoder? = nil,
+        photoOptions: PhotoTexturingOptions = .init()
+    ) throws -> ProcessedScan {
         guard input.format == CaptureScan.formatIdentifier else { throw ScanProcessingError.unsupportedFormat(input.format) }
         var scan = input.sanitized()
         var frame = Transform.identity
@@ -81,6 +91,13 @@ public enum ScanProcessor {
         guard !rooms.isEmpty else { throw ScanProcessingError.noRooms }
         var walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: options.wallThickness)
         Layout.cutOpenings(scan.openings, into: &walls)
+
+        if let photos, !scan.frames.isEmpty,
+            let textured = try photoTextured(
+                scan, rooms: rooms, walls: walls, frame: frame, options: options, photos: photos, encodeImage: encodeImage, photoOptions: photoOptions)
+        {
+            return textured
+        }
 
         var mesh = MeshBuilder()
         for w in walls { WallGeometry.build(w, into: &mesh) }
@@ -114,6 +131,56 @@ public enum ScanProcessor {
             triangles: mesh.triangleCount, floorArea: rounded(rooms.reduce(0) { $0 + $1.area }, 2), glbBytes: glb.count)
         return ProcessedScan(glb: glb, manifest: manifest, stats: stats, frame: frame)
     }
+
+    /// The photo-textured model, or nil if the photos cover too little of it.
+    static func photoTextured(
+        _ scan: CaptureScan, rooms: [RoomInfo], walls: [WallInfo], frame: Transform, options: ScanProcessorOptions, photos: PhotoSource,
+        encodeImage: ImageEncoder?, photoOptions: PhotoTexturingOptions
+    ) throws -> ProcessedScan? {
+        var model = PhotoModel.build(scan: scan, rooms: rooms, walls: walls, defaultThickness: options.wallThickness, includeCeilings: options.includeCeilings)
+        model.measureCharts()
+        guard let atlasCount = PhotoBaker.pack(&model.charts, options: photoOptions) else { return nil }
+        let cameras = scan.frames.compactMap { PhotoCamera($0, depthWidth: photoOptions.depthWidth) }
+        guard !cameras.isEmpty else { return nil }
+        let baked = PhotoBaker.bake(model: model, cameras: cameras, photos: photos, atlasCount: atlasCount, options: photoOptions)
+        guard baked.coverage >= 0.15 else { return nil }
+
+        var mesh = MeshBuilder()
+        if let plain = model.mesh.buffers[PhotoModel.plainMaterial] { mesh.append(plain, material: Mat.photoPlain) { $0 } }
+        for (i, chart) in model.charts.enumerated() {
+            guard let buffer = model.mesh.buffers[PhotoModel.chartMaterial(i)] else { continue }
+            let size = photoOptions.atlasSize
+            mesh.append(buffer, material: photoMaterial(chart.atlas)) { chart.atlasUV($0, size: size) }
+        }
+        var textures: [String: (data: Data, mimeType: String)] = [:]
+        for (k, atlas) in baked.atlases.enumerated() {
+            textures[photoMaterial(k)] = encodeImage?(atlas) ?? (PNG.encode(atlas), "image/png")
+        }
+
+        var manifest = ManifestBuilder(
+            rooms: rooms, walls: walls, openings: scan.openings, objects: scan.objects, trajectory: scan.trajectory, eyeHeight: options.eyeHeight
+        ).build(generator: generator)
+        manifest.appearance = "captured"
+        let manifestObject = try JSONSerialization.jsonObject(with: try manifest.jsonData())
+        var capture: [String: Any] = [
+            "format": CaptureScan.formatIdentifier, "generator": generator, "frame": frame.m.map(Double.init), "textured": true,
+            "photoCoverage": rounded(baked.coverage, 3),
+        ]
+        if let capturedAt = scan.capturedAt { capture["capturedAt"] = capturedAt }
+        let glb = try GLBWriter.write(
+            mesh: mesh, lights: [], textureSize: 16, sceneExtras: ["atrium": manifestObject, "atriumCapture": capture], generator: generator,
+            photoTextures: textures, unlit: true)
+
+        let stats = ScanStats(
+            rooms: rooms.count, floors: manifest.floors.count, walls: walls.count,
+            doors: scan.openings.filter { $0.kind == .door }.count, windows: scan.openings.filter { $0.kind == .window }.count,
+            openings: scan.openings.filter { $0.kind == .opening }.count, objects: scan.objects.count, links: manifest.links.count,
+            triangles: mesh.triangleCount, floorArea: rounded(rooms.reduce(0) { $0 + $1.area }, 2), glbBytes: glb.count,
+            photoCoverage: rounded(baked.coverage, 3), photosUsed: baked.photosUsed)
+        return ProcessedScan(glb: glb, manifest: manifest, stats: stats, frame: frame)
+    }
+
+    static func photoMaterial(_ atlas: Int) -> String { "Photo_\(atlas + 1)" }
 
     /// Rotation about Y that lines the dominant wall direction up with the X
     /// axis, then a translation putting the plan's center at the origin and the

@@ -63,6 +63,8 @@ public struct ScanManifest: Codable, Sendable, Equatable {
     public var floors: [Floor]
     public var rooms: [Room]
     public var links: [Link]
+    /// "captured" when the model is photo-textured (lighting baked into the photos).
+    public var appearance: String? = nil
 
     public func jsonData(prettyPrinted: Bool = false) throws -> Data {
         let encoder = JSONEncoder()

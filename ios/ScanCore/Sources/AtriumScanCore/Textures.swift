@@ -52,10 +52,19 @@ func fbm(_ u: Double, _ v: Double, _ fx: Int, _ fy: Int, octaves: Int = 4, seed:
 }
 
 /// An 8-bit RGB image.
-struct RGBImage {
-    let width: Int
-    let height: Int
-    var pixels: [UInt8]
+/// An 8-bit RGB image, rows top to bottom.
+public struct RGBImage: Sendable {
+    public let width: Int
+    public let height: Int
+    /// width × height × 3 bytes.
+    public var pixels: [UInt8]
+
+    public init(width: Int, height: Int, pixels: [UInt8]) {
+        precondition(pixels.count == width * height * 3, "RGBImage needs width × height × 3 bytes")
+        self.width = width
+        self.height = height
+        self.pixels = pixels
+    }
 
     init(width: Int, height: Int, fill: (_ u: Double, _ v: Double) -> (Double, Double, Double)) {
         self.width = width
