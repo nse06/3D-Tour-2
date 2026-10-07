@@ -35,5 +35,6 @@ Branch: `claude/3d-real-estate-tour-mvp-pxgyqw`
 | On-device test in a real apartment | done by the user: 4 rooms, 72 m² — sending failed (build 1, fixed in build 2), rooms overlapped (fixed in build 3) |
 | Rooms in one frame (build 3): RoomPlan restarts every room at the phone's position; `RoomAlignment` places rooms on RoomPlan's merged structure, else along the walked path, with doorway checks | done — 10 XCTests; Apple's 11-room sample, rooms shifted into their own frames, comes back exactly; CI rebuilds it in the simulator |
 | Rebuild saved scans without rescanning | done (build 3) — waiting on the user to rebuild their apartment scan |
+| Photos painted on the model (build 4): charts + atlases, two-pass baking with depth-tested best views, exposure matching, unlit model, captured look by default | done — 4 XCTests with ray-cast photos; CI rebuilds a scan with photos in the simulator |
 
-Next: photo-textured meshes from the saved keyframes (in progress), 360° photo spots, navmesh free roaming, analytics.
+Next: the user's verdict on the photo model; 360° photo spots (the user's other option), navmesh free roaming, analytics.
