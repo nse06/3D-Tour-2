@@ -43,3 +43,8 @@ next-env.d.ts
 # local data store (properties + uploads)
 /.data/
 !.env.example
+
+# iOS
+ios/**/xcuserdata/
+ios/build/
+ios/ScanCore/.build/

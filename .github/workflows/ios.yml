@@ -1,6 +1,6 @@
-# Compiles the iPhone capture app against the real iOS SDK on every change under ios/.
-# Code signing is disabled: this proves the project builds; to install it on a phone,
-# open ios/AtriumCapture.xcodeproj in Xcode and run it with your own (free) Apple ID.
+# Builds the iPhone capture app against the real iOS SDK on every change under ios/,
+# and publishes an unsigned .ipa you can install with Sideloadly or AltStore (they sign
+# it with your own Apple ID) — no Mac needed. See ios/README.md.
 name: iOS capture app
 
 on:
@@ -18,7 +18,6 @@ jobs:
   scancore:
     name: ScanCore tests (macOS)
     runs-on: macos-latest
-    if: hashFiles('ios/ScanCore/Package.swift') != ''
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -28,28 +27,38 @@ jobs:
         run: swift test
 
   app:
-    name: Build AtriumCapture (iOS, unsigned)
+    name: Build Atrium Capture (unsigned .ipa)
     runs-on: macos-latest
-    if: hashFiles('ios/AtriumCapture.xcodeproj/project.pbxproj') != ''
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
         run: xcodebuild -version && xcodebuild -showsdks | grep -i ios
-      - name: Build
+      - name: Build (Release, device, unsigned)
         run: |
           set +e
           xcodebuild \
             -project ios/AtriumCapture.xcodeproj \
             -scheme AtriumCapture \
-            -configuration Debug \
+            -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build > build.log 2>&1
           status=$?
-          grep -E -B2 -A6 "error:" build.log | head -400
+          grep -E -B2 -A6 "(error|warning): " build.log | grep -v "^--$" | head -300
           grep -E "BUILD (SUCCEEDED|FAILED)" build.log
           exit $status
+      - name: Package unsigned .ipa
+        run: |
+          mkdir -p dist/Payload
+          cp -R build/Build/Products/Release-iphoneos/AtriumCapture.app dist/Payload/
+          cd dist && zip -qry AtriumCapture-unsigned.ipa Payload && ls -la AtriumCapture-unsigned.ipa
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: AtriumCapture-unsigned-ipa
+          path: dist/AtriumCapture-unsigned.ipa
+          retention-days: 30
       - name: Upload build log
         if: failure()
         uses: actions/upload-artifact@v4

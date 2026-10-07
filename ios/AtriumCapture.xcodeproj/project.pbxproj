@@ -1,0 +1,467 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		040EEDFA8F2D6FFE97290C8F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 235F3426D692D933B6871E22 /* Assets.xcassets */; };
+		26A494D8D273CDEB3261DA7E /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BB5056DBF97032377D64DB6 /* AppModel.swift */; };
+		2F30A8218D4180ABAC8965E6 /* ScanDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF141B11A199D88E6CF44A71 /* ScanDetailView.swift */; };
+		329E28FDBB9EBEBF58DCC518 /* AtriumScanCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5A784F8EB26DDCEBA6B1220C /* AtriumScanCore */; };
+		3C49EDB7A0FEB1EC258EEF75 /* AtriumCaptureApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A01CABDBEE21531813C3BF6 /* AtriumCaptureApp.swift */; };
+		5DF5D7E651DDD8F9A8482652 /* AtriumAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C2E7FD0CA8ADCFBB3EF72A9 /* AtriumAPI.swift */; };
+		600FA14EBAC14CF6C7177629 /* CaptureScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B911C94325B3CE971DCEA87 /* CaptureScreen.swift */; };
+		7955FA69097F598EE44083BF /* MotionRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 717E948C59B3606CE25CA54F /* MotionRecorder.swift */; };
+		81F15CE72B68BE9051069022 /* RoomPlanAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A297B9D67013EF721E92BEB /* RoomPlanAdapter.swift */; };
+		8D414731C6B8EAE9F450822B /* PairingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D57A545AA38FB44B74D1E4A /* PairingSheet.swift */; };
+		C0BD810058883B4BCD0F9A1C /* CaptureModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44259BCD1E9C12867870E07C /* CaptureModel.swift */; };
+		CB0E16F8EE5ADD86BDC81927 /* ScanBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13222E40E47F3636C7CDD249 /* ScanBuilder.swift */; };
+		D4A376C01A925412D87A013F /* CaptureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F7668958D2B29EA30541A7D /* CaptureViewController.swift */; };
+		DE7833FABD0470AE0DA7FCE0 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F93BBC1793430415D527F39 /* Theme.swift */; };
+		DF1A95BDCF38BCCFEB01A6DA /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F670F478F99DC65E5116018 /* HomeView.swift */; };
+		ECB09D58FC16EE294B318597 /* ScanStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E483D89A8ED1BD77985EA5C4 /* ScanStore.swift */; };
+		F73A37FCA445BD9C750E240E /* ZipWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63B3AB195F6307727C6E214 /* ZipWriter.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0BB5056DBF97032377D64DB6 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		0EA4AF3248A03E1522C02D99 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		13222E40E47F3636C7CDD249 /* ScanBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanBuilder.swift; sourceTree = "<group>"; };
+		1C2E7FD0CA8ADCFBB3EF72A9 /* AtriumAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtriumAPI.swift; sourceTree = "<group>"; };
+		235F3426D692D933B6871E22 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		2F7668958D2B29EA30541A7D /* CaptureViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureViewController.swift; sourceTree = "<group>"; };
+		3A297B9D67013EF721E92BEB /* RoomPlanAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomPlanAdapter.swift; sourceTree = "<group>"; };
+		44259BCD1E9C12867870E07C /* CaptureModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureModel.swift; sourceTree = "<group>"; };
+		5A01CABDBEE21531813C3BF6 /* AtriumCaptureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtriumCaptureApp.swift; sourceTree = "<group>"; };
+		5F947C75117F62511C63B23D /* ScanCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ScanCore; path = ScanCore; sourceTree = SOURCE_ROOT; };
+		717E948C59B3606CE25CA54F /* MotionRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionRecorder.swift; sourceTree = "<group>"; };
+		784E316122445AF7CFC3FD27 /* AtriumCapture.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AtriumCapture.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7B911C94325B3CE971DCEA87 /* CaptureScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureScreen.swift; sourceTree = "<group>"; };
+		7D57A545AA38FB44B74D1E4A /* PairingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSheet.swift; sourceTree = "<group>"; };
+		7F670F478F99DC65E5116018 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		9F93BBC1793430415D527F39 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		B63B3AB195F6307727C6E214 /* ZipWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipWriter.swift; sourceTree = "<group>"; };
+		CF141B11A199D88E6CF44A71 /* ScanDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanDetailView.swift; sourceTree = "<group>"; };
+		E483D89A8ED1BD77985EA5C4 /* ScanStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanStore.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		8A47E8F5B62DD4A8BC1068E0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				329E28FDBB9EBEBF58DCC518 /* AtriumScanCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		42CBA1D65732D766C1D75C63 /* Network */ = {
+			isa = PBXGroup;
+			children = (
+				1C2E7FD0CA8ADCFBB3EF72A9 /* AtriumAPI.swift */,
+			);
+			path = Network;
+			sourceTree = "<group>";
+		};
+		465EDF6DC00EDBB95037BACD /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				E483D89A8ED1BD77985EA5C4 /* ScanStore.swift */,
+				B63B3AB195F6307727C6E214 /* ZipWriter.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
+		60FD0DC051166C39AF2BC143 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				5F947C75117F62511C63B23D /* ScanCore */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		63A0D65C762AE4AE1C07E38F /* Processing */ = {
+			isa = PBXGroup;
+			children = (
+				13222E40E47F3636C7CDD249 /* ScanBuilder.swift */,
+			);
+			path = Processing;
+			sourceTree = "<group>";
+		};
+		7469C34373359C39AF0AF600 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				784E316122445AF7CFC3FD27 /* AtriumCapture.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		B10DCF1566A567947A34168F /* AtriumCapture */ = {
+			isa = PBXGroup;
+			children = (
+				0EA4AF3248A03E1522C02D99 /* Info.plist */,
+				B8E0BF5D15722A84C8AB573B /* App */,
+				DC161A358684466F1D7CD7BC /* Capture */,
+				42CBA1D65732D766C1D75C63 /* Network */,
+				63A0D65C762AE4AE1C07E38F /* Processing */,
+				CE7DC7BD04ADFF0BC093C8DE /* Resources */,
+				465EDF6DC00EDBB95037BACD /* Storage */,
+				EA1A3AA24FF98AEBCAD13E4B /* Views */,
+			);
+			path = AtriumCapture;
+			sourceTree = "<group>";
+		};
+		B8E0BF5D15722A84C8AB573B /* App */ = {
+			isa = PBXGroup;
+			children = (
+				0BB5056DBF97032377D64DB6 /* AppModel.swift */,
+				5A01CABDBEE21531813C3BF6 /* AtriumCaptureApp.swift */,
+				9F93BBC1793430415D527F39 /* Theme.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		BFBDC56D5BB5CBC332AD9154 = {
+			isa = PBXGroup;
+			children = (
+				B10DCF1566A567947A34168F /* AtriumCapture */,
+				60FD0DC051166C39AF2BC143 /* Packages */,
+				7469C34373359C39AF0AF600 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		CE7DC7BD04ADFF0BC093C8DE /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				235F3426D692D933B6871E22 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		DC161A358684466F1D7CD7BC /* Capture */ = {
+			isa = PBXGroup;
+			children = (
+				44259BCD1E9C12867870E07C /* CaptureModel.swift */,
+				7B911C94325B3CE971DCEA87 /* CaptureScreen.swift */,
+				2F7668958D2B29EA30541A7D /* CaptureViewController.swift */,
+				717E948C59B3606CE25CA54F /* MotionRecorder.swift */,
+				3A297B9D67013EF721E92BEB /* RoomPlanAdapter.swift */,
+			);
+			path = Capture;
+			sourceTree = "<group>";
+		};
+		EA1A3AA24FF98AEBCAD13E4B /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				7F670F478F99DC65E5116018 /* HomeView.swift */,
+				7D57A545AA38FB44B74D1E4A /* PairingSheet.swift */,
+				CF141B11A199D88E6CF44A71 /* ScanDetailView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		EA3260301508A52D5416789F /* AtriumCapture */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CFA10DEDF30BDF334292A78C /* Build configuration list for PBXNativeTarget "AtriumCapture" */;
+			buildPhases = (
+				ADD3A785949DA40946347DF6 /* Sources */,
+				3FE52A52CBCE48F33957876A /* Resources */,
+				8A47E8F5B62DD4A8BC1068E0 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AtriumCapture;
+			packageProductDependencies = (
+				5A784F8EB26DDCEBA6B1220C /* AtriumScanCore */,
+			);
+			productName = AtriumCapture;
+			productReference = 784E316122445AF7CFC3FD27 /* AtriumCapture.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5BC1D97BA80C4C3FAE1D81FF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					EA3260301508A52D5416789F = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 3BC4FFF66A65280F189C9525 /* Build configuration list for PBXProject "AtriumCapture" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = BFBDC56D5BB5CBC332AD9154;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7B354EB7BB32D54A3037936F /* XCLocalSwiftPackageReference "ScanCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 7469C34373359C39AF0AF600 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				EA3260301508A52D5416789F /* AtriumCapture */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		3FE52A52CBCE48F33957876A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				040EEDFA8F2D6FFE97290C8F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		ADD3A785949DA40946347DF6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				26A494D8D273CDEB3261DA7E /* AppModel.swift in Sources */,
+				5DF5D7E651DDD8F9A8482652 /* AtriumAPI.swift in Sources */,
+				3C49EDB7A0FEB1EC258EEF75 /* AtriumCaptureApp.swift in Sources */,
+				C0BD810058883B4BCD0F9A1C /* CaptureModel.swift in Sources */,
+				600FA14EBAC14CF6C7177629 /* CaptureScreen.swift in Sources */,
+				D4A376C01A925412D87A013F /* CaptureViewController.swift in Sources */,
+				DF1A95BDCF38BCCFEB01A6DA /* HomeView.swift in Sources */,
+				7955FA69097F598EE44083BF /* MotionRecorder.swift in Sources */,
+				8D414731C6B8EAE9F450822B /* PairingSheet.swift in Sources */,
+				81F15CE72B68BE9051069022 /* RoomPlanAdapter.swift in Sources */,
+				CB0E16F8EE5ADD86BDC81927 /* ScanBuilder.swift in Sources */,
+				2F30A8218D4180ABAC8965E6 /* ScanDetailView.swift in Sources */,
+				ECB09D58FC16EE294B318597 /* ScanStore.swift in Sources */,
+				DE7833FABD0470AE0DA7FCE0 /* Theme.swift in Sources */,
+				F73A37FCA445BD9C750E240E /* ZipWriter.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0B5DB384414E2E1F8E0DA38E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AtriumCapture/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.atrium.capture;
+				PRODUCT_NAME = AtriumCapture;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		313D144FE160451A7D4F9DE4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		44BED3C34ABB50AF3F26AE2A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AtriumCapture/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.atrium.capture;
+				PRODUCT_NAME = AtriumCapture;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E90BEEC035A50ED63A1E1A8F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3BC4FFF66A65280F189C9525 /* Build configuration list for PBXProject "AtriumCapture" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				313D144FE160451A7D4F9DE4 /* Debug */,
+				E90BEEC035A50ED63A1E1A8F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CFA10DEDF30BDF334292A78C /* Build configuration list for PBXNativeTarget "AtriumCapture" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				44BED3C34ABB50AF3F26AE2A /* Debug */,
+				0B5DB384414E2E1F8E0DA38E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		7B354EB7BB32D54A3037936F /* XCLocalSwiftPackageReference "ScanCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ScanCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5A784F8EB26DDCEBA6B1220C /* AtriumScanCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AtriumScanCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 5BC1D97BA80C4C3FAE1D81FF /* Project object */;
+}
