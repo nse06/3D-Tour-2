@@ -102,7 +102,7 @@ function defineMaterials(b) {
     brass: b.material("Metal_Brass", { color: "#c7a265", roughness: 0.32, metalness: 1 }),
     blackMetal: b.material("Metal_Black", { color: "#1f1f21", roughness: 0.5, metalness: 0.5 }),
     steel: b.material("Metal_Steel", { color: "#c4c7ca", roughness: 0.3, metalness: 1 }),
-    mirror: b.material("Mirror", { color: "#ffffff", roughness: 0.03, metalness: 1 }),
+    mirror: b.material("Mirror", { color: "#e9ecee", roughness: 0.08, metalness: 0.85 }),
     porcelain: b.material("Porcelain", { color: "#fafaf8", roughness: 0.12 }),
     water: b.material("Water", { color: "#c9d6d8", roughness: 0.05, metalness: 0.2 }),
     glass: b.material("Glass_Shower", { color: "#e4eef0", roughness: 0.04, opacity: 0.16, blend: true, doubleSided: true }),
@@ -119,7 +119,7 @@ function defineMaterials(b) {
     bulb: b.material("Light_Bulb", { color: "#000000", emissive: "#fff1d8", emissiveStrength: 5 }),
     globe: b.material("Light_Globe", { color: "#000000", emissive: "#ffe9c9", emissiveStrength: 2.4 }),
     shade: b.material("Lamp_Shade", { color: "#f1e6d4", emissive: "#ffd8a6", emissiveStrength: 0.9, roughness: 0.9 }),
-    windowPane: b.material("Window_Daylight", { color: "#000000", emissive: "#ffffff", emissiveMap: "window", emissiveStrength: 1.7, roughness: 1 }),
+    windowPane: b.material("Window_Daylight", { color: "#000000", emissive: "#ffffff", emissiveMap: "window", emissiveStrength: 1.45, roughness: 1 }),
     windowFrame: b.material("Window_Frame", { color: "#232325", roughness: 0.45, metalness: 0.3 }),
     shadow: b.material("Contact_Shadow", { color: "#ffffff", map: "shadow", blend: true, roughness: 1 }),
     rugLiving: b.material("Rug_Living", { color: "#ffffff", map: "rugLiving", roughness: 1 }),
@@ -357,11 +357,11 @@ function furnishEntry(b, M) {
     }
     b.box(M.brass, [s * 0.09 - 0.012, 0.85, z - 0.09], [s * 0.09 + 0.012, 1.55, z - 0.07]);
   }
-  F.chandelier(b, M, { pos: [0.2, 4.55, 3.6], ceilingY: H2, r: 0.6, tiers: 2 });
-  b.light({ position: [0.2, 4.4, 3.6], intensity: 26, range: 11, name: "Entry_Chandelier" });
-  F.roundTable(b, M, { pos: [0.35, 0, 3.6], r: 0.62, h: 0.76, top: M.walnut, base: M.walnutDark });
-  F.vase(b, M, { pos: [0.35, 0.76, 3.6], mat: M.ceramicDark, seed: 4 });
-  b.cbox(M.ceramic, [0.75, 0.81, 3.4], [0.22, 0.1, 0.28]);
+  F.chandelier(b, M, { pos: [0.25, 4.05, 3.1], ceilingY: H2, r: 0.62, tiers: 2 });
+  b.light({ position: [0.25, 3.7, 3.1], intensity: 24, range: 11, name: "Entry_Chandelier" });
+  F.roundTable(b, M, { pos: [0.35, 0, 3.1], r: 0.62, h: 0.76, top: M.walnut, base: M.walnutDark });
+  F.vase(b, M, { pos: [0.35, 0.76, 3.1], mat: M.ceramicDark, seed: 4 });
+  b.cbox(M.ceramic, [0.75, 0.81, 2.9], [0.22, 0.1, 0.28]);
   F.art(b, M, { pos: [2.5 - INT_T, 4.55, 3.6], rotY: -Math.PI / 2, w: 2.2, h: 1.1, canvas: M.artLake, frame: M.walnutDark });
   // Bench + mirror on the east wall near the door.
   b.rbox(M.leather, [2.15, 0.45, 5.7], [0.4, 0.08, 1.1], 0.03);
@@ -371,8 +371,8 @@ function furnishEntry(b, M) {
   b.box(M.brass, [2.5 - INT_T - 0.03, 1.0, 5.25], [2.5 - INT_T, 2.3, 6.15]);
   b.box(M.mirror, [2.5 - INT_T - 0.035, 1.03, 5.28], [2.5 - INT_T - 0.03, 2.27, 6.12]);
   F.plant(b, M, { pos: [-0.95, 0, 0.0], height: 1.7, pot: "ceramicDark", seed: 12 });
-  b.light({ position: [0, 2.7, -0.1], intensity: 6, range: 5, name: "Entry_Hall" });
-  F.rugAt(b, M, { pos: [0.3, 0, 1.9], w: 1.4, d: 2.6, mat: M.rugBlue });
+  b.light({ position: [0, 2.1, -0.1], intensity: 5, range: 5, name: "Entry_Hall" });
+  F.rugAt(b, M, { pos: [0.35, 0, 3.1], w: 2.4, d: 2.4, mat: M.rugBlue });
 }
 
 function furnishLiving(b, M) {
@@ -429,7 +429,7 @@ function furnishLiving(b, M) {
   F.rectTable(b, M, { pos: [3.62, 0, 3.6], rotY: Math.PI / 2, w: 2.0, d: 0.38, h: 0.74, top: M.walnut });
   F.tableLamp(b, M, [3.62, 0.74, 2.9]);
   F.tableLamp(b, M, [3.62, 0.74, 4.3]);
-  F.floorLamp(b, M, { pos: [4.55, 0, 5.55] });
+  F.floorLamp(b, M, { pos: [4.5, 0, 1.55] });
   F.plant(b, M, { pos: [8.2, 0, 6.0], height: 1.9, seed: 21 });
   F.plant(b, M, { pos: [3.05, 0, 1.0], height: 1.4, pot: "ceramicDark", seed: 22 });
   // Drapes.
@@ -440,8 +440,8 @@ function furnishLiving(b, M) {
     F.drape(b, M, { pos: [xa - 0.12, 0, 6.5 - EXT_T - 0.09], rotY: Math.PI, w: 0.42, h: H1 - 0.12 });
     F.drape(b, M, { pos: [xb + 0.12, 0, 6.5 - EXT_T - 0.09], rotY: Math.PI, w: 0.42, h: H1 - 0.12 });
   }
-  b.light({ position: [4.6, 2.75, 3.5], intensity: 14, range: 8, name: "Living_A" });
-  b.light({ position: [7.3, 2.75, 3.5], intensity: 14, range: 8, name: "Living_B" });
+  b.light({ position: [4.6, 2.05, 3.5], intensity: 12, range: 8, name: "Living_A" });
+  b.light({ position: [7.3, 2.05, 3.5], intensity: 12, range: 8, name: "Living_B" });
 }
 
 function furnishDining(b, M) {
@@ -557,7 +557,7 @@ function furnishKitchen(b, M) {
   F.pendant(b, M, { pos: [nx, 1.95, nz], ceilingY: H1, r: 0.28, mat: M.blackMetal });
   b.light({ position: [nx, 1.8, nz], intensity: 9, range: 6, name: "Kitchen_Nook" });
   F.plant(b, M, { pos: [-7.5, 0, -1.55], height: 1.6, seed: 43 });
-  b.light({ position: [-2.0, 2.75, -2.0], intensity: 8, range: 7, name: "Kitchen_Fill" });
+  b.light({ position: [-2.0, 2.05, -2.0], intensity: 7, range: 7, name: "Kitchen_Fill" });
 }
 
 function furnishOffice(b, M) {
@@ -588,10 +588,10 @@ function furnishOffice(b, M) {
   b.cbox(M.books[0], [-4.4, 0.44, 3.15], [0.28, 0.04, 0.2]);
   // Full-height library wall.
   F.bookshelf(b, M, { pos: [-5.2, 0, -1 + INT_T + 0.19], rotY: 0, w: 4.8, h: 2.8, d: 0.38, shelves: 6, frame: M.walnutDark, seed: 19, fill: 0.82 });
-  b.light({ position: [-5.2, 2.6, 0.2], intensity: 4, range: 4, name: "Office_Shelves" });
+  b.light({ position: [-5.2, 2.2, 0.4], intensity: 4, range: 4, name: "Office_Shelves" });
   F.floorLamp(b, M, { pos: [-7.5, 0, 5.9] });
   F.plant(b, M, { pos: [-3.0, 0, 6.0], height: 1.5, pot: "ceramicDark", seed: 51 });
-  b.light({ position: [-5.2, 2.75, 3.0], intensity: 12, range: 7, name: "Office" });
+  b.light({ position: [-5.2, 2.05, 3.0], intensity: 12, range: 7, name: "Office" });
   for (const [xa, xb] of [
     [-7.2, -5.6],
     [-4.9, -3.3],
@@ -613,8 +613,8 @@ function furnishLanding(b, M) {
     b.cyl(M.brass, [x, H2 - 0.03, -0.2], 0.2, 0.2, 0.04, 24);
     b.cyl(M.globe, [x, H2 - 0.07, -0.2], 0.17, 0.18, 0.05, 24);
   }
-  b.light({ position: [-2.6, H2 - 0.4, -0.2], intensity: 9, range: 7, name: "Landing_A" });
-  b.light({ position: [-6.0, H2 - 0.4, -0.2], intensity: 5, range: 5, name: "Landing_B" });
+  b.light({ position: [-2.6, H2 - 0.95, -0.2], intensity: 8, range: 7, name: "Landing_A" });
+  b.light({ position: [-6.0, H2 - 0.95, -0.2], intensity: 5, range: 5, name: "Landing_B" });
 }
 
 function furnishPrimary(b, M) {
@@ -651,7 +651,7 @@ function furnishPrimary(b, M) {
     F.drape(b, M, { pos: [xa - 0.12, F2, 6.5 - EXT_T - 0.09], rotY: Math.PI, w: 0.4, h: H2 - F2 - 0.12 });
     F.drape(b, M, { pos: [xb + 0.12, F2, 6.5 - EXT_T - 0.09], rotY: Math.PI, w: 0.4, h: H2 - F2 - 0.12 });
   }
-  b.light({ position: [5.75, H2 - 0.35, 2.5], intensity: 12, range: 8, name: "Primary" });
+  b.light({ position: [5.75, H2 - 0.95, 2.5], intensity: 11, range: 8, name: "Primary" });
 }
 
 function furnishPrimaryBath(b, M) {
@@ -702,14 +702,14 @@ function furnishPrimaryBath(b, M) {
   F.rugAt(b, M, { pos: [4.0, F2, -3.7], w: 0.7, d: 1.6, mat: M.rugBlue });
   b.cyl(M.walnut, [4.65, F2 + 0.22, -5.95], 0.17, 0.15, 0.44, 24);
   F.plant(b, M, { pos: [3.1, F2, -5.95], height: 1.2, pot: "ceramicDark", seed: 81 });
-  b.light({ position: [5.75, H2 - 0.35, -4.0], intensity: 11, range: 7, name: "Primary_Bath" });
+  b.light({ position: [5.75, H2 - 0.95, -4.0], intensity: 10, range: 7, name: "Primary_Bath" });
 }
 
 function furnishBedroom2(b, M) {
   const wallX = -8 + EXT_T;
   const bz = 3.7;
   F.rugAt(b, M, { pos: [-6.0, F2, bz], w: 2.6, d: 3.2, mat: M.rugBlue });
-  F.bed(b, M, { pos: [-6.85, F2, bz], rotY: Math.PI / 2, width: 1.65, length: 2.1, frame: M.walnut, headboard: M.velvetNavy, duvet: M.duvet, sheet: M.linen, pillows: M.linenTaupe, throwMat: M.sage });
+  F.bed(b, M, { pos: [-6.6, F2, bz], rotY: Math.PI / 2, width: 1.65, length: 2.1, frame: M.walnut, headboard: M.velvetNavy, duvet: M.duvet, sheet: M.linen, pillows: M.linenTaupe, throwMat: M.sage });
   for (const s of [-1, 1]) F.nightstand(b, M, { pos: [wallX + 0.3, F2, bz + s * 1.2], rotY: Math.PI / 2, mat: M.cabinet });
   b.light({ position: [wallX + 0.3, F2 + 1.1, bz - 1.2], intensity: 2, range: 3, name: "Bed2_Lamp" });
   F.art(b, M, { pos: [wallX, F2 + 1.95, bz], rotY: Math.PI / 2, w: 1.1, h: 0.75, canvas: M.artCircles, frame: M.walnut });
@@ -718,7 +718,7 @@ function furnishBedroom2(b, M) {
   F.diningChair(b, M, { pos: [-3.4, F2, 5.1], rotY: Math.PI / 2, mat: M.sage });
   F.tableLamp(b, M, [-2.8, F2 + 0.75, 5.55], 0.85);
   F.plant(b, M, { pos: [-2.95, F2, 1.35], height: 1.3, seed: 91 });
-  b.light({ position: [-5.25, H2 - 0.35, 3.6], intensity: 10, range: 7, name: "Bedroom2" });
+  b.light({ position: [-5.25, H2 - 0.95, 3.6], intensity: 9, range: 7, name: "Bedroom2" });
 }
 
 function furnishBedroom3(b, M) {
@@ -733,7 +733,7 @@ function furnishBedroom3(b, M) {
   F.loungeChair(b, M, { pos: [-7.2, F2, -5.7], rotY: 0.75, mat: M.rust });
   F.floorLamp(b, M, { pos: [-7.55, F2, -4.95] });
   F.bookshelf(b, M, { pos: [-7.78 + 0.18, F2, -1.5 - 0.6], rotY: Math.PI / 2, w: 1.0, h: 1.9, d: 0.34, shelves: 4, frame: M.cabinet, seed: 29, fill: 0.7 });
-  b.light({ position: [-5.25, H2 - 0.35, -3.85], intensity: 10, range: 7, name: "Bedroom3" });
+  b.light({ position: [-5.25, H2 - 0.95, -3.85], intensity: 9, range: 7, name: "Bedroom3" });
 }
 
 // ---------------------------------------------------------------------------
@@ -761,11 +761,11 @@ function buildManifest(rooms) {
   const e1 = EYE;
   const e2 = F2 + EYE;
   const waypoints = {
-    entry: lookAt([0.95, e1, 5.75], [-0.9, 2.3, 0.2]),
-    living: lookAt([3.3, e1, 6.0], [8.4, 1.25, 2.6]),
+    entry: lookAt([1.05, e1, 6.0], [-0.55, 2.55, 0.0]),
+    living: lookAt([3.75, e1, 5.85], [8.4, 1.2, 2.3]),
     dining: lookAt([3.3, e1, 0.05], [7.6, 1.05, -4.9]),
     kitchen: lookAt([2.05, e1, -1.45], [-3.6, 1.0, -5.4]),
-    office: lookAt([-3.05, e1, -0.45], [-6.9, 1.15, 4.6]),
+    office: lookAt([-3.55, e1, 5.85], [-6.7, 1.3, 0.1]),
     landing: lookAt([1.75, e2, -0.65], [-1.6, F2 + 0.9, 3.8]),
     primary: lookAt([3.2, e2, -0.95], [8.1, F2 + 0.75, 3.9]),
     primaryBath: lookAt([8.15, e2, -2.0], [4.1, F2 + 0.95, -5.85]),

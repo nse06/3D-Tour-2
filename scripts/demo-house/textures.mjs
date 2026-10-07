@@ -305,7 +305,7 @@ export function contactShadow(size = 256) {
     const dx = Math.max(Math.abs(u - 0.5) - 0.22, 0);
     const dy = Math.max(Math.abs(v - 0.5) - 0.22, 0);
     const d = Math.sqrt(dx * dx + dy * dy) / 0.28;
-    const a = Math.pow(clamp01(1 - d), 1.8) * 0.72;
+    const a = Math.pow(clamp01(1 - d), 1.5) * 0.85;
     return [0, 0, 0, a * 255];
   });
 }

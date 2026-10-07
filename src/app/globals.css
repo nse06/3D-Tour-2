@@ -1,26 +1,85 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-cormorant), "Cormorant Garamond", ui-serif, Georgia, serif;
+
+  --color-ink: #161514;
+  --color-paper: #f7f4ef;
+  --color-linen: #efe9df;
+  --color-sand: #e4dccf;
+  --color-stone: #8b8479;
+  --color-gold: #b8955a;
+  --color-gold-soft: #d6b67c;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html,
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+.font-display {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* Frosted overlay panels used throughout the 3D viewer. */
+.glass {
+  background: rgba(22, 20, 18, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.glass-strong {
+  background: rgba(22, 20, 18, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+}
+
+@keyframes title-card {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(6px);
+  }
+  18%,
+  70% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+    filter: blur(4px);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.title-card {
+  animation: title-card 2.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise {
+  animation: rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
 }

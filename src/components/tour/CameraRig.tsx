@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/immutability, react-hooks/refs -- the camera rig drives three.js objects imperatively from the render loop, as is idiomatic with React Three Fiber. */
+
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, type MutableRefObject, type RefObject } from "react";
 import * as THREE from "three";
@@ -63,7 +65,7 @@ function travelProgress(t: number, ramp: number) {
 }
 
 export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, active, mode, onRoomChange, onMovingChange, onFade }: Props) {
-  const { camera, gl, raycaster } = useThree();
+  const { camera, gl, raycaster, scene } = useThree();
   const cam = camera as THREE.PerspectiveCamera;
   const cursorRef = useRef<THREE.Group>(null);
 
@@ -171,6 +173,8 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
         }
       },
       captureFrame: (width = 1280) => {
+        // Render synchronously so the drawing buffer is valid without preserveDrawingBuffer.
+        gl.render(scene, camera);
         const src = gl.domElement;
         const c = document.createElement("canvas");
         const ratio = src.height / src.width;
@@ -352,7 +356,8 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
   // --- Frame loop ----------------------------------------------------------
 
   useFrame((_, rawDt) => {
-    const dt = Math.min(rawDt, 0.05);
+    // Generous cap so slow devices still finish moves on time, small enough to avoid jumps after tab switches.
+    const dt = Math.min(rawDt, 0.12);
     const st = s.current;
     const sp = latest.current.space;
 

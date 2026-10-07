@@ -305,17 +305,17 @@ export function buildWallRun(b, run) {
   }
   put(mat, cursor, to, y0, y1);
 
-  if (!trim) return;
   const proud = (d) => (side > 0 ? [inner, inner + d] : [inner - d, inner]);
 
-  // Baseboards (skip floor-level openings).
-  const baseH = 0.13;
-  let c2 = from;
-  for (const o of ops) {
-    if (o.y0 <= y0 + 0.02) {
-      put(trim, c2, o.a, y0, y0 + baseH, ...proud(0.016));
-      c2 = o.b;
-    }
+  if (trim) {
+    // Baseboards (skip floor-level openings).
+    const baseH = 0.13;
+    let c2 = from;
+    for (const o of ops) {
+      if (o.y0 <= y0 + 0.02) {
+        put(trim, c2, o.a, y0, y0 + baseH, ...proud(0.016));
+        c2 = o.b;
+      }
   }
   put(trim, c2, to, y0, y0 + baseH, ...proud(0.016));
 
@@ -329,9 +329,10 @@ export function buildWallRun(b, run) {
     }
   }
   put(trim, c3, to, y1 - crownH, y1, ...proud(0.03));
+  }
 
   for (const o of ops) {
-    if (o.kind === "door" || o.kind === "opening") {
+    if ((o.kind === "door" || o.kind === "opening") && trim) {
       // Casings around the opening on this side.
       const w = 0.075;
       put(trim, o.a - w, o.a, y0, o.y1 + w, ...proud(0.02));

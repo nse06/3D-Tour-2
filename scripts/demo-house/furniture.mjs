@@ -5,7 +5,7 @@
 import { rng } from "./textures.mjs";
 
 export function shadow(b, M, pos, w, d, rotY = 0, strength = 1) {
-  b.plane(M.shadow, [pos[0], pos[1] + 0.004, pos[2]], w * 1.35 * strength, d * 1.35 * strength, rotY);
+  b.plane(M.shadow, [pos[0], pos[1] + 0.018, pos[2]], w * 1.35 * strength, d * 1.35 * strength, rotY);
 }
 
 export function sofa(b, M, { pos, rotY = 0, length = 2.6, depth = 1.0, mat, pillow }) {
@@ -174,7 +174,7 @@ export function plant(b, M, { pos, height = 1.6, pot = "ceramic", seed = 1 }) {
       const rad = 0.08 + r() * 0.28 * (1 - t * 0.3);
       const y = potH + stemH * t;
       const s = 0.09 + r() * 0.07;
-      b.sphere(r() > 0.5 ? M.leaf : M.leaf2, [Math.cos(ang) * rad, y, Math.sin(ang) * rad], s, [1.4, 0.5, 1], 0);
+      b.sphere(r() > 0.5 ? M.leaf : M.leaf2, [Math.cos(ang) * rad, y, Math.sin(ang) * rad], s, [1.4, 0.5, 1], 1);
     }
   });
   shadow(b, M, pos, 0.5, 0.5);
