@@ -149,10 +149,10 @@ The repository interface (`src/lib/data/repository.ts`) has two implementations,
 ## Deploying (Vercel)
 
 1. Import the repo into Vercel (framework: Next.js).
-2. Add the Supabase env vars (and optionally `NEXT_PUBLIC_SITE_URL`).
-3. Deploy.
+2. In the Vercel project: **Storage → Create Database → Supabase**, connected to the project. This sets every variable Atrium needs (URL, keys, and `POSTGRES_URL_NON_POOLING`).
+3. Deploy, then open the dashboard. The first visit creates the database tables, security policies and storage bucket by itself (`src/lib/migrations.ts`, tracked in `public.atrium_migrations`; upgrades apply on the next visit to `/setup`). If the deployment has no direct database URL, `/setup` shows the SQL to paste instead.
 
-Without Supabase, a Vercel deployment still runs, but stores data in `/tmp`, which is ephemeral (the dashboard shows "Temporary storage"). `/tour/sample` always works.
+Sign-ups are confirmed immediately when the server has the Supabase admin key. Without Supabase, a deployment still runs but has nowhere durable to keep listings, so the dashboard sends you to `/setup`. `/tour/sample` always works.
 
 ---
 
