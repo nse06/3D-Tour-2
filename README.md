@@ -4,7 +4,7 @@
 
 Atrium is a web platform for realtors. A listing gets a shareable link (`/tour/1234-sheridan-road`) that drops buyers straight into an immersive, first‑person 3D walkthrough of the home: they glide room to room, look around, climb the stairs, and always see where they are on a live floor plan.
 
-This repository is the **web MVP**: the realtor dashboard, the publishing flow, and the 3D viewer. The capture layer (a native iPhone app using LiDAR/ARKit/RoomPlan) is **not built yet**. It is simulated with prebuilt `.glb` captures, including one demo home. The architecture treats an uploaded `.glb` as a stand-in for a future scan package, so the viewer and backend won't change when real scans arrive.
+This repository holds the **web app** (realtor dashboard, publishing flow, 3D viewer) and the **Atrium Capture iPhone app** ([`ios/`](ios/README.md)), which scans a home room by room with LiDAR (RoomPlan), records the path walked between rooms, and sends the finished walkthrough to a listing. Uploaded `.glb` models and the bundled demo home use the same pipeline.
 
 It is deliberately **not** a photo gallery, slideshow, hotspot tour or listing site. The 3D walkthrough is the product.
 
@@ -118,21 +118,16 @@ A capture can embed its spatial structure in the glTF scene extras (`scenes[0].e
 
 ---
 
-## Future capture workflow (documented, intentionally not implemented)
+## iPhone capture (Atrium Capture)
 
-1. Realtor opens the Atrium iPhone app.
-2. Creates (or selects) the property.
-3. Starts a scan.
-4. RoomPlan guides them through the house.
-5. The app captures multiple rooms.
-6. The app records the camera trajectory (ARKit).
-7. The app captures RGB imagery for textures.
-8. Rooms are merged into a unified property structure (multi-room RoomPlan `StructureBuilder`).
-9. The scan package is uploaded (`tours.scan_package_url`, `source = 'ios_scan'`, `processing_status = 'processing'`).
-10. The backend processes it: textured mesh → `.glb` (`asset_url`), RoomPlan rooms → floors/rooms/footprints, trajectory → waypoints/links (the scan manifest).
-11. The web viewer creates the walkthrough automatically (`processing_status = 'ready'`). No manual 3D modeling by the realtor.
+Install, pairing and scanning guide: **[ios/README.md](ios/README.md)**. Contracts: [docs/iphone-capture.md](docs/iphone-capture.md).
 
-Everything after step 9 lands in the same tables and the same viewer used today. Uploading `public/demo/sheridan-road.glb` already exercises that path end to end.
+1. In the dashboard, a listing's **Connect an iPhone** shows a QR code (a one-day pairing token, stored hashed).
+2. The app scans room by room with RoomPlan in one continuous AR session, so every room and the walked path share one coordinate space; the realtor names each room.
+3. On the phone, ScanCore (`ios/ScanCore`, a Swift package that also runs on Linux) turns the rooms and the path into the walkthrough `.glb` with an embedded scan manifest: floors, room footprints, viewpoints chosen from where the realtor stood, and links through doorways and along the walked route.
+4. The app uploads the model and a raw scan package straight to storage (`/api/capture/sessions/<token>/…`), then the server attaches it to the listing (`source = 'ios_scan'`, `scan_package_url`) and the dashboard refreshes. No manual 3D work.
+
+CI builds an unsigned `.ipa` (sideload with Sideloadly/AltStore), runs the app in a simulator against a mock server, and can upload to TestFlight.
 
 ---
 
@@ -205,7 +200,7 @@ About 120k triangles, PBR materials with procedural textures (oak, marble, walnu
 
 ### Known limitations (by design for the MVP)
 
-* No native iOS capture yet (simulated with `.glb` uploads).
+* iPhone scans are RoomPlan geometry (walls, openings, styled furniture boxes), not photo-textured meshes; RGB keyframes are uploaded in the scan package for future texturing.
 * `.gltf` uploads must be self-contained (embedded buffers). Use `.glb` otherwise.
 * One active capture per listing. Saving rooms replaces the tour's floors and rooms; in Supabase mode that is a short sequence of statements rather than a single transaction.
 * Uploaded models without a manifest get rooms and auto-links from the editor, but no footprints. Their floor plan shows room markers instead of polygons.
