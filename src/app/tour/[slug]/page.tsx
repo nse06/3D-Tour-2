@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import TourViewer from "@/components/tour/TourViewer";
+import { bundleToTourData, getRepository } from "@/lib/data/repository";
 import { SAMPLE_SLUG, sampleTour } from "@/lib/demo";
+
+// Public, shareable tour page: /tour/1234-sheridan-road
+export const dynamic = "force-dynamic";
 
 async function loadTour(slug: string) {
   if (slug === SAMPLE_SLUG) return sampleTour();
-  return null;
+  const bundle = await (await getRepository()).getPublishedBySlug(slug);
+  return bundle ? bundleToTourData(bundle) : null;
 }
 
 export async function generateMetadata(props: PageProps<"/tour/[slug]">): Promise<Metadata> {

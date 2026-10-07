@@ -29,8 +29,8 @@ interface Props {
   data: TourData;
   /** Optional banner (e.g. "Preview — not yet published"). */
   banner?: ReactNode;
-  /** Absolute share URL; defaults to the current location. */
-  shareUrl?: string;
+  /** Public tour path/URL to share; defaults to the current page. `null` = not shareable yet (draft). */
+  shareUrl?: string | null;
 }
 
 const FALLBACK_START: Waypoint = { position: [0, 1.6, 0], yaw: 0, pitch: 0 };
@@ -156,7 +156,11 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
   };
 
   const share = async () => {
-    const url = shareUrl ?? window.location.href;
+    if (shareUrl === null) {
+      setToast("Publish this tour to get a shareable link");
+      return;
+    }
+    const url = shareUrl ? new URL(shareUrl, window.location.origin).toString() : window.location.href;
     const title = `${property.addressLine} — 3D walkthrough`;
     try {
       if (isTouch && navigator.share) {
@@ -270,10 +274,10 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
             <button onClick={() => step(-1)} className="grid size-10 place-items-center rounded-full text-white/85 transition hover:bg-white/15 hover:text-white" aria-label="Previous room">
               <ChevronLeft className="size-5" />
             </button>
-            <button onClick={() => setRoomsOpen(true)} className="min-w-[150px] px-3 text-center md:min-w-[210px] md:cursor-default" aria-label="Current room">
+            <button onClick={() => setRoomsOpen(true)} className="min-w-[132px] px-2 text-center md:min-w-[210px] md:cursor-default md:px-3" aria-label="Current room">
               <span className="block text-[15px] font-medium leading-tight">{currentRoom?.name ?? "Exploring"}</span>
-              <span className="block text-[11px] uppercase tracking-[0.18em] text-white/55">
-                {currentFloor?.name ?? ""} {currentIndex >= 0 && <>· {currentIndex + 1} / {order.length}</>}
+              <span className="block whitespace-nowrap text-[10px] uppercase tracking-[0.14em] text-white/55 md:text-[11px] md:tracking-[0.18em]">
+                {currentFloor?.name ?? ""} {currentIndex >= 0 && <>· {currentIndex + 1}/{order.length}</>}
               </span>
             </button>
             <button onClick={() => step(1)} className="grid size-10 place-items-center rounded-full bg-white text-neutral-900 transition hover:bg-white/90" aria-label="Next room">

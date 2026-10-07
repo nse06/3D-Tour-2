@@ -41,7 +41,7 @@ export function FloorPlan({ floor, rooms, currentRoomId, poseRef, onRoomClick, c
   }, [floor, rooms]);
 
   const scale = Math.max(bounds.w, bounds.h) / 18; // keeps strokes/text proportional for small or huge plans
-  const labelSize = 0.36 * scale;
+  const labelSize = 0.58 * scale;
 
   // Live position marker, updated every frame without React renders.
   useEffect(() => {

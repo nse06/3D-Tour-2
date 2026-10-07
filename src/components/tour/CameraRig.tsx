@@ -36,6 +36,12 @@ interface Motion {
 }
 
 const BASE_FOV = 68;
+/** Keep at least ~54° of horizontal view on portrait phones (vertical FOV grows instead). */
+function baseFovFor(aspect: number) {
+  if (!(aspect > 0) || aspect >= 1) return BASE_FOV;
+  const v = (2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(54) / 2) / aspect) * 180) / Math.PI;
+  return THREE.MathUtils.clamp(v, BASE_FOV, 96);
+}
 const LOOK_SPEED = 0.0042;
 const WALK_SPEED = 1.5;
 const TURN_SPEED = 1.7;
@@ -65,7 +71,10 @@ function travelProgress(t: number, ramp: number) {
 }
 
 export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, active, mode, onRoomChange, onMovingChange, onFade }: Props) {
-  const { camera, gl, raycaster, scene } = useThree();
+  const { camera, gl, raycaster, scene, size } = useThree();
+  const baseFov = baseFovFor(size.width / size.height);
+  const baseFovRef = useRef(baseFov);
+  baseFovRef.current = baseFov;
   const cam = camera as THREE.PerspectiveCamera;
   const cursorRef = useRef<THREE.Group>(null);
 
@@ -74,7 +83,7 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
     pitch: startWaypoint.pitch,
     yawTarget: startWaypoint.yaw + 0.55,
     pitchTarget: startWaypoint.pitch,
-    fovTarget: BASE_FOV + 8,
+    fovTarget: baseFov + 6,
     motion: null as Motion | null,
     fade: null as null | { phase: "out" | "in"; t: number; target: Waypoint },
     pointers: new Map<number, { x: number; y: number }>(),
@@ -98,6 +107,11 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
   }, []);
 
   const roomsById = useMemo(() => new Map(space.rooms.map((r) => [r.id, r])), [space]);
+
+  // Re-frame when the viewport changes shape (e.g. a phone rotates).
+  useEffect(() => {
+    if (s.current.started) s.current.fovTarget = baseFov;
+  }, [baseFov]);
 
   // --- Movement primitives -------------------------------------------------
 
@@ -186,12 +200,48 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
         ctx.drawImage(src, 0, (src.height - sh) / 2, src.width, sh, 0, 0, c.width, c.height);
         return c.toDataURL("image/jpeg", 0.86);
       },
+      lineOfSight: (a, b) => {
+        const model = modelRef.current;
+        if (!model) return false;
+        const from = new THREE.Vector3(...a);
+        const dir = new THREE.Vector3(...b).sub(from);
+        const len = dir.length();
+        if (len < 1e-3) return true;
+        raycaster.set(from, dir.normalize());
+        raycaster.far = len;
+        const hits = raycaster.intersectObject(model, true).filter((h) => !h.object.userData.noPick);
+        raycaster.far = Infinity;
+        return hits.length === 0;
+      },
+      snapToFloor: () => {
+        const model = modelRef.current;
+        if (!model) return false;
+        raycaster.set(camera.position, new THREE.Vector3(0, -1, 0));
+        raycaster.far = 6;
+        const hit = raycaster.intersectObject(model, true).find((h) => !h.object.userData.noPick);
+        raycaster.far = Infinity;
+        if (!hit) return false;
+        camera.position.y = hit.point.y + latest.current.space.eyeHeight;
+        return true;
+      },
     };
     return () => {
       apiRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomsById]);
+
+  // Captures without rooms yet (fresh uploads): start at the model's center, standing on its lowest floor.
+  useEffect(() => {
+    if (space.rooms.length || !modelRef.current) return;
+    const box = new THREE.Box3().setFromObject(modelRef.current);
+    if (box.isEmpty()) return;
+    const c = box.getCenter(new THREE.Vector3());
+    camera.position.set(c.x, box.min.y + space.eyeHeight, c.z);
+    Object.assign(s.current, { yaw: 0, yawTarget: 0, pitch: 0, pitchTarget: 0, started: true });
+    // The model is mounted in the same commit, before this effect runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Intro: a gentle settling pan when the visitor enters.
   useEffect(() => {
@@ -274,14 +324,14 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
       if (st.pointers.size === 2) {
         const [a, b] = [...st.pointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (st.pinchDist > 0) st.fovTarget = THREE.MathUtils.clamp(st.fovTarget * (st.pinchDist / d), 35, 85);
+        if (st.pinchDist > 0) st.fovTarget = THREE.MathUtils.clamp(st.fovTarget * (st.pinchDist / d), 35, Math.max(85, baseFovRef.current));
         st.pinchDist = d;
         st.downAt.moved += 100;
         return;
       }
       st.downAt.moved += Math.abs(dx) + Math.abs(dy);
       if (st.motion) return;
-      const k = LOOK_SPEED * (cam.fov / BASE_FOV) * (e.pointerType === "touch" ? 1.25 : 1);
+      const k = LOOK_SPEED * (cam.fov / baseFovRef.current) * (e.pointerType === "touch" ? 1.25 : 1);
       st.yawTarget += dx * k;
       st.pitchTarget = THREE.MathUtils.clamp(st.pitchTarget + dy * k, -1.25, 1.25);
       st.hover = null;
@@ -310,7 +360,7 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
     const onWheel = (e: WheelEvent) => {
       if (!st.started) return;
       e.preventDefault();
-      st.fovTarget = THREE.MathUtils.clamp(st.fovTarget + e.deltaY * 0.03, 35, 85);
+      st.fovTarget = THREE.MathUtils.clamp(st.fovTarget + e.deltaY * 0.03, 35, Math.max(85, baseFovRef.current));
     };
     const onLeave = () => {
       st.hover = null;
@@ -322,7 +372,7 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTyping() || e.metaKey || e.ctrlKey) return;
       const k = e.key.toLowerCase();
-      if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d", "q", "e", "r", "f"].includes(k)) {
+      if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d", "q", "e", "r", "f", "shift"].includes(k)) {
         st.keys.add(k);
         if (k.startsWith("arrow")) e.preventDefault();
       }
@@ -396,7 +446,7 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
       }
       st.yaw = st.yawTarget = yaw;
       st.pitch = st.pitchTarget = pitch;
-      if (!st.started || t >= 1) st.fovTarget = BASE_FOV;
+      if (!st.started || t >= 1) st.fovTarget = baseFovRef.current;
       if (t >= 1) {
         st.motion = null;
         latest.current.onMovingChange(false);
@@ -411,11 +461,12 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
         if (k.has("f")) st.pitchTarget = Math.max(-1.2, st.pitchTarget - dt);
         const fwd = (k.has("arrowup") || k.has("w") ? 1 : 0) - (k.has("arrowdown") || k.has("s") ? 1 : 0);
         if (fwd) {
-          const dx = -Math.sin(st.yaw) * fwd * WALK_SPEED * dt;
-          const dz = -Math.cos(st.yaw) * fwd * WALK_SPEED * dt;
+          const speed = WALK_SPEED * (k.has("shift") ? 3 : 1);
+          const dx = -Math.sin(st.yaw) * fwd * speed * dt;
+          const dz = -Math.cos(st.yaw) * fwd * speed * dt;
           if (latest.current.mode === "edit") {
             // Free-fly for authoring viewpoints: move along the view direction.
-            const vy = Math.sin(st.pitch) * fwd * WALK_SPEED * dt;
+            const vy = Math.sin(st.pitch) * fwd * speed * dt;
             camera.position.add(tmpV.set(dx * Math.cos(st.pitch), vy, dz * Math.cos(st.pitch)));
           } else {
             const floor = floorForHeight(sp, camera.position.y);
