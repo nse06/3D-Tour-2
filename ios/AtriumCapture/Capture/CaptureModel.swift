@@ -32,7 +32,8 @@ final class CaptureModel: ObservableObject {
     /// Name field of the naming sheet.
     @Published var draftName = ""
 
-    let scanId = UUID()
+    /// Names the scan's folder (Documents/Scans/<scanId>) and its record.
+    let scanId: UUID
     let directory: URL
     let recorder: MotionRecorder
     let startedAt = Date()
@@ -48,7 +49,8 @@ final class CaptureModel: ObservableObject {
 
     static let quickNames = ["Living Room", "Kitchen", "Dining Room", "Bedroom", "Primary Bedroom", "Bathroom", "Office", "Hallway", "Entry", "Laundry"]
 
-    init(directory: URL) {
+    init(scanId: UUID, directory: URL) {
+        self.scanId = scanId
         self.directory = directory
         recorder = MotionRecorder(framesDirectory: directory.appendingPathComponent("frames", isDirectory: true))
     }

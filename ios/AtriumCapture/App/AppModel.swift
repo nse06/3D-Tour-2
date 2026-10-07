@@ -57,6 +57,7 @@ final class AppModel: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: Self.pairingKey), let saved = try? JSONDecoder().decode(Pairing.self, from: data) {
             pairing = saved
         }
+        store.repairSplitScans()
         reloadScans()
     }
 
@@ -111,7 +112,7 @@ final class AppModel: ObservableObject {
     func startScan() {
         let id = UUID()
         let directory = store.directory(for: id)
-        let model = CaptureModel(directory: directory)
+        let model = CaptureModel(scanId: id, directory: directory)
         model.onCancel = { [weak self] in
             self?.capture = nil
             try? FileManager.default.removeItem(at: directory)

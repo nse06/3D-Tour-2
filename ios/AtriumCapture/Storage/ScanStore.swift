@@ -59,6 +59,41 @@ final class ScanStore: @unchecked Sendable {
             .sorted { $0.createdAt > $1.createdAt }
     }
 
+    /// Version 1.0 (1) saved a real scan's files under one id and its record.json
+    /// under another, so the scan couldn't be sent. Move each such record into
+    /// the folder with its files (matched by start time; info.json has it).
+    func repairSplitScans() {
+        let fm = FileManager.default
+        let folders = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        func has(_ folder: URL, _ file: String) -> Bool { fm.fileExists(atPath: folder.appendingPathComponent(file).path) }
+        var orphans = folders.filter { has($0, "scan.glb") && !has($0, "record.json") && UUID(uuidString: $0.lastPathComponent) != nil }
+        let lonely: [(URL, ScanRecord)] = folders.compactMap { folder in
+            guard has(folder, "record.json"), !has(folder, "scan.glb"),
+                  let data = try? Data(contentsOf: folder.appendingPathComponent("record.json")),
+                  let record = try? decoder.decode(ScanRecord.self, from: data)
+            else { return nil }
+            return (folder, record)
+        }
+        for (folder, record) in lonely {
+            let started = { (orphan: URL) -> Date? in
+                guard let data = try? Data(contentsOf: orphan.appendingPathComponent("info.json")),
+                      let info = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let text = info["startedAt"] as? String
+                else { return nil }
+                return ISO8601DateFormatter().date(from: text)
+            }
+            let match =
+                orphans.first { started($0).map { abs($0.timeIntervalSince(record.createdAt)) < 2 } ?? false }
+                ?? (orphans.count == 1 && lonely.count == 1 ? orphans.first : nil)
+            guard let match, let id = UUID(uuidString: match.lastPathComponent) else { continue }
+            var fixed = record
+            fixed.id = id
+            guard (try? save(fixed)) != nil else { continue }
+            try? fm.removeItem(at: folder)
+            orphans.removeAll { $0 == match }
+        }
+    }
+
     func save(_ record: ScanRecord) throws {
         let folder = directory(for: record.id)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
