@@ -34,6 +34,8 @@ export interface ScanManifest {
     waypoint: Waypoint;
   }[];
   links: { from: string; to: string; via: Vec3[]; kind?: "door" | "stairs" }[];
+  /** How the model should be shown by default: "captured" for photo-textured scans (lighting baked into the photos). */
+  appearance?: "studio" | "captured";
 }
 
 export function isScanManifest(value: unknown): value is ScanManifest {

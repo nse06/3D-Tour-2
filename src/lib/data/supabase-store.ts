@@ -323,6 +323,7 @@ export class SupabaseRepository implements Repository {
           asset_format: capture.assetFormat,
           source: capture.source,
           scan_package_url: capture.scanPackageUrl ?? null,
+          appearance: capture.appearance ?? "studio",
           processing_status: "ready",
           navigation: { links: [], eyeHeight: space.eyeHeight },
           published: property.published,

@@ -44,6 +44,7 @@ export async function ingestCapture(
   }
 
   let space = null;
+  let appearance: "studio" | "captured" = "studio";
   if (manifest !== null) {
     if (!isScanManifest(manifest)) return { ok: false, status: 422, error: "The scan's room data isn't in a format Atrium understands." };
     try {
@@ -56,6 +57,7 @@ export async function ingestCapture(
     if (space.rooms.length < manifest.rooms.length) return { ok: false, status: 422, error: "The scan's room data is invalid: a room is on an unknown floor." };
     if (source === "ios_scan" && space.rooms.length === 0)
       return { ok: false, status: 422, error: "The scan has no rooms. Scan at least one room and send it again." };
+    if (manifest.appearance === "captured") appearance = "captured";
   } else if (source === "ios_scan") {
     return { ok: false, status: 422, error: "The scan is missing its room data." };
   }
@@ -67,6 +69,7 @@ export async function ingestCapture(
       source,
       scanPackageUrl: packageUrl as string | null,
       space,
+      appearance,
     });
   } catch (e) {
     return { ok: false, status: 500, error: (e as Error).message };

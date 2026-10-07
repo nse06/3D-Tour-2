@@ -76,6 +76,8 @@ export interface CaptureInput {
   scanPackageUrl?: string | null;
   /** Spatial structure from the capture's manifest; null when the realtor will define rooms manually. */
   space: TourSpace | null;
+  /** Default look; photo-textured scans ask for "captured". Defaults to "studio". */
+  appearance?: TourAppearance;
 }
 
 /**

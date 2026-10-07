@@ -202,7 +202,7 @@ export class LocalRepository implements Repository {
         scanPackageUrl: capture.scanPackageUrl ?? null,
         processingStatus: "ready",
         navigation: { links: [], eyeHeight: 1.6 },
-        appearance: "studio",
+        appearance: capture.appearance ?? "studio",
         published: p.published,
         createdAt: now(),
       };
