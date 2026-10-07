@@ -26,7 +26,7 @@ export default async function RoomsPage(props: PageProps<"/dashboard/properties/
         Walk the 3D capture and choose what buyers see in each room. The order here is the guided walkthrough order.
       </p>
       <div className="mt-8">
-        <RoomEditor propertyId={id} assetUrl={bundle.tour.assetUrl} initialSpace={space} />
+        <RoomEditor propertyId={id} assetUrl={bundle.tour.assetUrl} initialSpace={space} initialAppearance={bundle.tour.appearance} />
       </div>
     </div>
   );

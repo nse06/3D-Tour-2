@@ -1,14 +1,19 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import QRCode from "qrcode";
 import { requireUser } from "@/lib/auth";
-import { isSupabaseConfigured } from "@/lib/data/config";
-import { getRepository } from "@/lib/data/repository";
+import { CAPTURE_SESSION_TTL_MS, newCaptureToken, pairingDeepLink, serverBaseUrl } from "@/lib/capture-sessions";
+import { isSupabaseConfigured, storageMode } from "@/lib/data/config";
+import { adminRepositoryUnavailableReason, getRepository } from "@/lib/data/repository";
 import type { PropertyInput } from "@/lib/data/types";
 import { DEMO_ASSET_URL, DEMO_COVER_URL, demoManifest } from "@/lib/demo";
-import { isScanManifest, manifestToSpace } from "@/lib/tour/scan-manifest";
-import { isSpaceError, newId, parseSpace } from "@/lib/tour/space";
+import { ingestCapture } from "@/lib/ingest";
+import { manifestToSpace } from "@/lib/tour/scan-manifest";
+import { newId, parseSpace } from "@/lib/tour/space";
+import type { TourAppearance } from "@/lib/tour/types";
 import { isOwnedAssetUrl } from "@/lib/storage";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -91,7 +96,8 @@ export async function createPropertyAction(_prev: PropertyFormState, fd: FormDat
   revalidatePath("/dashboard");
   // Uploads continue in the browser (direct-to-storage), then navigate.
   if (fd.get("capture") === "upload") return { propertyId, values };
-  redirect(`/dashboard/properties/${propertyId}`);
+  // The listing page shows the iPhone pairing code right away.
+  redirect(`/dashboard/properties/${propertyId}${fd.get("capture") === "phone" ? "?scan=1" : ""}`);
 }
 
 export async function updatePropertyAction(propertyId: string, _prev: PropertyFormState, fd: FormData): Promise<PropertyFormState> {
@@ -161,30 +167,20 @@ export async function attachDemoCaptureAction(propertyId: string): Promise<Actio
 
 /**
  * Called after the browser finished uploading a capture to storage. If the
- * file carries a scan manifest (as the demo capture does, and as future
- * iPhone scans will), floors/rooms/waypoints are created automatically.
+ * file carries a scan manifest (the demo capture and iPhone scans do),
+ * floors/rooms/waypoints are created automatically.
  */
 export async function completeCaptureUploadAction(
   propertyId: string,
-  upload: { assetUrl: string; format: "glb" | "gltf"; manifest: unknown },
+  upload: { assetUrl: string; manifest: unknown },
 ): Promise<ActionResult & { rooms?: number }> {
   const user = await requireUser();
-  if (!isOwnedAssetUrl(upload.assetUrl, user.id, propertyId)) return { ok: false, error: "Unknown upload." };
-  try {
-    const space = isScanManifest(upload.manifest) ? parseSpace(manifestToSpace(upload.manifest, () => newId())) : null;
-    await (
-      await getRepository()
-    ).attachCapture(user.id, propertyId, {
-      assetUrl: upload.assetUrl,
-      assetFormat: upload.format === "gltf" ? "gltf" : "glb",
-      source: "upload",
-      space,
-    });
-    revalidatePath(`/dashboard/properties/${propertyId}`);
-    return { ok: true, rooms: space?.rooms.length ?? 0 };
-  } catch (e) {
-    return { ok: false, error: isSpaceError(e) ? `The capture's room data is invalid: ${(e as Error).message}` : (e as Error).message };
-  }
+  const repo = await getRepository();
+  if (!(await repo.getProperty(user.id, propertyId))) return { ok: false, error: "Property not found." };
+  const result = await ingestCapture(repo, user.id, propertyId, "upload", { assetUrl: upload.assetUrl, manifest: upload.manifest ?? null });
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/dashboard/properties/${propertyId}`);
+  return { ok: true, rooms: result.rooms };
 }
 
 export async function saveSpaceAction(propertyId: string, space: unknown): Promise<ActionResult> {
@@ -196,6 +192,56 @@ export async function saveSpaceAction(propertyId: string, space: unknown): Promi
   }
   revalidatePath(`/dashboard/properties/${propertyId}`);
   return { ok: true };
+}
+
+export async function setAppearanceAction(propertyId: string, appearance: TourAppearance): Promise<ActionResult> {
+  const user = await requireUser();
+  if (appearance !== "studio" && appearance !== "captured") return { ok: false, error: "Unknown appearance." };
+  try {
+    await (await getRepository()).setAppearance(user.id, propertyId, appearance);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+  revalidatePath(`/dashboard/properties/${propertyId}`);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// iPhone capture pairing (docs/iphone-capture.md §3.1)
+// ---------------------------------------------------------------------------
+
+export interface PhonePairing {
+  /** atriumcapture://pair?server=…&token=… */
+  deepLink: string;
+  /** The deep link as a QR code (SVG data URL). */
+  qrCode: string;
+  /** Where the phone will upload. */
+  serverUrl: string;
+  /** The server is only reachable on the local network (same Wi-Fi). */
+  lan: boolean;
+  expiresAt: string;
+}
+
+/** Start a capture session: a one-day pairing code the iPhone app scans to upload into this listing. */
+export async function createCaptureSessionAction(propertyId: string): Promise<ActionResult & { pairing?: PhonePairing }> {
+  const user = await requireUser();
+  if (storageMode() === "ephemeral") return { ok: false, error: "Connect a database first — this deployment can't keep uploads yet (see /setup)." };
+  const unavailable = adminRepositoryUnavailableReason();
+  if (unavailable) return { ok: false, error: unavailable };
+  try {
+    const { token, tokenHash } = newCaptureToken();
+    const expiresAt = new Date(Date.now() + CAPTURE_SESSION_TTL_MS).toISOString();
+    await (await getRepository()).createCaptureSession(user.id, propertyId, { tokenHash, expiresAt });
+    const server = serverBaseUrl(await headers());
+    const deepLink = pairingDeepLink(server.url, token);
+    const svg = await QRCode.toString(deepLink, { type: "svg", margin: 1, errorCorrectionLevel: "M", color: { dark: "#161514", light: "#ffffff" } });
+    return {
+      ok: true,
+      pairing: { deepLink, qrCode: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, serverUrl: server.url, lan: server.lan, expiresAt },
+    };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }
 
 export async function setCoverImageAction(propertyId: string, assetUrl: string): Promise<ActionResult> {

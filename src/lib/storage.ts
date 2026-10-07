@@ -1,6 +1,6 @@
-// Asset storage for 3D captures and cover photos.
+// Asset storage for 3D captures, cover photos and iPhone scan packages.
 //
-// Browsers upload directly (PUT) to a short-lived signed URL so large scans
+// Clients upload directly (PUT) to a short-lived signed URL so large scans
 // never pass through a serverless function body:
 //  - local mode:    /api/uploads/<key>?exp&sig  → .data/uploads/<key>, served by /api/assets/<key>
 //  - Supabase mode: Storage signed upload URL   → public bucket URL
@@ -9,16 +9,19 @@
 // server verify that a submitted asset URL really belongs to the property.
 
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, promises as fs, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured, localDataDir, SUPABASE_BUCKET } from "./data/config";
+import { isSupabaseConfigured, localDataDir, SUPABASE_BUCKET, supabasePublicKey, supabaseUrl } from "./data/config";
 
-export type UploadKind = "capture" | "cover";
+export type UploadKind = "capture" | "cover" | "package";
 
 export const UPLOAD_RULES: Record<UploadKind, { extensions: string[]; maxBytes: number }> = {
   capture: { extensions: ["glb", "gltf"], maxBytes: 250 * 1024 * 1024 },
   cover: { extensions: ["jpg", "jpeg", "png", "webp"], maxBytes: 12 * 1024 * 1024 },
+  // iPhone scan package: scan.json, RoomPlan data and RGB keyframes (docs/iphone-capture.md §3.3).
+  package: { extensions: ["zip"], maxBytes: 1024 * 1024 * 1024 },
 };
 
 export const CONTENT_TYPES: Record<string, string> = {
@@ -28,6 +31,7 @@ export const CONTENT_TYPES: Record<string, string> = {
   jpeg: "image/jpeg",
   png: "image/png",
   webp: "image/webp",
+  zip: "application/zip",
 };
 
 export interface UploadTarget {
@@ -35,6 +39,16 @@ export interface UploadTarget {
   url: string;
   headers: Record<string, string>;
   assetUrl: string;
+}
+
+/** A rejected upload request; `status` is the HTTP status to answer with. */
+export class UploadError extends Error {
+  constructor(
+    message: string,
+    readonly status: 400 | 413 = 400,
+  ) {
+    super(message);
+  }
 }
 
 let cachedSecret: string | null = null;
@@ -79,16 +93,44 @@ export function extensionOf(filename: string): string {
   return filename.split(".").pop()?.toLowerCase() ?? "";
 }
 
-export async function createUploadTarget(userId: string, propertyId: string, kind: UploadKind, filename: string, size: number): Promise<UploadTarget> {
+const KEY_FILE = /^(capture|cover|package)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.([a-z0-9]+)$/;
+
+/** The kind of a storage key ("<userId>/<propertyId>/<kind>-<uuid>.<ext>"), or null if it isn't a valid key. */
+export function uploadKindOfKey(key: string): UploadKind | null {
+  const parts = key.split("/");
+  const match = parts.length === 3 ? KEY_FILE.exec(parts[2]) : null;
+  if (!match) return null;
+  const kind = match[1] as UploadKind;
+  return UPLOAD_RULES[kind].extensions.includes(match[2]) ? kind : null;
+}
+
+function sizeLabel(bytes: number) {
+  return bytes >= 1024 ** 3 ? `${Math.round(bytes / 1024 ** 3)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
+/**
+ * Prepare a direct-to-storage upload. `admin` signs Supabase upload URLs with
+ * the service role, for callers without a realtor session (the iPhone app);
+ * the key still lives in the realtor's own folder.
+ */
+export async function createUploadTarget(
+  userId: string,
+  propertyId: string,
+  kind: UploadKind,
+  filename: string,
+  size: number,
+  options: { admin?: boolean } = {},
+): Promise<UploadTarget> {
   const ext = extensionOf(filename);
   const rules = UPLOAD_RULES[kind];
-  if (!rules.extensions.includes(ext)) throw new Error(`Please choose a ${rules.extensions.map((e) => "." + e).join(" or ")} file.`);
-  if (!(size > 0) || size > rules.maxBytes) throw new Error(`Files must be smaller than ${Math.round(rules.maxBytes / 1024 / 1024)} MB.`);
+  if (!rules.extensions.includes(ext)) throw new UploadError(`Please choose a ${rules.extensions.map((e) => "." + e).join(" or ")} file.`);
+  if (!Number.isFinite(size) || !(size > 0)) throw new UploadError("The file is empty.");
+  if (size > rules.maxBytes) throw new UploadError(`Files must be smaller than ${sizeLabel(rules.maxBytes)}.`, 413);
   const key = `${userId}/${propertyId}/${kind}-${randomUUID()}.${ext}`;
   const contentType = CONTENT_TYPES[ext];
 
   if (isSupabaseConfigured()) {
-    const supabase = await createSupabaseServerClient();
+    const supabase = options.admin ? createSupabaseAdminClient() : await createSupabaseServerClient();
     const { data, error } = await supabase.storage.from(SUPABASE_BUCKET).createSignedUploadUrl(key);
     if (error || !data) throw new Error(error?.message ?? "Could not prepare the upload.");
     const { data: pub } = supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(key);
@@ -99,7 +141,7 @@ export async function createUploadTarget(userId: string, propertyId: string, kin
         "content-type": contentType,
         "cache-control": "max-age=31536000",
         "x-upsert": "false",
-        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        apikey: supabasePublicKey()!,
       },
       assetUrl: pub.publicUrl,
     };
@@ -114,13 +156,38 @@ export async function createUploadTarget(userId: string, propertyId: string, kin
   };
 }
 
-/** True if `url` is an asset this user uploaded for this property. */
-export function isOwnedAssetUrl(url: string, userId: string, propertyId: string): boolean {
-  const prefix = `${userId}/${propertyId}/`;
-  if (url.startsWith("/api/assets/")) return url.slice("/api/assets/".length).startsWith(prefix) && !url.includes("..");
-  if (isSupabaseConfigured()) {
-    const base = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/`;
-    return url.startsWith(base) && url.slice(base.length).startsWith(prefix) && !url.includes("..");
+/** The storage key behind an asset URL of the current storage mode, or null. */
+function assetKeyOf(url: unknown): string | null {
+  if (typeof url !== "string") return null;
+  const base = isSupabaseConfigured() ? `${supabaseUrl()}/storage/v1/object/public/${SUPABASE_BUCKET}/` : "/api/assets/";
+  return url.startsWith(base) ? safeKey(url.slice(base.length).split("/")) : null;
+}
+
+/** True if `url` is an asset this user uploaded for this property (of the given kind, if any). */
+export function isOwnedAssetUrl(url: unknown, userId: string, propertyId: string, kind?: UploadKind): boolean {
+  const key = assetKeyOf(url);
+  if (!key || !key.startsWith(`${userId}/${propertyId}/`)) return false;
+  const actual = uploadKindOfKey(key);
+  return !!actual && (!kind || actual === kind);
+}
+
+/**
+ * Whether the file behind an asset URL was actually uploaded. Only a definite
+ * "missing" answer returns false: if storage can't be asked, the upload is
+ * given the benefit of the doubt.
+ */
+export async function assetExists(url: string, options: { admin?: boolean } = {}): Promise<boolean> {
+  const key = assetKeyOf(url);
+  if (!key) return false;
+  if (!isSupabaseConfigured()) {
+    const stat = await fs.stat(localUploadPath(key)).catch(() => null);
+    return !!stat && stat.isFile() && stat.size > 0;
   }
-  return false;
+  try {
+    const supabase = options.admin ? createSupabaseAdminClient() : await createSupabaseServerClient();
+    const { data } = await supabase.storage.from(SUPABASE_BUCKET).exists(key);
+    return data !== false;
+  } catch {
+    return true;
+  }
 }

@@ -1,10 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { supabasePublicKey, supabaseUrl } from "@/lib/data/config";
 
 /** Supabase client bound to the current request's auth cookies (RLS applies). */
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
-  return createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+  return createServerClient(supabaseUrl()!, supabasePublicKey()!, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

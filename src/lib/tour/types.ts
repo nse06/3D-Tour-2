@@ -64,6 +64,14 @@ export interface TourSpace {
 
 export type CaptureSource = "demo" | "upload" | "ios_scan";
 
+/**
+ * How the viewer lights a capture. "studio": PBR materials under soft studio
+ * lighting (the demo, iPhone RoomPlan scans, modeled homes). "captured": the
+ * textures already contain the real lighting (photo-textured scans from apps
+ * like Polycam or Scaniverse), so the model is shown unlit, exactly as scanned.
+ */
+export type TourAppearance = "studio" | "captured";
+
 export interface PropertyInfo {
   slug: string;
   title: string;
@@ -84,5 +92,6 @@ export interface TourData {
   property: PropertyInfo;
   assetUrl: string;
   source: CaptureSource;
+  appearance: TourAppearance;
   space: TourSpace;
 }

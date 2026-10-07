@@ -5,10 +5,21 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { defaultSpace } from "@/lib/tour/space";
-import type { TourSpace } from "@/lib/tour/types";
+import type { TourAppearance, TourSpace } from "@/lib/tour/types";
 import { localDataDir } from "./config";
 import { NotFoundError, uniqueSlug, type Repository } from "./repository";
-import type { CaptureInput, FloorRecord, Property, PropertyBundle, PropertyInput, PropertySummary, RoomRecord, Tour } from "./types";
+import type {
+  CaptureInput,
+  CaptureSession,
+  CaptureSessionLookup,
+  FloorRecord,
+  Property,
+  PropertyBundle,
+  PropertyInput,
+  PropertySummary,
+  RoomRecord,
+  Tour,
+} from "./types";
 
 interface Db {
   version: 1;
@@ -16,9 +27,10 @@ interface Db {
   tours: Tour[];
   floors: FloorRecord[];
   rooms: RoomRecord[];
+  captureSessions: CaptureSession[];
 }
 
-const empty = (): Db => ({ version: 1, properties: [], tours: [], floors: [], rooms: [] });
+const empty = (): Db => ({ version: 1, properties: [], tours: [], floors: [], rooms: [], captureSessions: [] });
 
 let queue: Promise<unknown> = Promise.resolve();
 
@@ -29,7 +41,10 @@ function dbFile() {
 async function readDb(): Promise<Db> {
   try {
     const raw = await fs.readFile(dbFile(), "utf8");
-    return { ...empty(), ...JSON.parse(raw) };
+    const db: Db = { ...empty(), ...JSON.parse(raw) };
+    // Tours saved before these fields existed.
+    db.tours = db.tours.map((t) => ({ ...t, scanPackageUrl: t.scanPackageUrl ?? null, appearance: t.appearance ?? "studio" }));
+    return db;
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return empty();
     throw e;
@@ -146,6 +161,7 @@ export class LocalRepository implements Repository {
       db.rooms = db.rooms.filter((r) => !floorIds.has(r.floorId));
       db.floors = db.floors.filter((f) => !tourIds.has(f.tourId));
       db.tours = db.tours.filter((t) => !tourIds.has(t.id));
+      db.captureSessions = db.captureSessions.filter((s) => s.propertyId !== propertyId);
       db.properties = db.properties.filter((p) => p.id !== propertyId);
     });
   }
@@ -183,9 +199,10 @@ export class LocalRepository implements Repository {
         assetUrl: capture.assetUrl,
         assetFormat: capture.assetFormat,
         source: capture.source,
-        scanPackageUrl: null,
+        scanPackageUrl: capture.scanPackageUrl ?? null,
         processingStatus: "ready",
         navigation: { links: [], eyeHeight: 1.6 },
+        appearance: "studio",
         published: p.published,
         createdAt: now(),
       };
@@ -204,6 +221,15 @@ export class LocalRepository implements Repository {
     });
   }
 
+  setAppearance(userId: string, propertyId: string, appearance: TourAppearance): Promise<void> {
+    return mutate((db) => {
+      owned(db, userId, propertyId);
+      const tour = db.tours.find((t) => t.propertyId === propertyId);
+      if (!tour) throw new NotFoundError("Tour");
+      tour.appearance = appearance;
+    });
+  }
+
   async getPublishedBySlug(slug: string): Promise<PropertyBundle | null> {
     const db = await readDb();
     const property = db.properties.find((p) => p.slug === slug && p.published);
@@ -211,5 +237,41 @@ export class LocalRepository implements Repository {
     const tour = db.tours.find((t) => t.propertyId === property.id && t.published) ?? null;
     if (!tour) return null;
     return { property, tour, space: spaceFor(db, tour) };
+  }
+
+  createCaptureSession(userId: string, propertyId: string, input: Pick<CaptureSession, "tokenHash" | "expiresAt">): Promise<CaptureSession> {
+    return mutate((db) => {
+      owned(db, userId, propertyId);
+      // Housekeeping: forget this realtor's expired sessions.
+      db.captureSessions = db.captureSessions.filter((s) => s.userId !== userId || Date.parse(s.expiresAt) > Date.now());
+      const session: CaptureSession = {
+        id: randomUUID(),
+        propertyId,
+        userId,
+        tokenHash: input.tokenHash,
+        expiresAt: input.expiresAt,
+        createdAt: now(),
+        completedAt: null,
+      };
+      db.captureSessions.push(session);
+      return session;
+    });
+  }
+
+  async findCaptureSessionByTokenHash(tokenHash: string): Promise<CaptureSessionLookup | null> {
+    const db = await readDb();
+    const session = db.captureSessions.find((s) => s.tokenHash === tokenHash);
+    if (!session || !(Date.parse(session.expiresAt) > Date.now())) return null;
+    const p = db.properties.find((x) => x.id === session.propertyId && x.userId === session.userId);
+    if (!p) return null;
+    return { session, property: { id: p.id, addressLine: p.addressLine, city: p.city, state: p.state } };
+  }
+
+  completeCaptureSession(userId: string, sessionId: string): Promise<void> {
+    return mutate((db) => {
+      const session = db.captureSessions.find((s) => s.id === sessionId && s.userId === userId);
+      if (!session) throw new NotFoundError("Capture session");
+      session.completedAt = now();
+    });
   }
 }

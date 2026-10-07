@@ -1,7 +1,23 @@
 import path from "node:path";
 
+// Supabase settings. Both naming schemes work: the legacy anon/service-role keys, and the
+// publishable/secret keys that Vercel's Supabase integration injects automatically.
+export function supabaseUrl(): string | undefined {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL || undefined;
+}
+
+/** Browser-safe key (row-level security applies). */
+export function supabasePublicKey(): string | undefined {
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || undefined;
+}
+
+/** Server-only key that bypasses row-level security (used for the iPhone upload endpoints). */
+export function supabaseAdminKey(): string | undefined {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || undefined;
+}
+
 export function isSupabaseConfigured(): boolean {
-  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return !!(supabaseUrl() && supabasePublicKey());
 }
 
 export const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "captures";

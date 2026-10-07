@@ -2,6 +2,7 @@ import { ArrowLeft, Box, Eye, Layers, MousePointerClick, Pencil } from "lucide-r
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CaptureUploader } from "@/components/dashboard/CaptureUploader";
+import { PhoneCapturePanel } from "@/components/dashboard/PhoneCapturePanel";
 import { AttachDemoButton, DeletePropertyButton, PublishPanel } from "@/components/dashboard/PropertyActions";
 import { PropertyForm } from "@/components/dashboard/PropertyForm";
 import { ButtonLink, Card, StatusPill } from "@/components/ui";
@@ -24,6 +25,7 @@ const SOURCE_LABEL = { demo: "Sample capture", upload: "Uploaded model", ios_sca
 
 export default async function PropertyPage(props: PageProps<"/dashboard/properties/[id]">) {
   const { id } = await props.params;
+  const { scan } = await props.searchParams;
   const user = await requireUser();
   const bundle = await (await getRepository()).getProperty(user.id, id);
   if (!bundle) notFound();
@@ -87,7 +89,7 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
                   <p className="text-sm text-neutral-500">
                     {tour
                       ? `${floors.length} floor${floors.length === 1 ? "" : "s"} · ${roomCount} room${roomCount === 1 ? "" : "s"} with viewpoints`
-                      : "Upload a .glb/.gltf model or use the sample capture."}
+                      : "Scan it with an iPhone, upload a .glb/.gltf model, or use the sample capture."}
                   </p>
                 </div>
                 {tour && (
@@ -128,6 +130,10 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
                 <AttachDemoButton propertyId={p.id} replace={!!tour} />
               </div>
             </div>
+          </Card>
+
+          <Card className="p-6">
+            <PhoneCapturePanel propertyId={p.id} tourId={tour?.id ?? null} autoStart={scan === "1"} />
           </Card>
 
           <Card className="p-6 md:p-8">

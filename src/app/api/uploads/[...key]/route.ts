@@ -4,7 +4,7 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { isSupabaseConfigured } from "@/lib/data/config";
-import { extensionOf, localUploadPath, safeKey, UPLOAD_RULES, verifyLocalUpload } from "@/lib/storage";
+import { localUploadPath, safeKey, UPLOAD_RULES, uploadKindOfKey, verifyLocalUpload } from "@/lib/storage";
 
 /** Local-mode upload sink for signed PUT requests (Supabase mode uploads straight to Storage). */
 export async function PUT(request: Request, ctx: RouteContext<"/api/uploads/[...key]">) {
@@ -15,9 +15,10 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/uploads/[...
     return new Response("Upload link is invalid or expired", { status: 403 });
   }
   if (!request.body) return new Response("Empty upload", { status: 400 });
-  const kind = key.split("/")[2]?.startsWith("cover-") ? "cover" : "capture";
+  // Key file names are "<kind>-<uuid>.<ext>" (captures, covers and iPhone scan packages).
+  const kind = uploadKindOfKey(key);
+  if (!kind) return new Response("Unsupported file type", { status: 400 });
   const limit = UPLOAD_RULES[kind].maxBytes;
-  if (!UPLOAD_RULES[kind].extensions.includes(extensionOf(key))) return new Response("Unsupported file type", { status: 400 });
 
   const dest = localUploadPath(key);
   await fs.mkdir(path.dirname(dest), { recursive: true });

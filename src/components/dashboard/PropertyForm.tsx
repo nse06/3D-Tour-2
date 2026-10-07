@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Check, Clock, Loader2, Sparkles, UploadCloud } from "lucide-react";
+import { Box, Check, Clock, Loader2, Smartphone, Sparkles, UploadCloud } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { completeCaptureUploadAction, type PropertyFormState } from "@/app/dashboard/actions";
@@ -10,7 +10,7 @@ import type { PropertyInput } from "@/lib/data/types";
 import { DEMO_LISTING } from "@/lib/demo/listing";
 import { uploadFile } from "@/lib/upload-client";
 
-type CaptureChoice = "demo" | "upload" | "later";
+type CaptureChoice = "demo" | "phone" | "upload" | "later";
 
 interface Props {
   mode: "create" | "edit";
@@ -42,7 +42,7 @@ export function PropertyForm({ mode, action, initial }: Props) {
         const inspected = await inspectCaptureFile(file);
         const assetUrl = await uploadFile(id, "capture", file, file.name, (p) => setUpload({ label: `Uploading ${formatBytes(file.size)}`, progress: p }));
         setUpload({ label: "Building rooms and walkthrough path…" });
-        const res = await completeCaptureUploadAction(id, { assetUrl, format: inspected.format, manifest: inspected.manifest });
+        const res = await completeCaptureUploadAction(id, { assetUrl, manifest: inspected.manifest });
         if (!res.ok) throw new Error(res.error);
       } catch (e) {
         setFileError(`Listing saved, but the capture upload failed: ${(e as Error).message}`);
@@ -142,7 +142,14 @@ export function PropertyForm({ mode, action, initial }: Props) {
         <section>
           <SectionTitle n={3} title="3D capture" subtitle="The walkthrough buyers will explore." />
           <input type="hidden" name="capture" value={capture} />
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <ChoiceCard
+              active={capture === "phone"}
+              onClick={() => setCapture("phone")}
+              icon={<Smartphone className="size-5" strokeWidth={1.5} />}
+              title="Scan with iPhone"
+              text="Walk the home with the Atrium Capture app (iPhone with LiDAR). Rooms and the walkthrough path are built for you."
+            />
             <ChoiceCard
               active={capture === "demo"}
               onClick={() => setCapture("demo")}
@@ -189,7 +196,6 @@ export function PropertyForm({ mode, action, initial }: Props) {
               <span className="rounded-full bg-white px-3 py-1 text-xs font-medium shadow-sm ring-1 ring-sand">Browse</span>
             </label>
           )}
-          <p className="mt-3 text-xs text-neutral-500">Soon: walk the home once with the Atrium iPhone app and the capture uploads itself.</p>
         </section>
       )}
 

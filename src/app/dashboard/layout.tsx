@@ -1,12 +1,15 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Wordmark } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { storageMode } from "@/lib/data/config";
 import { signOutAction } from "./actions";
 
 export default async function DashboardLayout({ children }: LayoutProps<"/dashboard">) {
-  const user = await requireUser();
   const mode = storageMode();
+  // Without a database this host can't keep listings or uploads: /setup explains how to connect one.
+  if (mode === "ephemeral") redirect("/setup");
+  const user = await requireUser();
   const initials = user.name
     .split(/\s+/)
     .map((w) => w[0])
@@ -30,16 +33,12 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
             </Link>
           </nav>
           <div className="ml-auto flex items-center gap-3">
-            {mode !== "supabase" && (
+            {mode === "local" && (
               <span
                 className="hidden rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200 sm:inline"
-                title={
-                  mode === "ephemeral"
-                    ? "Data is temporary on this host. Configure Supabase to persist listings."
-                    : "Listings are stored locally in .data/. Configure Supabase for production."
-                }
+                title="Listings are stored locally in .data/. Configure Supabase for production."
               >
-                {mode === "ephemeral" ? "Temporary storage" : "Local demo mode"}
+                Local demo mode
               </span>
             )}
             <div className="flex items-center gap-2.5">

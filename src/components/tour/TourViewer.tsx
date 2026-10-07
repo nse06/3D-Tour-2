@@ -222,6 +222,7 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
       {webgl && (
         <TourScene
           assetUrl={data.assetUrl}
+          appearance={data.appearance}
           space={space}
           startWaypoint={startWaypoint}
           apiRef={apiRef}

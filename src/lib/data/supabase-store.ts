@@ -1,13 +1,17 @@
-// Supabase (Postgres) persistence. Every query runs with the signed-in
-// realtor's session, so row-level security (supabase/migrations) enforces
-// ownership; published tours are readable anonymously.
+// Supabase (Postgres) persistence. By default every query runs with the
+// signed-in realtor's session, so row-level security (supabase/migrations)
+// enforces ownership; published tours are readable anonymously.
+//
+// The iPhone endpoints have no session and use a service-role client instead
+// (getAdminRepository), which bypasses RLS. That is why every method below
+// also filters by the owning user explicitly.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaultSpace } from "@/lib/tour/space";
-import type { FloorFeature, NavLink, TourSpace, Vec2, Vec3 } from "@/lib/tour/types";
+import type { FloorFeature, NavLink, TourAppearance, TourSpace, Vec2, Vec3 } from "@/lib/tour/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { NotFoundError, uniqueSlug, type Repository } from "./repository";
-import type { CaptureInput, Property, PropertyBundle, PropertyInput, PropertySummary, Tour } from "./types";
+import type { CaptureInput, CaptureSession, CaptureSessionLookup, Property, PropertyBundle, PropertyInput, PropertySummary, Tour } from "./types";
 
 interface PropertyRow {
   id: string;
@@ -38,8 +42,19 @@ interface TourRow {
   scan_package_url: string | null;
   processing_status: Tour["processingStatus"];
   navigation: { links?: NavLink[]; eyeHeight?: number } | null;
+  appearance?: TourAppearance;
   published: boolean;
   created_at: string;
+}
+
+interface CaptureSessionRow {
+  id: string;
+  property_id: string;
+  user_id: string;
+  token_hash: string;
+  expires_at: string;
+  created_at: string;
+  completed_at: string | null;
 }
 
 interface FloorRow {
@@ -91,8 +106,19 @@ const toTour = (r: TourRow): Tour => ({
   scanPackageUrl: r.scan_package_url,
   processingStatus: r.processing_status,
   navigation: { links: r.navigation?.links ?? [], eyeHeight: r.navigation?.eyeHeight ?? 1.6 },
+  appearance: r.appearance === "captured" ? "captured" : "studio",
   published: r.published,
   createdAt: r.created_at,
+});
+
+const toCaptureSession = (r: CaptureSessionRow): CaptureSession => ({
+  id: r.id,
+  propertyId: r.property_id,
+  userId: r.user_id,
+  tokenHash: r.token_hash,
+  expiresAt: r.expires_at,
+  createdAt: r.created_at,
+  completedAt: r.completed_at,
 });
 
 const fromInput = (input: PropertyInput) => ({
@@ -113,10 +139,11 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
   return res.data;
 }
 
+export type SupabaseClientFactory = () => Promise<SupabaseClient>;
+
 export class SupabaseRepository implements Repository {
-  private client(): Promise<SupabaseClient> {
-    return createSupabaseServerClient();
-  }
+  /** Defaults to the cookie-bound client of the current request (RLS applies). */
+  constructor(private readonly client: SupabaseClientFactory = createSupabaseServerClient) {}
 
   private async loadSpace(db: SupabaseClient, tour: Tour): Promise<TourSpace> {
     const floors = check(await db.from("floors").select("*").eq("tour_id", tour.id).order("floor_number")) as FloorRow[];
@@ -254,6 +281,7 @@ export class SupabaseRepository implements Repository {
         .from("properties")
         .update({ ...fromInput(input), updated_at: new Date().toISOString() })
         .eq("id", propertyId)
+        .eq("user_id", userId)
         .select("*")
         .single(),
     ) as PropertyRow;
@@ -263,7 +291,7 @@ export class SupabaseRepository implements Repository {
   async deleteProperty(userId: string, propertyId: string): Promise<void> {
     const db = await this.client();
     await this.ownedProperty(db, userId, propertyId);
-    check(await db.from("properties").delete().eq("id", propertyId));
+    check(await db.from("properties").delete().eq("id", propertyId).eq("user_id", userId));
   }
 
   async setPublished(userId: string, propertyId: string, published: boolean): Promise<void> {
@@ -272,13 +300,13 @@ export class SupabaseRepository implements Repository {
     const tour = await this.latestTour(db, propertyId);
     if (published && !tour) throw new Error("Attach a 3D capture before publishing.");
     if (tour) check(await db.from("tours").update({ published }).eq("id", tour.id));
-    check(await db.from("properties").update({ published, updated_at: new Date().toISOString() }).eq("id", propertyId));
+    check(await db.from("properties").update({ published, updated_at: new Date().toISOString() }).eq("id", propertyId).eq("user_id", userId));
   }
 
   async setCoverImage(userId: string, propertyId: string, url: string | null): Promise<void> {
     const db = await this.client();
     await this.ownedProperty(db, userId, propertyId);
-    check(await db.from("properties").update({ cover_image_url: url, updated_at: new Date().toISOString() }).eq("id", propertyId));
+    check(await db.from("properties").update({ cover_image_url: url, updated_at: new Date().toISOString() }).eq("id", propertyId).eq("user_id", userId));
   }
 
   async attachCapture(userId: string, propertyId: string, capture: CaptureInput): Promise<void> {
@@ -294,6 +322,7 @@ export class SupabaseRepository implements Repository {
           asset_url: capture.assetUrl,
           asset_format: capture.assetFormat,
           source: capture.source,
+          scan_package_url: capture.scanPackageUrl ?? null,
           processing_status: "ready",
           navigation: { links: [], eyeHeight: space.eyeHeight },
           published: property.published,
@@ -312,6 +341,14 @@ export class SupabaseRepository implements Repository {
     await this.writeSpace(db, tour.id, space);
   }
 
+  async setAppearance(userId: string, propertyId: string, appearance: TourAppearance): Promise<void> {
+    const db = await this.client();
+    await this.ownedProperty(db, userId, propertyId);
+    const tour = await this.latestTour(db, propertyId);
+    if (!tour) throw new NotFoundError("Tour");
+    check(await db.from("tours").update({ appearance }).eq("id", tour.id).eq("property_id", propertyId));
+  }
+
   async getPublishedBySlug(slug: string): Promise<PropertyBundle | null> {
     const db = await this.client();
     const row = check(await db.from("properties").select("*").eq("slug", slug).eq("published", true).maybeSingle()) as PropertyRow | null;
@@ -319,5 +356,45 @@ export class SupabaseRepository implements Repository {
     const tour = await this.latestTour(db, row.id, true);
     if (!tour) return null;
     return { property: toProperty(row), tour, space: await this.loadSpace(db, tour) };
+  }
+
+  async createCaptureSession(userId: string, propertyId: string, input: Pick<CaptureSession, "tokenHash" | "expiresAt">): Promise<CaptureSession> {
+    const db = await this.client();
+    await this.ownedProperty(db, userId, propertyId);
+    // Housekeeping: forget this realtor's expired sessions.
+    check(await db.from("capture_sessions").delete().eq("user_id", userId).lt("expires_at", new Date().toISOString()));
+    const row = check(
+      await db
+        .from("capture_sessions")
+        .insert({ property_id: propertyId, user_id: userId, token_hash: input.tokenHash, expires_at: input.expiresAt })
+        .select("*")
+        .single(),
+    ) as CaptureSessionRow;
+    return toCaptureSession(row);
+  }
+
+  async findCaptureSessionByTokenHash(tokenHash: string): Promise<CaptureSessionLookup | null> {
+    const db = await this.client();
+    const row = check(
+      await db.from("capture_sessions").select("*").eq("token_hash", tokenHash).gt("expires_at", new Date().toISOString()).maybeSingle(),
+    ) as CaptureSessionRow | null;
+    if (!row) return null;
+    // The session's realtor must still own the listing.
+    const property = check(
+      await db.from("properties").select("id, address_line, city, state").eq("id", row.property_id).eq("user_id", row.user_id).maybeSingle(),
+    ) as Pick<PropertyRow, "id" | "address_line" | "city" | "state"> | null;
+    if (!property) return null;
+    return {
+      session: toCaptureSession(row),
+      property: { id: property.id, addressLine: property.address_line, city: property.city, state: property.state },
+    };
+  }
+
+  async completeCaptureSession(userId: string, sessionId: string): Promise<void> {
+    const db = await this.client();
+    const row = check(
+      await db.from("capture_sessions").update({ completed_at: new Date().toISOString() }).eq("id", sessionId).eq("user_id", userId).select("id").maybeSingle(),
+    );
+    if (!row) throw new NotFoundError("Capture session");
   }
 }

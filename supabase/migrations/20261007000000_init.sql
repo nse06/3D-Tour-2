@@ -2,13 +2,16 @@
 --
 -- Spatial model:  properties → tours → floors → rooms (waypoints)
 --
--- A tour is one 3D capture of a property. Today `asset_url` points at a
--- prebuilt/uploaded .glb. When the iPhone capture app ships, `scan_package_url`
--- will hold the raw capture (RoomPlan rooms, ARKit trajectory, RGB frames) and
--- `processing_status` will track the backend job that produces the asset,
--- floors, rooms and navigation links. The web viewer does not change.
+-- A tour is one 3D capture of a property: `asset_url` is the .glb the viewer
+-- loads (uploaded, or built on the phone by the Atrium Capture app);
+-- `scan_package_url` keeps an iPhone scan's raw data (RoomPlan rooms, ARKit
+-- trajectory, RGB frames) for reprocessing; `processing_status` is reserved
+-- for server-side processing.
+--
+-- Every statement is idempotent, so the concatenated migrations can be pasted
+-- into the Supabase SQL editor again after an upgrade.
 
-create table public.properties (
+create table if not exists public.properties (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
   slug text not null unique check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
@@ -28,9 +31,9 @@ create table public.properties (
   updated_at timestamptz not null default now()
 );
 
-create index properties_user_id_idx on public.properties (user_id);
+create index if not exists properties_user_id_idx on public.properties (user_id);
 
-create table public.tours (
+create table if not exists public.tours (
   id uuid primary key default gen_random_uuid(),
   property_id uuid not null references public.properties (id) on delete cascade,
   asset_url text not null,
@@ -44,9 +47,9 @@ create table public.tours (
   created_at timestamptz not null default now()
 );
 
-create index tours_property_id_idx on public.tours (property_id);
+create index if not exists tours_property_id_idx on public.tours (property_id);
 
-create table public.floors (
+create table if not exists public.floors (
   id uuid primary key default gen_random_uuid(),
   tour_id uuid not null references public.tours (id) on delete cascade,
   name text not null,
@@ -58,9 +61,9 @@ create table public.floors (
   features jsonb not null default '[]'::jsonb
 );
 
-create index floors_tour_id_idx on public.floors (tour_id);
+create index if not exists floors_tour_id_idx on public.floors (tour_id);
 
-create table public.rooms (
+create table if not exists public.rooms (
   id uuid primary key default gen_random_uuid(),
   floor_id uuid not null references public.floors (id) on delete cascade,
   name text not null,
@@ -71,7 +74,7 @@ create table public.rooms (
   footprint jsonb
 );
 
-create index rooms_floor_id_idx on public.rooms (floor_id);
+create index if not exists rooms_floor_id_idx on public.rooms (floor_id);
 
 -- ---------------------------------------------------------------------------
 -- Row level security: realtors manage their own listings; anyone can read a
@@ -83,24 +86,29 @@ alter table public.tours enable row level security;
 alter table public.floors enable row level security;
 alter table public.rooms enable row level security;
 
+drop policy if exists "Owners manage their properties" on public.properties;
 create policy "Owners manage their properties" on public.properties
   for all to authenticated
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
 
+drop policy if exists "Published properties are public" on public.properties;
 create policy "Published properties are public" on public.properties
   for select to anon, authenticated
   using (published);
 
+drop policy if exists "Owners manage their tours" on public.tours;
 create policy "Owners manage their tours" on public.tours
   for all to authenticated
   using (exists (select 1 from public.properties p where p.id = property_id and p.user_id = auth.uid()))
   with check (exists (select 1 from public.properties p where p.id = property_id and p.user_id = auth.uid()));
 
+drop policy if exists "Published tours are public" on public.tours;
 create policy "Published tours are public" on public.tours
   for select to anon, authenticated
   using (published and exists (select 1 from public.properties p where p.id = property_id and p.published));
 
+drop policy if exists "Owners manage their floors" on public.floors;
 create policy "Owners manage their floors" on public.floors
   for all to authenticated
   using (exists (
@@ -110,12 +118,14 @@ create policy "Owners manage their floors" on public.floors
     select 1 from public.tours t join public.properties p on p.id = t.property_id
     where t.id = tour_id and p.user_id = auth.uid()));
 
+drop policy if exists "Floors of published tours are public" on public.floors;
 create policy "Floors of published tours are public" on public.floors
   for select to anon, authenticated
   using (exists (
     select 1 from public.tours t join public.properties p on p.id = t.property_id
     where t.id = tour_id and t.published and p.published));
 
+drop policy if exists "Owners manage their rooms" on public.rooms;
 create policy "Owners manage their rooms" on public.rooms
   for all to authenticated
   using (exists (
@@ -125,6 +135,7 @@ create policy "Owners manage their rooms" on public.rooms
     select 1 from public.floors f join public.tours t on t.id = f.tour_id join public.properties p on p.id = t.property_id
     where f.id = floor_id and p.user_id = auth.uid()));
 
+drop policy if exists "Rooms of published tours are public" on public.rooms;
 create policy "Rooms of published tours are public" on public.rooms
   for select to anon, authenticated
   using (exists (
@@ -165,18 +176,22 @@ insert into storage.buckets (id, name, public)
 values ('captures', 'captures', true)
 on conflict (id) do nothing;
 
+drop policy if exists "Realtors upload into their folder" on storage.objects;
 create policy "Realtors upload into their folder" on storage.objects
   for insert to authenticated
   with check (bucket_id = 'captures' and (storage.foldername(name))[1] = auth.uid()::text);
 
+drop policy if exists "Realtors update their files" on storage.objects;
 create policy "Realtors update their files" on storage.objects
   for update to authenticated
   using (bucket_id = 'captures' and (storage.foldername(name))[1] = auth.uid()::text);
 
+drop policy if exists "Realtors delete their files" on storage.objects;
 create policy "Realtors delete their files" on storage.objects
   for delete to authenticated
   using (bucket_id = 'captures' and (storage.foldername(name))[1] = auth.uid()::text);
 
+drop policy if exists "Captures are publicly readable" on storage.objects;
 create policy "Captures are publicly readable" on storage.objects
   for select to anon, authenticated
   using (bucket_id = 'captures');

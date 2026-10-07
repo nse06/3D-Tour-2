@@ -1,6 +1,6 @@
 import { getCurrentUser } from "@/lib/auth";
 import { getRepository } from "@/lib/data/repository";
-import { createUploadTarget, type UploadKind } from "@/lib/storage";
+import { createUploadTarget, UploadError, type UploadKind } from "@/lib/storage";
 
 /** Issue a signed upload target for a capture (.glb/.gltf) or a cover photo. */
 export async function POST(request: Request, ctx: RouteContext<"/api/properties/[id]/uploads">) {
@@ -16,6 +16,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/properties/
     const target = await createUploadTarget(user.id, id, kind, String(body?.filename ?? ""), Number(body?.size ?? 0));
     return Response.json(target);
   } catch (e) {
-    return Response.json({ error: (e as Error).message }, { status: 400 });
+    return Response.json({ error: (e as Error).message }, { status: e instanceof UploadError ? e.status : 500 });
   }
 }

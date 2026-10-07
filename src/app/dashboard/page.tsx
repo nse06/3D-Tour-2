@@ -1,9 +1,11 @@
-import { Box, Eye, Pencil, Plus, ScanLine, Smartphone } from "lucide-react";
+import { Box, Eye, Pencil, Plus, Smartphone } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { CopyLinkButton } from "@/components/dashboard/CopyLinkButton";
 import { ButtonLink, Card, StatusPill } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { getRepository } from "@/lib/data/repository";
+import { isMissingSchemaError } from "@/lib/setup";
 import type { PropertySummary } from "@/lib/data/types";
 import { cityLine, formatBaths, formatNumber, formatPrice } from "@/lib/format";
 
@@ -12,7 +14,11 @@ export const metadata = { title: "Listings" };
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const listings = await (await getRepository()).listProperties(user.id);
+  const listings = await (await getRepository()).listProperties(user.id).catch((e) => {
+    // A fresh Supabase project without Atrium's tables: /setup hands over the SQL.
+    if (isMissingSchemaError(e)) redirect("/setup");
+    throw e;
+  });
   return (
     <div className="rise">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
@@ -36,7 +42,7 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      <CaptureComingSoon />
+      <IphoneCaptureNote />
     </div>
   );
 }
@@ -118,22 +124,19 @@ function EmptyState() {
   );
 }
 
-function CaptureComingSoon() {
+function IphoneCaptureNote() {
   return (
     <div className="mt-14 flex flex-col gap-4 rounded-3xl border border-dashed border-sand p-6 text-sm text-neutral-600 md:flex-row md:items-center md:gap-6">
       <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-white shadow-sm ring-1 ring-sand">
         <Smartphone className="size-5 text-ink" strokeWidth={1.5} />
       </span>
       <div className="flex-1">
-        <p className="font-medium text-ink">Coming soon: capture with your iPhone</p>
+        <p className="font-medium text-ink">Capture with your iPhone</p>
         <p className="mt-0.5">
-          Walk through the home once with the Atrium app (LiDAR + RoomPlan). Rooms, floors and the walkthrough path are created automatically — today&apos;s
-          uploaded 3D captures use the exact same pipeline.
+          Walk through the home once with the Atrium Capture app (LiDAR + RoomPlan). Rooms, floors and the walkthrough path are created automatically. Open a
+          listing and choose <b className="font-medium text-ink">Connect an iPhone</b>.
         </p>
       </div>
-      <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-linen px-3 py-1 text-xs font-medium text-stone md:self-center">
-        <ScanLine className="size-3.5" /> In development
-      </span>
     </div>
   );
 }

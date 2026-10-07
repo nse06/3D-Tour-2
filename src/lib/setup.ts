@@ -5,7 +5,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
-import { storageMode } from "@/lib/data/config";
+import { storageMode, supabasePublicKey, supabaseUrl } from "@/lib/data/config";
 
 export type SetupStatus =
   | { ok: true }
@@ -17,10 +17,6 @@ export type SetupStatus =
 const REQUIRED_TABLES = ["properties", "tours", "floors", "rooms", "capture_sessions"];
 
 const MISSING_TABLE = /PGRST205|42P01|schema cache|does not exist/i;
-
-// Vercel's Supabase integration provides the newer "publishable" key name; manual setups often use the legacy anon key.
-const supabaseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabasePublicKey = () => process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 export async function checkSetup(): Promise<SetupStatus> {
   const mode = storageMode();

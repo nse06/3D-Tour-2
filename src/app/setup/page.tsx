@@ -64,8 +64,8 @@ export default async function SetupPage() {
           <>
             <h1 className="font-display mt-3 text-5xl leading-[1.05]">One last step: create the tables</h1>
             <p className="mt-4 text-[15px] leading-relaxed text-neutral-600">
-              Your Supabase database is connected. Run Atrium&apos;s schema once — it creates the listing tables, row-level security policies and the storage
-              bucket for 3D captures.
+              Your Supabase database is connected. Run Atrium&apos;s schema — it creates the listing tables, row-level security policies and the storage bucket
+              for 3D captures. Ran it before an update? Run it again: it only adds what&apos;s new.
             </p>
             <Card className="mt-8 p-6 md:p-8">
               <Steps

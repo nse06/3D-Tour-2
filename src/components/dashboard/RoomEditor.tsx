@@ -5,13 +5,13 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { saveSpaceAction, setCoverImageAction } from "@/app/dashboard/actions";
+import { saveSpaceAction, setAppearanceAction, setCoverImageAction } from "@/app/dashboard/actions";
 import { FloorPlan } from "@/components/tour/FloorPlan";
 import type { LivePose, ViewerApi } from "@/components/tour/viewer-types";
 import { Button, buttonClass } from "@/components/ui";
 import { floorForHeight, sortedFloors } from "@/lib/tour/navigation";
 import { newId } from "@/lib/tour/space";
-import type { TourFloor, TourRoom, TourSpace, Waypoint } from "@/lib/tour/types";
+import type { TourAppearance, TourFloor, TourRoom, TourSpace, Waypoint } from "@/lib/tour/types";
 import { dataUrlToBlob, uploadFile } from "@/lib/upload-client";
 
 const TourScene = dynamic(() => import("@/components/tour/TourScene"), { ssr: false });
@@ -20,6 +20,7 @@ interface Props {
   propertyId: string;
   assetUrl: string;
   initialSpace: TourSpace;
+  initialAppearance: TourAppearance;
 }
 
 /**
@@ -27,7 +28,7 @@ interface Props {
  * in each room. (With iPhone scans this happens automatically; this editor is
  * for manual uploads and for fine-tuning.)
  */
-export function RoomEditor({ propertyId, assetUrl, initialSpace }: Props) {
+export function RoomEditor({ propertyId, assetUrl, initialSpace, initialAppearance }: Props) {
   const router = useRouter();
   const apiRef = useRef<ViewerApi | null>(null);
   const [space, setSpace] = useState<TourSpace>(initialSpace);
@@ -42,6 +43,7 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace }: Props) {
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [planFloorId, setPlanFloorId] = useState<string | null>(floors[0]?.id ?? null);
   const [coverBusy, setCoverBusy] = useState(false);
+  const [appearance, setAppearance] = useState<TourAppearance>(initialAppearance);
 
   const update = useCallback((fn: (s: TourSpace) => TourSpace) => {
     setSpace((s) => fn(s));
@@ -301,6 +303,7 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace }: Props) {
               onProgress={() => {}}
               onLoaded={() => setLoaded(true)}
               onError={(m) => flash("error", m)}
+              appearance={appearance}
               effects
             />
             {!loaded && (
@@ -314,6 +317,34 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace }: Props) {
               <span className="size-6 rounded-full border border-white/70 shadow-[0_0_0_1px_rgba(0,0,0,0.25)]" />
             </div>
             <div className="glass absolute left-4 top-4 rounded-full px-3 py-1.5 text-xs font-medium text-white">Editing viewpoints</div>
+            <div className="glass absolute right-4 top-4 flex rounded-full p-1 text-xs font-medium" role="radiogroup" aria-label="Lighting">
+              {(
+                [
+                  ["studio", "Studio light", "Soft studio lighting — best for iPhone scans and modeled homes"],
+                  ["captured", "As captured", "Unlit, exactly as scanned — best for photo-textured scans"],
+                ] as const
+              ).map(([value, label, title]) => (
+                <button
+                  key={value}
+                  role="radio"
+                  aria-checked={appearance === value}
+                  title={title}
+                  onClick={async () => {
+                    if (appearance === value) return;
+                    const previous = appearance;
+                    setAppearance(value);
+                    const res = await setAppearanceAction(propertyId, value);
+                    if (!res.ok) {
+                      setAppearance(previous);
+                      flash("error", res.error ?? "Could not change the lighting.");
+                    } else flash("ok", value === "captured" ? "Showing the capture as scanned" : "Using studio lighting");
+                  }}
+                  className={`rounded-full px-3 py-1 transition ${appearance === value ? "bg-white text-neutral-900" : "text-white/80 hover:text-white"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             {planFloor && space.rooms.some((r) => r.floorId === planFloor.id) && (
               <div className="glass absolute bottom-4 right-4 hidden w-56 rounded-2xl p-2 md:block">
                 {floors.length > 1 && (

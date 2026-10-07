@@ -1,7 +1,7 @@
 import { slugify } from "@/lib/format";
-import type { TourData, TourSpace } from "@/lib/tour/types";
-import { isSupabaseConfigured } from "./config";
-import type { CaptureInput, Property, PropertyBundle, PropertyInput, PropertySummary } from "./types";
+import type { TourAppearance, TourData, TourSpace } from "@/lib/tour/types";
+import { isSupabaseConfigured, supabaseAdminKey } from "./config";
+import type { CaptureInput, CaptureSession, CaptureSessionLookup, Property, PropertyBundle, PropertyInput, PropertySummary } from "./types";
 
 /**
  * Storage-agnostic persistence API. Two implementations:
@@ -20,10 +20,19 @@ export interface Repository {
   attachCapture(userId: string, propertyId: string, capture: CaptureInput): Promise<void>;
   /** Replace floors/rooms/links of the property's tour (room editor). */
   saveSpace(userId: string, propertyId: string, space: TourSpace): Promise<void>;
+  /** How the viewer lights the property's capture. */
+  setAppearance(userId: string, propertyId: string, appearance: TourAppearance): Promise<void>;
   getPublishedBySlug(slug: string): Promise<PropertyBundle | null>;
+
+  // iPhone capture pairing (see docs/iphone-capture.md §3).
+  createCaptureSession(userId: string, propertyId: string, input: Pick<CaptureSession, "tokenHash" | "expiresAt">): Promise<CaptureSession>;
+  /** The unexpired session with this token hash, or null. Needs no user: the phone only has the token. */
+  findCaptureSessionByTokenHash(tokenHash: string): Promise<CaptureSessionLookup | null>;
+  completeCaptureSession(userId: string, sessionId: string): Promise<void>;
 }
 
 let repo: Promise<Repository> | null = null;
+let adminRepo: Promise<Repository> | null = null;
 
 export function getRepository(): Promise<Repository> {
   if (!repo) {
@@ -32,6 +41,35 @@ export function getRepository(): Promise<Repository> {
       : import("./local-store").then((m) => new m.LocalRepository());
   }
   return repo;
+}
+
+/** The server is missing configuration that a feature needs (HTTP 503). */
+export class ConfigurationError extends Error {}
+
+/** Why the phone endpoints can't work on this server, or null when they can. */
+export function adminRepositoryUnavailableReason(): string | null {
+  if (isSupabaseConfigured() && !supabaseAdminKey()) {
+    return "iPhone uploads need SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY). Add it to the server's environment variables (see .env.example) and redeploy.";
+  }
+  return null;
+}
+
+/**
+ * Repository for requests without a realtor session: the iPhone app, which
+ * authenticates with a capture-session token. Local mode has no RLS, so this
+ * is the regular store. In Supabase mode it uses the service-role key, which
+ * bypasses RLS — every query on this path filters by the owning user itself.
+ */
+export function getAdminRepository(): Promise<Repository> {
+  if (!isSupabaseConfigured()) return getRepository();
+  const unavailable = adminRepositoryUnavailableReason();
+  if (unavailable) return Promise.reject(new ConfigurationError(unavailable));
+  if (!adminRepo) {
+    adminRepo = Promise.all([import("./supabase-store"), import("@/lib/supabase/admin")]).then(
+      ([store, admin]) => new store.SupabaseRepository(async () => admin.createSupabaseAdminClient()),
+    );
+  }
+  return adminRepo;
 }
 
 export function bundleToTourData(bundle: PropertyBundle): TourData | null {
@@ -54,6 +92,7 @@ export function bundleToTourData(bundle: PropertyBundle): TourData | null {
     },
     assetUrl: tour.assetUrl,
     source: tour.source,
+    appearance: tour.appearance ?? "studio",
     space,
   };
 }

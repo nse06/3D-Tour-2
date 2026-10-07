@@ -25,7 +25,7 @@ export function CaptureUploader({ propertyId, compact = false, onDone }: { prope
         setPhase({ kind: "working", label: `Uploading ${formatBytes(file.size)}`, progress: p }),
       );
       setPhase({ kind: "working", label: inspected.manifest ? "Building rooms and walkthrough path…" : "Saving capture…" });
-      const res = await completeCaptureUploadAction(propertyId, { assetUrl, format: inspected.format, manifest: inspected.manifest });
+      const res = await completeCaptureUploadAction(propertyId, { assetUrl, manifest: inspected.manifest });
       if (!res.ok) throw new Error(res.error);
       setPhase({
         kind: "done",

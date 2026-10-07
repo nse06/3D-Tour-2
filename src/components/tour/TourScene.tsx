@@ -12,7 +12,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import type { TourSpace, Waypoint } from "@/lib/tour/types";
+import type { TourAppearance, TourSpace, Waypoint } from "@/lib/tour/types";
 import { CameraRig } from "./CameraRig";
 import type { LivePose, ViewerApi, ViewerMode } from "./viewer-types";
 
@@ -30,6 +30,8 @@ export interface TourSceneProps {
   onProgress: (fraction: number) => void;
   onLoaded: () => void;
   onError: (message: string) => void;
+  /** "captured": show the textures unlit, exactly as scanned (photo-textured captures). */
+  appearance?: TourAppearance;
   /** Screen-space ambient occlusion; enabled on desktop-class GPUs. */
   effects?: boolean;
   autoPan?: boolean;
@@ -73,6 +75,7 @@ function PropertyModel({
   onFade,
   onProgress,
   onLoaded,
+  appearance = "studio",
   effects = false,
   autoPan = false,
   onUserInteract,
@@ -122,10 +125,16 @@ function PropertyModel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gltf]);
 
+  useLayoutEffect(() => {
+    if (appearance !== "captured") return;
+    return showUnlit(gltf.scene);
+  }, [gltf, appearance]);
+
+  const captured = appearance === "captured";
   return (
     <>
-      <EnvironmentLighting intensity={hasLights ? 0.9 : 1.15} />
-      <hemisphereLight args={["#fff8ee", "#b9ab98", hasLights ? 0.5 : 0.75]} />
+      {!captured && <EnvironmentLighting intensity={hasLights ? 0.9 : 1.15} />}
+      {!captured && <hemisphereLight args={["#fff8ee", "#b9ab98", hasLights ? 0.5 : 0.75]} />}
       <Bvh firstHitOnly>
         <primitive object={gltf.scene} ref={modelRef} />
       </Bvh>
@@ -143,7 +152,7 @@ function PropertyModel({
         autoPan={autoPan}
         onUserInteract={onUserInteract}
       />
-      {effects && (
+      {effects && !captured && (
         <EffectComposer multisampling={4}>
           <N8AO aoRadius={0.6} distanceFalloff={0.7} intensity={2.4} quality="medium" halfRes />
           <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
@@ -151,6 +160,50 @@ function PropertyModel({
       )}
     </>
   );
+}
+
+/**
+ * Swap every material for an unlit one with the same colour texture, so a
+ * photo-textured scan looks exactly as captured (its lighting is baked into
+ * the texture). Returns a function that restores the original materials.
+ */
+function showUnlit(root: THREE.Object3D): () => void {
+  const restore: (() => void)[] = [];
+  const unlit = new Map<THREE.Material, THREE.Material>();
+  const toUnlit = (m: THREE.Material) => {
+    let basic = unlit.get(m);
+    if (!basic) {
+      const src = m as THREE.MeshStandardMaterial;
+      basic = new THREE.MeshBasicMaterial({
+        name: m.name,
+        map: src.map ?? null,
+        color: src.color ?? new THREE.Color("#ffffff"),
+        vertexColors: m.vertexColors,
+        transparent: m.transparent,
+        opacity: m.opacity,
+        alphaTest: m.alphaTest,
+        alphaMap: src.alphaMap ?? null,
+        side: m.side,
+        depthWrite: m.depthWrite,
+        polygonOffset: m.polygonOffset,
+        polygonOffsetFactor: m.polygonOffsetFactor,
+        toneMapped: false,
+      });
+      unlit.set(m, basic);
+    }
+    return basic;
+  };
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const original = mesh.material;
+    mesh.material = Array.isArray(original) ? original.map(toUnlit) : toUnlit(original);
+    restore.push(() => (mesh.material = original));
+  });
+  return () => {
+    restore.forEach((r) => r());
+    unlit.forEach((m) => m.dispose());
+  };
 }
 
 /** Procedural studio environment for soft reflections and fill (no network fetch). */
