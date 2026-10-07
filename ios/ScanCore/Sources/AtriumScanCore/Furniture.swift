@@ -1,10 +1,19 @@
 import Foundation
 
+/// Receives furniture boxes: the styled model meshes them, the photo model paints their faces.
+protocol BoxSink {
+    mutating func addBox(_ frame: Transform, min lo: Vec3, max hi: Vec3, material: String, skipBottom: Bool)
+}
+
+extension MeshBuilder: BoxSink {}
+
 /// Furniture and appliances built from boxes, styled by RoomPlan category
 /// (docs/iphone-capture.md §3.4). Each object is an oriented box: centered on
 /// its transform's origin, Y up, full extents `size`.
 enum Furniture {
-    static func build(_ object: ScanObject, walls: [WallInfo], into mesh: inout MeshBuilder) {
+    /// - Parameter decor: trims the scan didn't measure (pillows, counter tops, a fridge's door
+    ///   gap). The photo model leaves them out: the photos show the real ones.
+    static func build<Sink: BoxSink>(_ object: ScanObject, walls: [WallInfo], into mesh: inout Sink, decor: Bool = true) {
         let size = object.size
         guard size.x > 0.02, size.y > 0.02, size.z > 0.02, size.x < 12, size.y < 6, size.z < 12, object.transform.isFinite else { return }
         let frame = rigid(object.transform)
@@ -39,23 +48,31 @@ enum Furniture {
 
         case "bed":
             let (axisX, sign) = backSide(object, frame: frame, walls: walls)
-            let base = min(0.32, size.y * 0.5), mattress = min(base + 0.22, size.y)
+            let base = min(0.32, size.y * 0.5)
+            // Without decor, a headboard only if the bed was measured taller than a mattress;
+            // otherwise the mattress fills the measured height.
+            let head: Float = 0.07, headTop: Float = decor ? max(size.y, 1.0) : size.y
+            let hasHead = headTop > min(base + 0.22, size.y) + 0.1
+            let mattress = hasHead ? min(base + 0.22, size.y) : size.y
             box(-hx, hx, 0, base, -hz, hz, Mat.fabricDark)
             box(-hx + 0.02, hx - 0.02, base, mattress, -hz + 0.02, hz - 0.02, Mat.duvet)
-            let head: Float = 0.07, headTop: Float = max(size.y, 1.0)
             let pillowLen: Float = 0.38
             if axisX {
                 let x0: Float = sign > 0 ? hx - head : -hx, x1: Float = sign > 0 ? hx : -hx + head
-                box(x0, x1, 0, headTop, -hz, hz, Mat.fabricDark)
+                if hasHead { box(x0, x1, 0, headTop, -hz, hz, Mat.fabricDark) }
                 let px0: Float = sign > 0 ? hx - head - pillowLen : -hx + head, px1 = px0 + pillowLen
-                box(px0, px1, mattress, mattress + 0.12, -hz + 0.08, -0.03, Mat.duvet)
-                box(px0, px1, mattress, mattress + 0.12, 0.03, hz - 0.08, Mat.duvet)
+                if decor {
+                    box(px0, px1, mattress, mattress + 0.12, -hz + 0.08, -0.03, Mat.duvet)
+                    box(px0, px1, mattress, mattress + 0.12, 0.03, hz - 0.08, Mat.duvet)
+                }
             } else {
                 let z0: Float = sign > 0 ? hz - head : -hz, z1: Float = sign > 0 ? hz : -hz + head
-                box(-hx, hx, 0, headTop, z0, z1, Mat.fabricDark)
+                if hasHead { box(-hx, hx, 0, headTop, z0, z1, Mat.fabricDark) }
                 let pz0: Float = sign > 0 ? hz - head - pillowLen : -hz + head, pz1 = pz0 + pillowLen
-                box(-hx + 0.08, -0.03, mattress, mattress + 0.12, pz0, pz1, Mat.duvet)
-                box(0.03, hx - 0.08, mattress, mattress + 0.12, pz0, pz1, Mat.duvet)
+                if decor {
+                    box(-hx + 0.08, -0.03, mattress, mattress + 0.12, pz0, pz1, Mat.duvet)
+                    box(0.03, hx - 0.08, mattress, mattress + 0.12, pz0, pz1, Mat.duvet)
+                }
             }
 
         case "chair":
@@ -83,7 +100,7 @@ enum Furniture {
             }
 
         case "storage":
-            if size.y < 1.2 && min(size.x, size.z) > 0.45 {
+            if decor && size.y < 1.2 && min(size.x, size.z) > 0.45 {
                 // Base cabinets / counter.
                 box(-hx, hx, 0, size.y - 0.03, -hz, hz, Mat.lacquer)
                 box(-hx - 0.01, hx + 0.01, size.y - 0.03, size.y, -hz - 0.01, hz + 0.01, Mat.stone, skipBottom: false)
@@ -93,19 +110,27 @@ enum Furniture {
 
         case "refrigerator":
             box(-hx, hx, 0, size.y, -hz, hz, Mat.steel)
-            if size.y > 1.3 { box(-hx - 0.003, hx + 0.003, size.y * 0.62, size.y * 0.62 + 0.012, -hz - 0.003, hz + 0.003, Mat.shadowGap) }
+            if decor && size.y > 1.3 { box(-hx - 0.003, hx + 0.003, size.y * 0.62, size.y * 0.62 + 0.012, -hz - 0.003, hz + 0.003, Mat.shadowGap) }
 
         case "stove", "oven":
-            box(-hx, hx, 0, size.y - 0.02, -hz, hz, Mat.steel)
-            box(-hx, hx, size.y - 0.02, size.y, -hz, hz, Mat.black, skipBottom: false)
+            if decor {
+                box(-hx, hx, 0, size.y - 0.02, -hz, hz, Mat.steel)
+                box(-hx, hx, size.y - 0.02, size.y, -hz, hz, Mat.black, skipBottom: false)
+            } else {
+                box(-hx, hx, 0, size.y, -hz, hz, Mat.steel)
+            }
 
         case "dishwasher":
             box(-hx, hx, 0, size.y, -hz, hz, Mat.steel)
 
         case "sink":
-            box(-hx, hx, 0, size.y - 0.03, -hz, hz, Mat.lacquer)
-            box(-hx, hx, size.y - 0.03, size.y, -hz, hz, Mat.stone, skipBottom: false)
-            box(-hx * 0.55, hx * 0.55, size.y, size.y + 0.002, -hz * 0.55, hz * 0.55, Mat.steel)
+            if decor {
+                box(-hx, hx, 0, size.y - 0.03, -hz, hz, Mat.lacquer)
+                box(-hx, hx, size.y - 0.03, size.y, -hz, hz, Mat.stone, skipBottom: false)
+                box(-hx * 0.55, hx * 0.55, size.y, size.y + 0.002, -hz * 0.55, hz * 0.55, Mat.steel)
+            } else {
+                box(-hx, hx, 0, size.y, -hz, hz, Mat.lacquer)
+            }
 
         case "washerDryer":
             box(-hx, hx, 0, size.y, -hz, hz, Mat.ceramic)
@@ -145,7 +170,7 @@ enum Furniture {
     }
 
     /// Steps rising along the longer horizontal axis.
-    static func buildStairs(_ size: Vec3, frame: Transform, into mesh: inout MeshBuilder) {
+    static func buildStairs<Sink: BoxSink>(_ size: Vec3, frame: Transform, into mesh: inout Sink) {
         let steps = max(2, Int((size.y / 0.18).rounded()))
         let alongX = size.x >= size.z
         let run = alongX ? size.x : size.z

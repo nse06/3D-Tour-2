@@ -258,6 +258,8 @@ public enum RoomAlignment {
             var f = frame
             f.transform = m.transform * frame.transform
             f.segment = nil
+            // Photos from before the app recorded it: how fast the phone turned, from the path.
+            if f.angularSpeed == nil { f.angularSpeed = turnRate(at: frame.t, segment: s, path: cleanPath, segmentation: seg) }
             scan.frames.append(f)
         }
 
@@ -494,6 +496,38 @@ public enum RoomAlignment {
         let before = path[max(0, lo - 1)], after = path[min(path.count - 1, lo)]
         let i = vlength(p - before.p) <= vlength(p - after.p) ? max(0, lo - 1) : min(path.count - 1, lo)
         return seg.segmentOfSample[i]
+    }
+
+    /// How fast the camera was turning at time `t`, radians per second: the angle between its
+    /// view directions at the path samples on either side (same segment, at most 0.4 s away).
+    static func turnRate(at t: Double, segment: Int, path: [PoseSample], segmentation seg: Segmentation) -> Float? {
+        var lo = 0, hi = path.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if path[mid].t < t { lo = mid + 1 } else { hi = mid }
+        }
+        var before: Int?, after: Int?
+        var i = lo - 1
+        while i >= 0, t - path[i].t <= 0.4 {
+            if seg.segmentOfSample[i] == segment {
+                before = i
+                break
+            }
+            i -= 1
+        }
+        i = lo
+        while i < path.count, path[i].t - t <= 0.4 {
+            if seg.segmentOfSample[i] == segment {
+                after = i
+                break
+            }
+            i += 1
+        }
+        guard let a = before, let b = after, path[b].t - path[a].t > 0.01 else { return nil }
+        let fa = vnormalize(path[a].f), fb = vnormalize(path[b].f)
+        let angle = atan2(vlength(vcross(fa, fb)), vdot(fa, fb))
+        let rate = angle / Float(path[b].t - path[a].t)
+        return rate.isFinite ? rate : nil
     }
 
     // MARK: Structure fit

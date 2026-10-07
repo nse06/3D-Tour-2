@@ -20,7 +20,7 @@ final class PhotoTexturingTests: XCTestCase {
     /// Renders the photo a frame names, from the pose it was taken at (like the app reading
     /// the JPEG: ScanProcessor may hand over the frame moved into its normalized frame).
     struct Raycast: PhotoSource {
-        let poses = Dictionary(uniqueKeysWithValues: PhotoTexturingTests.frames().map { ($0.file, $0.transform) })
+        var poses = Dictionary(uniqueKeysWithValues: PhotoTexturingTests.frames().map { ($0.file, $0.transform) })
         /// Auto-exposure: each photo comes out up to this much brighter or darker.
         var exposureSpread: Float = 0
 
@@ -129,12 +129,14 @@ final class PhotoTexturingTests: XCTestCase {
         // The floor right under the camera and the far side of the cabinet are never photographed.
         XCTAssertGreaterThan(baked.coverage, 0.7)
         XCTAssertEqual(baked.photosUsed, cameras.count)
+        // Each patch of a surface comes from one photo; only the seams between patches mix photos.
+        XCTAssertLessThan(baked.blended, 0.2)
 
         // Every texel well inside a chart matches the pattern at its world position (cabinet faces: magenta).
         var errors: [Float] = []
         var leaks = 0, behindCabinet = 0
-        for (ci, chart) in model.charts.enumerated() where chart.w > 2 * PhotoChart.pad + 4 && chart.h > 2 * PhotoChart.pad + 4 {
-            let isCabinet = chart.fallback == PhotoModel.objectColor
+        for (ci, chart) in model.charts.enumerated() where !chart.isSolid && chart.w > 2 * PhotoChart.pad + 4 && chart.h > 2 * PhotoChart.pad + 4 {
+            let isCabinet = chart.kind == .object
             for j in (PhotoChart.pad + 2)..<(chart.h - PhotoChart.pad - 2) {
                 for i in (PhotoChart.pad + 2)..<(chart.w - PhotoChart.pad - 2) {
                     let p = chart.point(i, j)
@@ -181,7 +183,7 @@ final class PhotoTexturingTests: XCTestCase {
 
         // After one overall brightness factor, the surfaces match the pattern again.
         var pairs: [(got: Float, want: Float)] = []
-        for (ci, chart) in model.charts.enumerated() where chart.fallback != PhotoModel.objectColor && chart.w > 2 * PhotoChart.pad + 4 && chart.h > 2 * PhotoChart.pad + 4 {
+        for (ci, chart) in model.charts.enumerated() where chart.kind != .object && !chart.isSolid && chart.w > 2 * PhotoChart.pad + 4 && chart.h > 2 * PhotoChart.pad + 4 {
             for j in (PhotoChart.pad + 2)..<(chart.h - PhotoChart.pad - 2) {
                 for i in (PhotoChart.pad + 2)..<(chart.w - PhotoChart.pad - 2) where baked.seen[ci][j * chart.w + i] {
                     let p = chart.point(i, j)
@@ -232,6 +234,152 @@ final class PhotoTexturingTests: XCTestCase {
         let styled = try ScanProcessor.process(Self.room(), options: ScanProcessorOptions(textureSize: 32))
         XCTAssertNil(styled.manifest.appearance)
         XCTAssertNil(styled.stats.photoCoverage)
+    }
+
+    func testCellsLeanTowardTheirNeighboursPhoto() {
+        // Photo 1 is best on the left half, photo 2 on the right; one cell on the left prefers
+        // photo 2 by a hair, and a strip down the middle flips between them.
+        let w = 12, h = 6, k = 2
+        var cameras = [UInt16](repeating: .max, count: w * h * k), scores = [Float](repeating: 0, count: w * h * k)
+        for y in 0..<h {
+            for x in 0..<w {
+                var a: Float = x < 6 ? 1 : 0.9, b: Float = x < 6 ? 0.9 : 1
+                if x == 2 && y == 3 { b = 1.05 }
+                if x == 5 || x == 6 { (a, b) = (y % 2 == 0) ? (1, 0.97) : (0.97, 1) }
+                let c = (y * w + x) * k
+                (cameras[c], scores[c], cameras[c + 1], scores[c + 1]) = a >= b ? (1, a, 2, b) : (2, b, 1, a)
+            }
+        }
+        let labels = PhotoBaker.smoothLabels(width: w, height: h, cameras: cameras, scores: scores, perCell: k)
+        XCTAssertEqual(labels[3 * w + 2], 1, "the stray cell follows its neighbours")
+        for y in 0..<h {
+            XCTAssertEqual(labels[y * w], 1)
+            XCTAssertEqual(labels[y * w + w - 1], 2)
+            // Across the flickering strip: one boundary per row, not a checkerboard.
+            let row = (0..<w).map { labels[y * w + $0] }
+            XCTAssertEqual(zip(row, row.dropFirst()).filter { $0 != $1 }.count, 1, "row \(y): \(row)")
+        }
+    }
+
+    func testSteadyPhotosWinOverBlurryOnes() throws {
+        // Every photo twice from (almost) the same spot: once steady, once while the phone was turning.
+        var scan = Self.room()
+        var poses: [String: Transform] = [:]
+        for f in Self.frames() {
+            var steady = f
+            steady.angularSpeed = 0.05
+            steady.exposureDuration = 1.0 / 60
+            var blurry = f
+            blurry.file = f.file.replacingOccurrences(of: ".jpg", with: "-moving.jpg")
+            blurry.transform = Transform.translating(f.transform.xAxis * 0.01) * f.transform
+            blurry.angularSpeed = 1.2
+            blurry.exposureDuration = 1.0 / 60
+            scan.frames += [steady, blurry]
+            poses[steady.file] = steady.transform
+            poses[blurry.file] = blurry.transform
+        }
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        var model = PhotoModel.build(scan: scan, rooms: rooms, walls: walls, defaultThickness: 0.12, includeCeilings: true)
+        model.measureCharts()
+        let options = PhotoTexturingOptions(atlasSize: 1024, maxAtlases: 2, texelSize: 0.03, depthWidth: 96)
+        let atlases = try XCTUnwrap(PhotoBaker.pack(&model.charts, options: options))
+        let cameras = scan.frames.compactMap { PhotoCamera($0, depthWidth: options.depthWidth) }
+        let baked = PhotoBaker.bake(model: model, cameras: cameras, photos: Raycast(poses: poses), atlasCount: atlases, options: options)
+        let moving = zip(scan.frames, baked.texelsPerPhoto).filter { $0.0.file.contains("moving") }.reduce(0) { $0 + $1.1 }
+        let all = baked.texelsPerPhoto.reduce(0, +)
+        XCTAssertGreaterThan(all, 1000)
+        XCTAssertLessThan(Double(moving) / Double(all), 0.03, "\(moving) of \(all) texels came from blurry photos")
+    }
+
+    func testFurnitureIsPaintedInParts() {
+        // A bed with a headboard: the duvet is painted at mattress height, not on top of a box as tall as the headboard.
+        var scan = Self.room()
+        scan.objects = [ScanObject(id: "B", roomId: scan.rooms[0].id, category: "bed", transform: Transform.translating(Vec3(2, 0.55, 1.2)), size: Vec3(1.6, 1.1, 2.0))]
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        let model = PhotoModel.build(scan: scan, rooms: rooms, walls: walls, defaultThickness: 0.12, includeCeilings: true)
+        let parts = model.charts.filter { $0.kind == .object }
+        XCTAssertGreaterThanOrEqual(parts.count, 12, "base, mattress and headboard, each with its own faces")
+        let tops = parts.filter { $0.normal.y > 0.9 }.map(\.origin.y).sorted()
+        XCTAssertTrue(tops.contains { abs($0 - 0.54) < 0.02 }, "mattress top in \(tops)")
+        XCTAssertTrue(tops.contains { abs($0 - 1.1) < 0.02 }, "headboard top in \(tops)")
+        XCTAssertFalse(tops.contains { abs($0 - 0.66) < 0.02 }, "no made-up pillows: \(tops)")
+
+        // A bed measured at mattress height has no headboard; its mattress fills the measured height.
+        scan.objects[0].size = Vec3(1.6, 0.6, 2.0)
+        scan.objects[0].transform = Transform.translating(Vec3(2, 0.3, 1.2))
+        let low = PhotoModel.build(scan: scan, rooms: rooms, walls: walls, defaultThickness: 0.12, includeCeilings: true)
+        let lowParts = low.charts.filter { $0.kind == .object }
+        XCTAssertEqual(lowParts.filter { $0.normal.y > 0.9 }.map(\.origin.y).max() ?? 0, 0.6, accuracy: 0.005)
+        XCTAssertLessThan(lowParts.count, parts.count, "no headboard")
+    }
+
+    func testWallEdgesTakeTheWallsColor() throws {
+        var scan = Self.room()
+        scan.frames = Self.frames()
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        var model = PhotoModel.build(scan: scan, rooms: rooms, walls: walls, defaultThickness: 0.12, includeCeilings: true)
+        XCTAssertTrue(model.mesh.order.allSatisfy { $0.hasPrefix("chart:") }, "every face is painted: \(model.mesh.order)")
+        model.measureCharts()
+        let options = PhotoTexturingOptions(atlasSize: 1024, maxAtlases: 2, texelSize: 0.03, depthWidth: 96)
+        let atlases = try XCTUnwrap(PhotoBaker.pack(&model.charts, options: options))
+        let cameras = scan.frames.compactMap { PhotoCamera($0, depthWidth: options.depthWidth) }
+        let baked = PhotoBaker.bake(model: model, cameras: cameras, photos: Raycast(), atlasCount: atlases, options: options)
+        func pixel(_ c: PhotoChart, _ i: Int, _ j: Int) -> [Int] {
+            let a = ((c.y + j) * options.atlasSize + c.x + i) * 3
+            return (0..<3).map { Int(baked.atlases[c.atlas].pixels[a + $0]) }
+        }
+        let solids = model.charts.filter(\.isSolid)
+        XCTAssertEqual(solids.count, 4)
+        for edge in solids {
+            guard case let .solid(of) = edge.kind else { continue }
+            let wall = model.charts[of]
+            // The median of what the photos saw on the wall's inside face.
+            var channels: [[Int]] = [[], [], []]
+            for j in 0..<wall.h {
+                for i in 0..<wall.w where baked.seen[of][j * wall.w + i] {
+                    let p = pixel(wall, i, j)
+                    for k in 0..<3 { channels[k].append(p[k]) }
+                }
+            }
+            let median = channels.map { $0.sorted()[($0.count - 1) / 2] }
+            let center = pixel(edge, edge.w / 2, edge.h / 2)
+            for k in 0..<3 { XCTAssertEqual(Double(center[k]), Double(median[k]), accuracy: 1.5, "edge \(center) vs wall \(median)") }
+            XCTAssertNotEqual(center, [233, 229, 222])
+            // One color across the whole square.
+            XCTAssertEqual(pixel(edge, 0, 0), center)
+            XCTAssertEqual(pixel(edge, edge.w - 1, edge.h - 1), center)
+        }
+    }
+
+    func testWallsReachTheCeilingAndFloor() {
+        // RoomPlan measured one wall 30 cm short of the ceiling and another 10 cm off the floor;
+        // a half wall and a wall that stops well short stay as measured.
+        let id = "R1"
+        let corners: [(Double, Double)] = [(0, 0), (4, 0), (4, 3), (0, 3)]
+        var walls: [ScanWall] = []
+        let spans: [(Double, Double)] = [(0, 2.6), (0, 2.3), (0.1, 2.6), (0, 1.9)]
+        for k in 0..<4 {
+            let a = corners[k], b = corners[(k + 1) % 4], (y0, y1) = spans[k]
+            walls.append(
+                ScanWall(
+                    id: "W\(k)", roomId: id, transform: SyntheticApartment.surfaceTransform(from: a, to: b, centerY: (y0 + y1) / 2, flip: false),
+                    width: Float(SyntheticApartment.dist(a, b)), height: Float(y1 - y0)))
+        }
+        walls.append(
+            ScanWall(
+                id: "Half", roomId: id, transform: SyntheticApartment.surfaceTransform(from: (1, 1.5), to: (3, 1.5), centerY: 0.5, flip: false), width: 2,
+                height: 1))
+        let room = ScanRoom(id: id, name: "Kitchen", captureIndex: 0, floorPolygon: corners.map { Vec3(Float($0.0), 0, Float($0.1)) }, floorY: 0, ceilingY: 2.6)
+        let scan = CaptureScan(rooms: [room], walls: walls)
+        let rooms = Layout.rooms(from: scan)
+        let info = Dictionary(uniqueKeysWithValues: Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12).map { ($0.id, $0) })
+        XCTAssertEqual(info["W1"]!.y1, 2.6, accuracy: 1e-4)
+        XCTAssertEqual(info["W2"]!.y0, 0, accuracy: 1e-4)
+        XCTAssertEqual(info["W3"]!.y1, 1.9, accuracy: 1e-4)
+        XCTAssertEqual(info["Half"]!.y1, 1, accuracy: 1e-4)
     }
 
     func testDoorsBetweenRoomsAreHolesButOthersStayOnTheWall() {

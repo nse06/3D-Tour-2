@@ -28,8 +28,8 @@ struct WallInfo {
     /// Unit normal pointing into the room the wall was scanned from.
     let nIn: P2
     let length: Double
-    let y0: Double
-    let y1: Double
+    var y0: Double
+    var y1: Double
     var thickness: Double
     var holes: [WallHole] = []
 
@@ -126,8 +126,21 @@ enum Layout {
                     index: walls.count, id: w.id, roomIndex: owner?.index, a: mid - u * (width / 2), b: mid + u * (width / 2), u: u, nIn: n,
                     length: width, y0: y0, y1: y1, thickness: defaultThickness))
         }
+        reachFloorAndCeiling(&walls, rooms: rooms)
         assignPartitionThickness(&walls, defaultThickness: defaultThickness)
         return walls
+    }
+
+    /// RoomPlan measures each wall's own height, so a wall can stop short of its room's
+    /// ceiling (the highest wall) or floor, leaving a gap you can see through. Full-height
+    /// walls close the gap; half walls and counters stay as measured.
+    static func reachFloorAndCeiling(_ walls: inout [WallInfo], rooms: [RoomInfo]) {
+        for i in walls.indices {
+            guard let r = walls[i].roomIndex.map({ rooms[$0] }), walls[i].y1 - walls[i].y0 > 1.6 else { continue }
+            let top = r.ceilingY - walls[i].y1, bottom = walls[i].y0 - r.floorY
+            if top > 0.005 && top < 0.6 { walls[i].y1 = r.ceilingY }
+            if bottom > 0.005 && bottom < 0.3 { walls[i].y0 = r.floorY }
+        }
     }
 
     /// Two rooms scanned on either side of one partition each report their own

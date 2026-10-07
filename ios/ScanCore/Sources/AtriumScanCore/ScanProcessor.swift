@@ -146,7 +146,6 @@ public enum ScanProcessor {
         guard baked.coverage >= 0.15 else { return nil }
 
         var mesh = MeshBuilder()
-        if let plain = model.mesh.buffers[PhotoModel.plainMaterial] { mesh.append(plain, material: Mat.photoPlain) { $0 } }
         for (i, chart) in model.charts.enumerated() {
             guard let buffer = model.mesh.buffers[PhotoModel.chartMaterial(i)] else { continue }
             let size = photoOptions.atlasSize

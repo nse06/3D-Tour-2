@@ -256,6 +256,29 @@ final class AlignmentTests: XCTestCase {
         XCTAssertEqual(one.scan.trajectory.count, truth.trajectory.count)
     }
 
+    func testOlderPhotosGetTheirTurnRateFromThePath() {
+        // The phone turns at 0.5 rad/s, sampled at 5 Hz; a new run starts at 4 s.
+        let path = (0..<30).map { i -> PoseSample in
+            let t = Double(i) * 0.2, a = Float(t) * 0.5
+            return PoseSample(t: t, p: Vec3(0, 1.4, 0), f: Vec3(sin(a), 0, -cos(a)), segment: t < 4 ? 0 : 1)
+        }
+        let seg = RoomAlignment.Segmentation(segmentOfSample: path.map { $0.segment! }, links: [], count: 2, resets: 1)
+        XCTAssertEqual(RoomAlignment.turnRate(at: 1.13, segment: 0, path: path, segmentation: seg) ?? 0, 0.5, accuracy: 0.01)
+        XCTAssertEqual(RoomAlignment.turnRate(at: 1.2, segment: 0, path: path, segmentation: seg) ?? 0, 0.5, accuracy: 0.01)
+        XCTAssertNil(RoomAlignment.turnRate(at: 3.9, segment: 0, path: path, segmentation: seg), "no sample after it in the same run")
+
+        let room = ScanRoom(id: "R", name: "Room", captureIndex: 0, floorPolygon: [Vec3(-2, 0, -2), Vec3(2, 0, -2), Vec3(2, 0, 2), Vec3(-2, 0, 2)], floorY: 0, ceilingY: 2.5)
+        let frames = [1.1, 2.5].map { t in
+            CameraFrame(
+                file: "frames/\(t).jpg", t: t, transform: Transform.translating(Vec3(0, 1.4, 0)), intrinsics: [1, 0, 0, 0, 1, 0, 0, 0, 1], width: 4, height: 3,
+                imageWidth: 4, imageHeight: 3, segment: 0, angularSpeed: t > 2 ? 0.1 : nil)
+        }
+        let result = RoomAlignment.align(parts: [RoomPart(room: room, segment: 0)], structure: nil, path: Array(path.prefix(20)), frames: frames)
+        XCTAssertEqual(result.scan.frames.count, 2)
+        XCTAssertEqual(result.scan.frames[0].angularSpeed ?? 0, 0.5, accuracy: 0.01)
+        XCTAssertEqual(result.scan.frames[1].angularSpeed, 0.1, "a recorded rate is kept")
+    }
+
     func testRawPathAndFramesRoundTripAsJSON() throws {
         let sample = PoseSample(t: 1.5, p: Vec3(1, 2, 3), f: Vec3(0, 0, -1), segment: 2)
         let decoded = try JSONDecoder().decode(PoseSample.self, from: JSONEncoder().encode(sample))

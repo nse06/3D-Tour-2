@@ -52,7 +52,7 @@ final class ApartmentPhotoQA: XCTestCase {
         Layout.cutOpenings(scan.openings, into: &walls)
         let model = PhotoModel.build(scan: scan, rooms: rooms, walls: walls, defaultThickness: 0.12, includeCeilings: true)
         var tris: [(Vec3, Vec3, Vec3, Bool)] = []
-        let objectCharts = Set(model.charts.indices.filter { model.charts[$0].fallback == PhotoModel.objectColor }.map(PhotoModel.chartMaterial))
+        let objectCharts = Set(model.charts.indices.filter { model.charts[$0].kind == .object }.map(PhotoModel.chartMaterial))
         for key in model.mesh.order {
             let b = model.mesh.buffers[key]!
             func v(_ i: UInt32) -> Vec3 { Vec3(b.positions[Int(i) * 3], b.positions[Int(i) * 3 + 1], b.positions[Int(i) * 3 + 2]) }
@@ -73,7 +73,7 @@ final class ApartmentPhotoQA: XCTestCase {
         scan.frames = frames
         let source = MeshRaycast(tris: tris, poses: Dictionary(uniqueKeysWithValues: frames.map { ($0.file, $0.transform) }))
         let start = Date()
-        let processed = try ScanProcessor.process(scan, photos: source, photoOptions: PhotoTexturingOptions(atlasSize: 2048, maxAtlases: 3, texelSize: 0.015))
+        let processed = try ScanProcessor.process(scan, photos: source)
         print(String(format: "QA frames %d · %.1f s · coverage %.2f", frames.count, Date().timeIntervalSince(start), processed.stats.photoCoverage ?? -1))
         try processed.glb.write(to: URL(fileURLWithPath: out).appendingPathComponent("apartment-photo.glb"))
         try processed.manifest.jsonData(prettyPrinted: true).write(to: URL(fileURLWithPath: out).appendingPathComponent("apartment-photo.manifest.json"))

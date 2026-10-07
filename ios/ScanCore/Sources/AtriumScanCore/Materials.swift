@@ -38,8 +38,6 @@ enum Mat {
     static let fireplace = "Fireplace_Stone"
     static let neutral = "Object_Neutral"
     static let shadowGap = "Shadow_Gap"
-    /// Photo mode: faces no photo sees (outsides and tops of walls, reveals).
-    static let photoPlain = "Photo_Plain"
 }
 
 let materialLibrary: [String: MaterialDef] = {
@@ -64,7 +62,6 @@ let materialLibrary: [String: MaterialDef] = {
         MaterialDef(name: Mat.fireplace, color: "#bdb5aa", roughness: 0.85),
         MaterialDef(name: Mat.neutral, color: "#cdc8c0", roughness: 0.8),
         MaterialDef(name: Mat.shadowGap, color: "#2a2927", roughness: 0.9),
-        MaterialDef(name: Mat.photoPlain, color: "#e9e5de", roughness: 1),
     ]
     return Dictionary(uniqueKeysWithValues: defs.map { ($0.name, $0) })
 }()

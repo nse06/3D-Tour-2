@@ -131,7 +131,7 @@ public struct PoseSample: Codable, Sendable, Equatable {
     }
 }
 
-/// A photo taken during the scan (frames/frames.json): a downscaled JPEG in the
+/// A photo taken during the scan (frames/frames.json): a JPEG in the
 /// camera sensor's orientation, with the pose and intrinsics to project it.
 public struct CameraFrame: Codable, Sendable, Equatable {
     /// Path of the JPEG inside the scan folder ("frames/000012.jpg").
@@ -150,10 +150,14 @@ public struct CameraFrame: Codable, Sendable, Equatable {
     public var imageHeight: Int
     /// Raw captures only: the RoomPlan run the photo was taken in (see `PoseSample.segment`).
     public var segment: Int?
+    /// How fast the phone was turning when the photo was taken, radians per second (motion blur).
+    public var angularSpeed: Float?
+    /// The photo's exposure time, seconds.
+    public var exposureDuration: Double?
 
     public init(
         file: String, t: Double, transform: Transform, intrinsics: [Float], width: Int, height: Int, imageWidth: Int, imageHeight: Int,
-        segment: Int? = nil
+        segment: Int? = nil, angularSpeed: Float? = nil, exposureDuration: Double? = nil
     ) {
         self.file = file
         self.t = t
@@ -164,6 +168,8 @@ public struct CameraFrame: Codable, Sendable, Equatable {
         self.imageWidth = imageWidth
         self.imageHeight = imageHeight
         self.segment = segment
+        self.angularSpeed = angularSpeed
+        self.exposureDuration = exposureDuration
     }
 }
 
