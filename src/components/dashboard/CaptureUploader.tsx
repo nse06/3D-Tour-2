@@ -70,7 +70,13 @@ export function CaptureUploader({ propertyId, compact = false, onDone }: { prope
           </span>
         )}
       </button>
-      <input ref={inputRef} type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" className="hidden" onChange={(e) => handle(e.target.files?.[0])} />
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".glb,.gltf,model/gltf-binary,model/gltf+json"
+        className="hidden"
+        onChange={(e) => handle(e.target.files?.[0])}
+      />
       {phase.kind === "done" && (
         <p className="mt-3 flex items-center gap-2 text-sm text-emerald-700">
           <Check className="size-4" /> {phase.label}

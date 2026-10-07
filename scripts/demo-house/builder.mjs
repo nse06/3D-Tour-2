@@ -171,10 +171,7 @@ export class HouseBuilder {
       if (def.emissive) mat.setEmissiveFactor(hexToLinear(def.emissive));
       if (def.emissiveMap) mat.setEmissiveTexture(getTex(def.emissiveMap));
       if (def.emissiveStrength && def.emissiveStrength !== 1) {
-        mat.setExtension(
-          "KHR_materials_emissive_strength",
-          emissiveExt.createEmissiveStrength().setEmissiveStrength(def.emissiveStrength),
-        );
+        mat.setExtension("KHR_materials_emissive_strength", emissiveExt.createEmissiveStrength().setEmissiveStrength(def.emissiveStrength));
       }
       if (def.blend) mat.setAlphaMode("BLEND");
 
@@ -185,23 +182,13 @@ export class HouseBuilder {
       const uv = merged.getAttribute("uv");
       const idx = merged.getIndex();
       triangles += idx.count / 3;
-      const indexArray =
-        pos.count < 65535 ? new Uint16Array(idx.array) : new Uint32Array(idx.array);
+      const indexArray = pos.count < 65535 ? new Uint16Array(idx.array) : new Uint32Array(idx.array);
       const prim = doc
         .createPrimitive()
         .setMaterial(mat)
-        .setAttribute(
-          "POSITION",
-          doc.createAccessor().setType("VEC3").setArray(new Float32Array(pos.array)).setBuffer(buffer),
-        )
-        .setAttribute(
-          "NORMAL",
-          doc.createAccessor().setType("VEC3").setArray(new Float32Array(nor.array)).setBuffer(buffer),
-        )
-        .setAttribute(
-          "TEXCOORD_0",
-          doc.createAccessor().setType("VEC2").setArray(new Float32Array(uv.array)).setBuffer(buffer),
-        )
+        .setAttribute("POSITION", doc.createAccessor().setType("VEC3").setArray(new Float32Array(pos.array)).setBuffer(buffer))
+        .setAttribute("NORMAL", doc.createAccessor().setType("VEC3").setArray(new Float32Array(nor.array)).setBuffer(buffer))
+        .setAttribute("TEXCOORD_0", doc.createAccessor().setType("VEC2").setArray(new Float32Array(uv.array)).setBuffer(buffer))
         .setIndices(doc.createAccessor().setType("SCALAR").setArray(indexArray).setBuffer(buffer));
       const mesh = doc.createMesh(matName).addPrimitive(prim);
       scene.addChild(doc.createNode(matName).setMesh(mesh));
@@ -316,19 +303,19 @@ export function buildWallRun(b, run) {
         put(trim, c2, o.a, y0, y0 + baseH, ...proud(0.016));
         c2 = o.b;
       }
-  }
-  put(trim, c2, to, y0, y0 + baseH, ...proud(0.016));
-
-  // Crown molding.
-  const crownH = 0.09;
-  let c3 = from;
-  for (const o of ops) {
-    if (o.y1 >= y1 - 0.02) {
-      put(trim, c3, o.a, y1 - crownH, y1, ...proud(0.03));
-      c3 = o.b;
     }
-  }
-  put(trim, c3, to, y1 - crownH, y1, ...proud(0.03));
+    put(trim, c2, to, y0, y0 + baseH, ...proud(0.016));
+
+    // Crown molding.
+    const crownH = 0.09;
+    let c3 = from;
+    for (const o of ops) {
+      if (o.y1 >= y1 - 0.02) {
+        put(trim, c3, o.a, y1 - crownH, y1, ...proud(0.03));
+        c3 = o.b;
+      }
+    }
+    put(trim, c3, to, y1 - crownH, y1, ...proud(0.03));
   }
 
   for (const o of ops) {

@@ -73,13 +73,25 @@ export function FloorPlan({ floor, rooms, currentRoomId, poseRef, onRoomClick, c
       aria-label={`${floor.name} floor plan`}
     >
       {floor.outline && (
-        <polygon points={toPoints(floor.outline)} fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.55)" strokeWidth={0.12 * scale} strokeLinejoin="round" />
+        <polygon
+          points={toPoints(floor.outline)}
+          fill="rgba(255,255,255,0.06)"
+          stroke="rgba(255,255,255,0.55)"
+          strokeWidth={0.12 * scale}
+          strokeLinejoin="round"
+        />
       )}
       {floor.features
         .filter((f) => f.type === "void")
         .map((f, i) => (
           <g key={`void-${i}`}>
-            <polygon points={toPoints(f.polygon)} fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth={0.04 * scale} strokeDasharray={`${0.18 * scale} ${0.14 * scale}`} />
+            <polygon
+              points={toPoints(f.polygon)}
+              fill="none"
+              stroke="rgba(255,255,255,0.35)"
+              strokeWidth={0.04 * scale}
+              strokeDasharray={`${0.18 * scale} ${0.14 * scale}`}
+            />
             <text
               x={polygonCentroid(f.polygon)[0]}
               y={polygonCentroid(f.polygon)[1] + 1.2}

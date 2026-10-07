@@ -109,7 +109,9 @@ function EmptyState() {
         <Link href="/tour/sample" target="_blank" className="relative hidden min-h-72 md:block">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/demo/sheridan-road-cover.jpg" alt="Sample 3D walkthrough" className="absolute inset-0 size-full object-cover" />
-          <span className="absolute bottom-4 left-4 rounded-full bg-black/45 px-3 py-1.5 text-xs font-medium text-white backdrop-blur">1234 Sheridan Road · sample</span>
+          <span className="absolute bottom-4 left-4 rounded-full bg-black/45 px-3 py-1.5 text-xs font-medium text-white backdrop-blur">
+            1234 Sheridan Road · sample
+          </span>
         </Link>
       </div>
     </Card>
@@ -125,8 +127,8 @@ function CaptureComingSoon() {
       <div className="flex-1">
         <p className="font-medium text-ink">Coming soon: capture with your iPhone</p>
         <p className="mt-0.5">
-          Walk through the home once with the Atrium app (LiDAR + RoomPlan). Rooms, floors and the walkthrough path are created automatically — today&apos;s uploaded
-          3D captures use the exact same pipeline.
+          Walk through the home once with the Atrium app (LiDAR + RoomPlan). Rooms, floors and the walkthrough path are created automatically — today&apos;s
+          uploaded 3D captures use the exact same pipeline.
         </p>
       </div>
       <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-linen px-3 py-1 text-xs font-medium text-stone md:self-center">

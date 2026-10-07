@@ -92,22 +92,13 @@ export class Img {
     for (let y = 0; y < this.h; y++) {
       for (let x = 0; x < this.w; x++) {
         const c = fn((x + 0.5) / this.w, (y + 0.5) / this.h, x, y);
-        this.set(
-          x,
-          y,
-          clampByte(c[0]),
-          clampByte(c[1]),
-          clampByte(c[2]),
-          c.length > 3 ? clampByte(c[3]) : 255,
-        );
+        this.set(x, y, clampByte(c[0]), clampByte(c[1]), clampByte(c[2]), c.length > 3 ? clampByte(c[3]) : 255);
       }
     }
     return this;
   }
   jpeg(quality = 86) {
-    return new Uint8Array(
-      jpeg.encode({ data: this.data, width: this.w, height: this.h }, quality).data,
-    );
+    return new Uint8Array(jpeg.encode({ data: this.data, width: this.w, height: this.h }, quality).data);
   }
   png() {
     return encodePNG(this.w, this.h, this.data);

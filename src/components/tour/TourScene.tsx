@@ -32,6 +32,8 @@ export interface TourSceneProps {
   onError: (message: string) => void;
   /** Screen-space ambient occlusion; enabled on desktop-class GPUs. */
   effects?: boolean;
+  autoPan?: boolean;
+  onUserInteract?: () => void;
 }
 
 /** Fully client-side WebGL scene. Loaded with next/dynamic (ssr: false). */
@@ -72,6 +74,8 @@ function PropertyModel({
   onProgress,
   onLoaded,
   effects = false,
+  autoPan = false,
+  onUserInteract,
 }: TourSceneProps) {
   const modelRef = useRef<THREE.Group>(null);
   const gltf = useLoader(
@@ -136,6 +140,8 @@ function PropertyModel({
         onRoomChange={onRoomChange}
         onMovingChange={onMovingChange}
         onFade={onFade}
+        autoPan={autoPan}
+        onUserInteract={onUserInteract}
       />
       {effects && (
         <EffectComposer multisampling={4}>

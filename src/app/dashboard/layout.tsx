@@ -33,7 +33,11 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
             {mode !== "supabase" && (
               <span
                 className="hidden rounded-full bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200 sm:inline"
-                title={mode === "ephemeral" ? "Data is temporary on this host. Configure Supabase to persist listings." : "Listings are stored locally in .data/. Configure Supabase for production."}
+                title={
+                  mode === "ephemeral"
+                    ? "Data is temporary on this host. Configure Supabase to persist listings."
+                    : "Listings are stored locally in .data/. Configure Supabase for production."
+                }
               >
                 {mode === "ephemeral" ? "Temporary storage" : "Local demo mode"}
               </span>

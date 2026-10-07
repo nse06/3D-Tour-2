@@ -1,0 +1,211 @@
+# Atrium — 3D property walkthroughs
+
+> **Walk through a property with your phone once, and turn it into a 3D walkthrough that buyers can explore from anywhere.**
+
+Atrium is a web platform for realtors. A listing gets a shareable link (`/tour/1234-sheridan-road`) that drops buyers straight into an immersive, first‑person 3D walkthrough of the home: they glide room to room, look around, climb the stairs, and always see where they are on a live floor plan.
+
+This repository is the **web MVP**: the realtor dashboard, the publishing flow, and the 3D viewer. The capture layer (a native iPhone app using LiDAR/ARKit/RoomPlan) is **not built yet**. It is simulated with prebuilt `.glb` captures, including one demo home. The architecture treats an uploaded `.glb` as a stand-in for a future scan package, so the viewer and backend won't change when real scans arrive.
+
+It is deliberately **not** a photo gallery, slideshow, hotspot tour or listing site. The 3D walkthrough is the product.
+
+---
+
+## Quick start
+
+```bash
+npm install
+npm run dev
+```
+
+| URL | What |
+| --- | --- |
+| `http://localhost:3000/` | Landing page |
+| `http://localhost:3000/tour/sample` | The demo home (always available, no database) |
+| `http://localhost:3000/dashboard` | Realtor dashboard |
+
+No configuration is needed. Listings are stored in `./.data/` (a local JSON store), and you're signed in as a single "Demo Realtor". Set up Supabase for real deployments (see [Persistence](#persistence--auth)).
+
+### The MVP flow (≈1 minute)
+
+1. Open **/dashboard** and click **New listing**.
+2. Click **Fill with sample listing** to load *1234 Sheridan Road, Wilmette, IL — $2,495,000 · 5 bd · 4.5 ba · 4,200 sq ft*.
+3. Under *3D capture*, keep **Sample capture** selected, or upload `public/demo/sheridan-road.glb` to go through the real upload pipeline.
+4. **Create listing**. Floors, rooms and waypoints are created from the capture's scan manifest.
+5. **Publish tour**. Copy the public link: `/tour/1234-sheridan-road`.
+6. Open it in any browser (no sign-in): **Enter the home** → drag to look → click the floor to walk → use the room list, **‹ ›** or **Guided tour** → switch floors → open the floor plan and **property details** → **Share**.
+
+---
+
+## The buyer experience
+
+* **First-person 3D** (Three.js / React Three Fiber), with a full-screen viewer and a minimal overlay.
+* **Guided, path-based navigation.** Each room has a camera waypoint. Moving between rooms follows a walkable route through doorways and **up the staircase**, using cinematic camera motion: eased acceleration, facing the direction of travel, then settling on the room's best view.
+* **Look around** by dragging (mouse or touch), with inertia. Pinch or scroll to zoom.
+* **Limited free movement.** Click/tap the floor to step there (a hover ring shows where), or walk with the arrow keys/WASD, constrained to room footprints.
+* **Room & floor navigation**: room list grouped by floor, previous/next controls, keyboard (`N`/`P`, `[`/`]`), and **Guided tour** autoplay with a slow look-around at each stop.
+* **Live floor plan** for each level, showing your position and view direction. Click any room to go there.
+* **Property information** drawer (price, beds, baths, sq ft, description) and **Share** (native share sheet on phones, copy link on desktop).
+* Polished details: a loading screen with byte-level progress, title cards as you arrive in each room, ambient occlusion on desktop GPUs, and a portrait-aware field of view on phones.
+
+## The realtor dashboard
+
+* **Listings**: cards with cover photo, address, price, status (Published/Draft), room count, and **View tour / Edit / Share**.
+* **Create & edit listings**: address, title, price, beds, baths, square footage, description.
+* **3D capture**: attach the bundled sample capture, or **upload a `.glb`/`.gltf`**. The browser uploads directly to storage via a signed URL, with progress. If the file carries a scan manifest, rooms are created automatically.
+* **Rooms & viewpoints editor**: walk the model (drag + WASD, click the floor), **add a room at the current view**, rename, reorder (this is the guided-tour order), re-aim a viewpoint, manage floors, and **use the current view as the cover photo**. Rooms that can see each other are auto-linked so the viewer glides between them. Unlinked rooms use a quick fade.
+* **Preview → Publish → Share**: preview privately, then publish to get a public `/tour/<address-slug>` link.
+
+---
+
+## Architecture
+
+```
+            TODAY                                   FUTURE (not built yet)
+ ┌──────────────────────────┐            ┌───────────────────────────────────────┐
+ │ Bundled demo .glb        │            │ iPhone app: RoomPlan + ARKit + LiDAR  │
+ │ Uploaded .glb / .gltf    │            │   → scan package (rooms, trajectory,  │
+ └────────────┬─────────────┘            │     RGB frames) → upload               │
+              │                          │   → backend processing job             │
+              │                          └───────────────────┬───────────────────┘
+              ▼                                              ▼
+   ┌───────────────────────────────────────────────────────────────────────┐
+   │  Capture = 3D asset (.glb)  +  scan manifest (floors, room polygons,  │
+   │            camera waypoints, walkable links)                          │
+   └───────────────────────────────────┬───────────────────────────────────┘
+                                       ▼
+            Property → Tour → Floors → Rooms (waypoints) + nav links      (Postgres / local JSON)
+                                       ▼
+                     The same web viewer at /tour/<slug>
+```
+
+The viewer only ever receives `TourData` (a 3D asset URL plus a `TourSpace`). It doesn't know whether the model came from the demo, a manual upload, or a future LiDAR scan.
+
+### Spatial data model
+
+`Property → Tour → Floors → Rooms → Waypoints`, never `Property → Photos`.
+
+| Table | Key fields |
+| --- | --- |
+| `properties` | `id, user_id, slug, address_line, city, state, postal_code, title, price, bedrooms, bathrooms, square_feet, description, cover_image_url, published, created_at` |
+| `tours` | `id, property_id, asset_url, asset_format, source ('demo'\|'upload'\|'ios_scan'), scan_package_url, processing_status, navigation (links + eye height), published, created_at` |
+| `floors` | `id, tour_id, name, floor_number, elevation, outline, features (stairs, open-to-below)` |
+| `rooms` | `id, floor_id, name, sort_order, waypoint_position [x,y,z], waypoint_rotation {yaw,pitch}, footprint [[x,z]…]` |
+
+See `supabase/migrations/20261007000000_init.sql` (row-level security: realtors manage only their own listings; anyone can read a published tour). TypeScript types live in `src/lib/tour/types.ts` and `src/lib/data/types.ts`.
+
+### The scan manifest
+
+A capture can embed its spatial structure in the glTF scene extras (`scenes[0].extras.atrium`). The demo `.glb` does. On upload, the browser reads just the glTF header and JSON chunk (no geometry), and the server creates floors, rooms and links from it (`src/lib/tour/scan-manifest.ts`).
+
+```jsonc
+{
+  "schema": "atrium.scan-manifest/v1",
+  "units": "meters", "upAxis": "y", "eyeHeight": 1.6,
+  "floors": [{ "key": "main", "name": "Main Level", "level": 1, "elevation": 0,
+               "outline": [[x, z], …], "features": [{ "type": "stairs", "polygon": [[x, z], …] }] }],
+  "rooms":  [{ "key": "kitchen", "name": "Kitchen", "floor": "main", "order": 3,
+               "footprint": [[x, z], …],
+               "waypoint": { "position": [x, y, z], "yaw": 0.79, "pitch": -0.1 } }],
+  "links":  [{ "from": "entry", "to": "kitchen", "via": [[x, y, z], …], "kind": "door" }]
+}
+```
+
+**How the future iPhone capture maps onto it:** RoomPlan's `CapturedStructure` gives floors and room polygons (`floors`, `rooms[].footprint`). The ARKit camera trajectory gives where the realtor actually walked, which becomes waypoints (good viewing positions per room) and links (the walked path through doorways and stairs). The textured mesh becomes the `.glb`.
+
+### Navigation (and room for free movement later)
+
+`src/lib/tour/navigation.ts` treats rooms as graph nodes and links as edges whose `via` points thread the camera through doorways. Routes come from Dijkstra's algorithm and are smoothed with a centripetal Catmull–Rom curve in `src/components/tour/CameraRig.tsx`. Free movement today is "click the floor / arrow keys within room footprints". Full free roaming can be added later by swapping footprints for a navmesh derived from the scan. The viewer only asks *"is this point walkable?"* and *"give me a path from A to B"*.
+
+---
+
+## Future capture workflow (documented, intentionally not implemented)
+
+1. Realtor opens the Atrium iPhone app.
+2. Creates (or selects) the property.
+3. Starts a scan.
+4. RoomPlan guides them through the house.
+5. The app captures multiple rooms.
+6. The app records the camera trajectory (ARKit).
+7. The app captures RGB imagery for textures.
+8. Rooms are merged into a unified property structure (multi-room RoomPlan `StructureBuilder`).
+9. The scan package is uploaded (`tours.scan_package_url`, `source = 'ios_scan'`, `processing_status = 'processing'`).
+10. The backend processes it: textured mesh → `.glb` (`asset_url`), RoomPlan rooms → floors/rooms/footprints, trajectory → waypoints/links (the scan manifest).
+11. The web viewer creates the walkthrough automatically (`processing_status = 'ready'`). No manual 3D modeling by the realtor.
+
+Everything after step 9 lands in the same tables and the same viewer used today. Uploading `public/demo/sheridan-road.glb` already exercises that path end to end.
+
+---
+
+## Persistence & auth
+
+| Mode | When | Data | Files | Auth |
+| --- | --- | --- | --- | --- |
+| **Local** (default) | no Supabase env vars | `.data/db.json` | `.data/uploads/` via signed PUT → `/api/assets/*` | single implicit realtor |
+| **Supabase** | `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Postgres with RLS | Storage bucket `captures` (direct browser upload to signed URLs) | email + password (`/login`), session refreshed by `src/proxy.ts` |
+
+Setup for Supabase:
+
+1. Create a project.
+2. Run `supabase/migrations/20261007000000_init.sql`. This creates tables, RLS policies, the `available_slug` helper and the public `captures` bucket with per-user folder policies.
+3. Copy `.env.example` to `.env.local` and fill in the URL and anon key.
+
+The repository interface (`src/lib/data/repository.ts`) has two implementations, `local-store.ts` and `supabase-store.ts`, so the rest of the app is storage-agnostic. Uploads always go browser → storage through short-lived signed URLs, so large scans never pass through a serverless request body.
+
+## Deploying (Vercel)
+
+1. Import the repo into Vercel (framework: Next.js).
+2. Add the Supabase env vars (and optionally `NEXT_PUBLIC_SITE_URL`).
+3. Deploy.
+
+Without Supabase, a Vercel deployment still runs, but stores data in `/tmp`, which is ephemeral (the dashboard shows "Temporary storage"). `/tour/sample` always works.
+
+---
+
+## Project structure
+
+```
+scripts/
+  generate-demo-property.mjs      # builds the demo capture (npm run generate:demo)
+  demo-house/                     # procedural house: plan, furniture, textures, glTF export
+public/demo/
+  sheridan-road.glb               # demo capture (meshopt-compressed, ~1.9 MB, embedded manifest)
+  sheridan-road-cover.jpg
+supabase/migrations/              # schema + RLS + storage policies
+src/
+  app/
+    page.tsx                      # landing
+    tour/[slug]/page.tsx          # PUBLIC shareable tour
+    dashboard/…                   # listings, new, [id], [id]/rooms, [id]/preview + server actions
+    login/                        # Supabase auth
+    api/                          # signed uploads, local asset serving
+  components/
+    tour/                         # TourViewer (overlay UI), TourScene (R3F), CameraRig, FloorPlan
+    dashboard/                    # PropertyForm, CaptureUploader, RoomEditor, publish controls
+  lib/
+    tour/                         # types, navigation, scan manifest, space validation
+    data/                         # repository + local / Supabase implementations
+    demo/                         # demo listing + manifest
+  proxy.ts                        # Supabase session refresh / dashboard guard
+```
+
+## The demo property
+
+*1234 Sheridan Road, Wilmette, IL* is a fictional North Shore Georgian. Its capture is generated procedurally (`npm run generate:demo`), so it's reproducible and editable:
+
+* **Main level:** double-height entry with chandelier and staircase, living room with fireplace and built-ins, dining room, kitchen with waterfall island and breakfast nook, green-paneled library office.
+* **Upper level:** landing overlooking the foyer, primary bedroom with sitting area, primary bath (freestanding tub, walk-in shower, double vanity), bedrooms 2 and 3.
+
+About 120k triangles, PBR materials with procedural textures (oak, marble, walnut, rugs, art), 16 lights, and contact shadows. Compressed with meshopt and quantization to about 1.9 MB, and embeds its scan manifest.
+
+## Development notes
+
+* `npm run lint`, `npm run typecheck`, `npm run build`, `npm run format`.
+* Next.js 16 (App Router, Turbopack). `cacheComponents` is intentionally off; data pages use `dynamic = "force-dynamic"`. Read `node_modules/next/dist/docs/` before changing framework-level code (see `AGENTS.md`).
+* Viewer QA: `?ao=0` / `?ao=1` toggles ambient occlusion. `window.__atrium` exposes the viewer API (`api.current.goToRoom(id)`, `setPose(pose, true)`, `getPose()`) for automated checks.
+
+### Known limitations (by design for the MVP)
+
+* No native iOS capture yet (simulated with `.glb` uploads).
+* `.gltf` uploads must be self-contained (embedded buffers). Use `.glb` otherwise.
+* One active capture per listing. Saving rooms replaces the tour's floors and rooms; in Supabase mode that is a short sequence of statements rather than a single transaction.
+* Uploaded models without a manifest get rooms and auto-links from the editor, but no footprints. Their floor plan shows room markers instead of polygons.

@@ -16,16 +16,30 @@ export function buttonClass(variant: Variant = "primary", size: "sm" | "md" | "l
   return `inline-flex items-center justify-center gap-2 rounded-full font-medium transition disabled:pointer-events-none disabled:opacity-50 ${sizes[size]} ${variants[variant]}`;
 }
 
-export function Button({ variant = "primary", size = "md", className = "", ...props }: ComponentProps<"button"> & { variant?: Variant; size?: "sm" | "md" | "lg" }) {
+export function Button({
+  variant = "primary",
+  size = "md",
+  className = "",
+  ...props
+}: ComponentProps<"button"> & { variant?: Variant; size?: "sm" | "md" | "lg" }) {
   return <button {...props} className={`${buttonClass(variant, size)} ${className}`} />;
 }
 
-export function ButtonLink({ variant = "primary", size = "md", className = "", ...props }: ComponentProps<typeof Link> & { variant?: Variant; size?: "sm" | "md" | "lg" }) {
+export function ButtonLink({
+  variant = "primary",
+  size = "md",
+  className = "",
+  ...props
+}: ComponentProps<typeof Link> & { variant?: Variant; size?: "sm" | "md" | "lg" }) {
   return <Link {...props} className={`${buttonClass(variant, size)} ${className}`} />;
 }
 
 export function Card({ className = "", children }: { className?: string; children: ReactNode }) {
-  return <div className={`rounded-3xl border border-sand/80 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_28px_rgba(30,24,16,0.05)] ${className}`}>{children}</div>;
+  return (
+    <div className={`rounded-3xl border border-sand/80 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_28px_rgba(30,24,16,0.05)] ${className}`}>
+      {children}
+    </div>
+  );
 }
 
 export function StatusPill({ published, className = "" }: { published: boolean; className?: string }) {
@@ -41,12 +55,28 @@ export function StatusPill({ published, className = "" }: { published: boolean; 
   );
 }
 
-export function Field({ label, error, hint, children, className = "" }: { label: string; error?: string; hint?: string; children: ReactNode; className?: string }) {
+export function Field({
+  label,
+  error,
+  hint,
+  children,
+  className = "",
+}: {
+  label: string;
+  error?: string;
+  hint?: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <label className={`block ${className}`}>
       <span className="mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.12em] text-neutral-500">{label}</span>
       {children}
-      {error ? <span className="mt-1 block text-xs text-red-600">{error}</span> : hint ? <span className="mt-1 block text-xs text-neutral-400">{hint}</span> : null}
+      {error ? (
+        <span className="mt-1 block text-xs text-red-600">{error}</span>
+      ) : hint ? (
+        <span className="mt-1 block text-xs text-neutral-400">{hint}</span>
+      ) : null}
     </label>
   );
 }

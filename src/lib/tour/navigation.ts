@@ -14,9 +14,7 @@ export function sortedFloors(space: TourSpace): TourFloor[] {
 /** Rooms in walkthrough order (floor by floor, then by room order). */
 export function walkthroughOrder(space: TourSpace): TourRoom[] {
   const floorRank = new Map(sortedFloors(space).map((f, i) => [f.id, i]));
-  return [...space.rooms].sort(
-    (a, b) => (floorRank.get(a.floorId) ?? 0) - (floorRank.get(b.floorId) ?? 0) || a.order - b.order,
-  );
+  return [...space.rooms].sort((a, b) => (floorRank.get(a.floorId) ?? 0) - (floorRank.get(b.floorId) ?? 0) || a.order - b.order);
 }
 
 export function pointInPolygon(x: number, z: number, poly: Vec2[]): boolean {

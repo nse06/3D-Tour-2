@@ -84,7 +84,14 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace }: Props) {
     const pose = apiRef.current?.getPose();
     const level = floors.length ? Math.max(...floors.map((f) => f.level)) + 1 : 1;
     const elevation = pose ? Math.round((pose.position[1] - space.eyeHeight) * 100) / 100 : 0;
-    const floor: TourFloor = { id: newId(), name: level === 1 ? "Main Level" : level === 2 ? "Upper Level" : `Level ${level}`, level, elevation, outline: null, features: [] };
+    const floor: TourFloor = {
+      id: newId(),
+      name: level === 1 ? "Main Level" : level === 2 ? "Upper Level" : `Level ${level}`,
+      level,
+      elevation,
+      outline: null,
+      features: [],
+    };
     update((s) => ({ ...s, floors: [...s.floors, floor] }));
     setPlanFloorId(floor.id);
   };
@@ -102,7 +109,8 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace }: Props) {
     update((s) => ({ ...s, rooms: s.rooms.map((r) => (order.has(r.id) ? { ...r, order: order.get(r.id)! } : r)) }));
   };
 
-  const deleteRoom = (room: TourRoom) => update((s) => ({ ...s, rooms: s.rooms.filter((r) => r.id !== room.id), links: s.links.filter((l) => l.from !== room.id && l.to !== room.id) }));
+  const deleteRoom = (room: TourRoom) =>
+    update((s) => ({ ...s, rooms: s.rooms.filter((r) => r.id !== room.id), links: s.links.filter((l) => l.from !== room.id && l.to !== room.id) }));
 
   const deleteFloor = (floor: TourFloor) => {
     const rooms = space.rooms.filter((r) => r.floorId === floor.id);
@@ -170,7 +178,10 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace }: Props) {
         <div className="rounded-3xl border border-sand bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-stone">Floors & rooms</p>
-            <button onClick={addFloor} className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-black/5">
+            <button
+              onClick={addFloor}
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-black/5"
+            >
               <Plus className="size-3.5" /> Floor
             </button>
           </div>
@@ -196,14 +207,21 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace }: Props) {
                         className="w-14 rounded-md border border-sand px-1.5 py-0.5 text-xs text-neutral-700"
                       />
                     </label>
-                    <button onClick={() => deleteFloor(f)} className="rounded-full p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600" aria-label={`Delete ${f.name}`}>
+                    <button
+                      onClick={() => deleteFloor(f)}
+                      className="rounded-full p-1 text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                      aria-label={`Delete ${f.name}`}
+                    >
                       <Trash2 className="size-3.5" />
                     </button>
                   </div>
                   <ul className="mt-2 space-y-1">
                     {rooms.length === 0 && <li className="rounded-xl bg-paper px-3 py-2.5 text-xs text-neutral-500">No rooms on this floor yet.</li>}
                     {rooms.map((r, i) => (
-                      <li key={r.id} className={`group flex items-center gap-1 rounded-xl px-2 py-1.5 ${r.id === currentRoomId ? "bg-linen" : "hover:bg-paper"}`}>
+                      <li
+                        key={r.id}
+                        className={`group flex items-center gap-1 rounded-xl px-2 py-1.5 ${r.id === currentRoomId ? "bg-linen" : "hover:bg-paper"}`}
+                      >
                         <button
                           onClick={() => {
                             apiRef.current?.setPose(r.waypoint);
@@ -301,7 +319,11 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace }: Props) {
                 {floors.length > 1 && (
                   <div className="mb-1 flex gap-1">
                     {floors.map((f) => (
-                      <button key={f.id} onClick={() => setPlanFloorId(f.id)} className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${f.id === planFloor.id ? "bg-white text-neutral-900" : "text-white/70"}`}>
+                      <button
+                        key={f.id}
+                        onClick={() => setPlanFloorId(f.id)}
+                        className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${f.id === planFloor.id ? "bg-white text-neutral-900" : "text-white/70"}`}
+                      >
                         {f.name}
                       </button>
                     ))}
@@ -337,7 +359,19 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace }: Props) {
   );
 }
 
-function IconBtn({ label, onClick, children, disabled, danger }: { label: string; onClick: () => void; children: React.ReactNode; disabled?: boolean; danger?: boolean }) {
+function IconBtn({
+  label,
+  onClick,
+  children,
+  disabled,
+  danger,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
   return (
     <button
       type="button"

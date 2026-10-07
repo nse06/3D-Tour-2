@@ -172,7 +172,9 @@ export async function completeCaptureUploadAction(
   if (!isOwnedAssetUrl(upload.assetUrl, user.id, propertyId)) return { ok: false, error: "Unknown upload." };
   try {
     const space = isScanManifest(upload.manifest) ? parseSpace(manifestToSpace(upload.manifest, () => newId())) : null;
-    await (await getRepository()).attachCapture(user.id, propertyId, {
+    await (
+      await getRepository()
+    ).attachCapture(user.id, propertyId, {
       assetUrl: upload.assetUrl,
       assetFormat: upload.format === "gltf" ? "gltf" : "glb",
       source: "upload",

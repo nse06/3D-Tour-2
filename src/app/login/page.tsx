@@ -18,7 +18,9 @@ export default async function LoginPage(props: PageProps<"/login">) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/demo/sheridan-road-cover.jpg" alt="" className="absolute inset-0 size-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/20" />
-        <p className="font-display absolute bottom-10 left-10 right-10 text-4xl leading-tight text-white">&ldquo;My buyers could actually walk through the house remotely.&rdquo;</p>
+        <p className="font-display absolute bottom-10 left-10 right-10 text-4xl leading-tight text-white">
+          &ldquo;My buyers could actually walk through the house remotely.&rdquo;
+        </p>
       </div>
       <div className="flex flex-col justify-center bg-paper px-6 py-12 md:px-16">
         <Link href="/">

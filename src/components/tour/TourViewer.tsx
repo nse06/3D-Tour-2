@@ -1,21 +1,8 @@
 "use client";
 
-import {
-  ArrowRight,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Info,
-  Layers,
-  List,
-  MapIcon,
-  Maximize2,
-  Minimize2,
-  Share2,
-  X,
-} from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, ChevronRight, Info, Layers, List, MapIcon, Maximize2, Minimize2, Pause, Play, Share2, X } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { cityLine, formatBaths, formatNumber, formatPrice } from "@/lib/format";
 import { useMediaQuery, useQueryParam } from "@/lib/hooks";
 import { sortedFloors, walkthroughOrder } from "@/lib/tour/navigation";
@@ -34,6 +21,23 @@ interface Props {
 }
 
 const FALLBACK_START: Waypoint = { position: [0, 1.6, 0], yaw: 0, pitch: 0 };
+
+let webglSupport: boolean | null = null;
+function hasWebGL() {
+  if (webglSupport === null) {
+    try {
+      const c = document.createElement("canvas");
+      webglSupport = !!(c.getContext("webgl2") || c.getContext("webgl"));
+    } catch {
+      webglSupport = false;
+    }
+  }
+  return webglSupport;
+}
+const noopSubscribe = () => () => {};
+
+/** Seconds spent looking around each room during the guided autoplay. */
+const DWELL_MS = 5200;
 
 export default function TourViewer({ data, banner, shareUrl }: Props) {
   const { property, space } = data;
@@ -66,10 +70,13 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
   const [hint, setHint] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [titleCard, setTitleCard] = useState<{ room: TourRoom; key: number } | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const pendingTitle = useRef<TourRoom | null>(null);
+  const webgl = useSyncExternalStore(noopSubscribe, hasWebGL, () => true);
 
   const roomsById = useMemo(() => new Map(space.rooms.map((r) => [r.id, r])), [space]);
   const floorsById = useMemo(() => new Map(floors.map((f) => [f.id, f])), [floors]);
-  const currentRoom = currentRoomId ? roomsById.get(currentRoomId) ?? null : null;
+  const currentRoom = currentRoomId ? (roomsById.get(currentRoomId) ?? null) : null;
   const currentIndex = currentRoom ? order.findIndex((r) => r.id === currentRoom.id) : -1;
   const planFloor = (planFloorId && floorsById.get(planFloorId)) || floors[0] || null;
 
@@ -105,7 +112,7 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
       apiRef.current.goToRoom(roomId);
       setRoomsOpen(false);
       setHint(false);
-      setTitleCard({ room, key: Date.now() });
+      pendingTitle.current = room;
     },
     [roomsById],
   );
@@ -148,10 +155,38 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
     return () => clearTimeout(t);
   }, [toast]);
 
+  // Room names appear as the camera arrives, like a title card in a film.
+  const handleMovingChange = useCallback((m: boolean) => {
+    setMoving(m);
+    if (!m && pendingTitle.current) {
+      setTitleCard({ room: pendingTitle.current, key: Date.now() });
+      pendingTitle.current = null;
+    }
+  }, []);
+
+  const stopAutoplay = useCallback(() => setPlaying(false), []);
+
+  // Guided autoplay: dwell and look around, then glide to the next room.
+  useEffect(() => {
+    if (!playing || moving || !entered) return;
+    const t = setTimeout(() => {
+      if (currentIndex >= order.length - 1) setPlaying(false);
+      else step(1);
+    }, DWELL_MS);
+    return () => clearTimeout(t);
+  }, [playing, moving, entered, currentIndex, order.length, step]);
+
+  const togglePlay = () => {
+    if (playing) return setPlaying(false);
+    setPlaying(true);
+    setHint(false);
+    if (currentIndex >= order.length - 1 && order[0]) goToRoom(order[0].id);
+  };
+
   const enter = () => {
     setEntered(true);
     setHint(true);
-    if (startRoom) setTitleCard({ room: startRoom, key: Date.now() });
+    pendingTitle.current = startRoom ?? null;
     setTimeout(() => setHint(false), 7000);
   };
 
@@ -184,25 +219,29 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#1a1816] text-white">
-      <TourScene
-        assetUrl={data.assetUrl}
-        space={space}
-        startWaypoint={startWaypoint}
-        apiRef={apiRef}
-        poseRef={poseRef}
-        active={entered}
-        mode="tour"
-        onRoomChange={handleRoomChange}
-        onMovingChange={setMoving}
-        onFade={setFade}
-        onProgress={setProgress}
-        onLoaded={() => {
-          setProgress(1);
-          setLoaded(true);
-        }}
-        onError={setError}
-        effects={effects}
-      />
+      {webgl && (
+        <TourScene
+          assetUrl={data.assetUrl}
+          space={space}
+          startWaypoint={startWaypoint}
+          apiRef={apiRef}
+          poseRef={poseRef}
+          active={entered}
+          mode="tour"
+          onRoomChange={handleRoomChange}
+          onMovingChange={handleMovingChange}
+          autoPan={playing && !moving}
+          onUserInteract={stopAutoplay}
+          onFade={setFade}
+          onProgress={setProgress}
+          onLoaded={() => {
+            setProgress(1);
+            setLoaded(true);
+          }}
+          onError={setError}
+          effects={effects}
+        />
+      )}
 
       {/* Cinematic vignette keeps overlays legible without boxing in the scene. */}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(0,0,0,0.28)_100%)]" />
@@ -213,14 +252,18 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
       {banner && <div className="absolute inset-x-0 top-0 z-30 flex justify-center pt-3">{banner}</div>}
 
       {/* Address block */}
-      <header className={`absolute left-4 top-4 z-20 max-w-[70vw] transition-all duration-700 md:left-8 md:top-7 ${entered ? "opacity-100" : "opacity-0"} ${banner ? "mt-10" : ""}`}>
+      <header
+        className={`absolute left-4 top-4 z-20 max-w-[70vw] transition-all duration-700 md:left-8 md:top-7 ${entered ? "opacity-100" : "opacity-0"} ${banner ? "mt-10" : ""}`}
+      >
         <p className="text-[10px] font-medium uppercase tracking-[0.32em] text-white/60">3D Walkthrough</p>
         <h1 className="font-display mt-1 text-2xl leading-tight text-white drop-shadow md:text-[34px]">{property.addressLine}</h1>
         <p className="mt-0.5 text-sm text-white/75 md:text-[15px]">{cityLine(property)}</p>
       </header>
 
       {/* Top-right actions */}
-      <div className={`absolute right-4 top-4 z-20 flex gap-2 transition-opacity duration-700 md:right-8 md:top-7 ${entered ? "opacity-100" : "opacity-0"} ${banner ? "mt-10" : ""}`}>
+      <div
+        className={`absolute right-4 top-4 z-20 flex gap-2 transition-opacity duration-700 md:right-8 md:top-7 ${entered ? "opacity-100" : "opacity-0"} ${banner ? "mt-10" : ""}`}
+      >
         <IconButton label="Share tour" onClick={share}>
           <Share2 className="size-[18px]" />
         </IconButton>
@@ -256,11 +299,22 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
                 </button>
               ))}
             </div>
-            <button onClick={() => setPlanOpen(false)} className="rounded-full p-1 text-white/60 hover:bg-white/10 hover:text-white" aria-label="Hide floor plan">
+            <button
+              onClick={() => setPlanOpen(false)}
+              className="rounded-full p-1 text-white/60 hover:bg-white/10 hover:text-white"
+              aria-label="Hide floor plan"
+            >
               <X className="size-4" />
             </button>
           </div>
-          <FloorPlan floor={planFloor} rooms={roomsOnPlanFloor} currentRoomId={currentRoomId} poseRef={poseRef} onRoomClick={goToRoom} className="h-56 w-full md:h-60" />
+          <FloorPlan
+            floor={planFloor}
+            rooms={roomsOnPlanFloor}
+            currentRoomId={currentRoomId}
+            poseRef={poseRef}
+            onRoomClick={goToRoom}
+            className="h-56 w-full md:h-60"
+          />
         </div>
       )}
 
@@ -271,21 +325,50 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
             <List className="size-[18px]" />
           </IconButton>
           <div className="glass flex items-center gap-1 rounded-full p-1.5">
-            <button onClick={() => step(-1)} className="grid size-10 place-items-center rounded-full text-white/85 transition hover:bg-white/15 hover:text-white" aria-label="Previous room">
+            <button
+              onClick={() => step(-1)}
+              className="grid size-10 place-items-center rounded-full text-white/85 transition hover:bg-white/15 hover:text-white"
+              aria-label="Previous room"
+            >
               <ChevronLeft className="size-5" />
             </button>
-            <button onClick={() => setRoomsOpen(true)} className="min-w-[132px] px-2 text-center md:min-w-[210px] md:cursor-default md:px-3" aria-label="Current room">
+            <button
+              onClick={() => setRoomsOpen(true)}
+              className="min-w-[132px] px-2 text-center md:min-w-[210px] md:cursor-default md:px-3"
+              aria-label="Current room"
+            >
               <span className="block text-[15px] font-medium leading-tight">{currentRoom?.name ?? "Exploring"}</span>
               <span className="block whitespace-nowrap text-[10px] uppercase tracking-[0.14em] text-white/55 md:text-[11px] md:tracking-[0.18em]">
-                {currentFloor?.name ?? ""} {currentIndex >= 0 && <>· {currentIndex + 1}/{order.length}</>}
+                {currentFloor?.name ?? ""}{" "}
+                {currentIndex >= 0 && (
+                  <>
+                    · {currentIndex + 1}/{order.length}
+                  </>
+                )}
               </span>
             </button>
-            <button onClick={() => step(1)} className="grid size-10 place-items-center rounded-full bg-white text-neutral-900 transition hover:bg-white/90" aria-label="Next room">
+            <button
+              onClick={() => step(1)}
+              className="grid size-10 place-items-center rounded-full bg-white text-neutral-900 transition hover:bg-white/90"
+              aria-label="Next room"
+            >
               <ChevronRight className="size-5" />
             </button>
           </div>
           <IconButton label={planOpen ? "Hide floor plan" : "Show floor plan"} onClick={() => setPlanOpen(!planOpen)} active={planOpen}>
             <MapIcon className="size-[18px]" />
+          </IconButton>
+          <button
+            onClick={togglePlay}
+            aria-label={playing ? "Pause guided tour" : "Play guided tour"}
+            title={playing ? "Pause guided tour" : "Play guided tour"}
+            className={`glass hidden h-11 items-center gap-2 rounded-full pl-3.5 pr-4 text-[13px] font-medium text-white/90 transition hover:bg-white/20 hover:text-white sm:flex ${playing ? "ring-1 ring-[#d6b67c]/70" : ""}`}
+          >
+            {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+            {playing ? "Pause" : "Guided tour"}
+          </button>
+          <IconButton label={playing ? "Pause guided tour" : "Play guided tour"} onClick={togglePlay} active={playing} className="sm:hidden">
+            {playing ? <Pause className="size-[18px]" /> : <Play className="size-[18px]" />}
           </IconButton>
         </div>
       )}
@@ -302,7 +385,9 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
 
       {/* First-time hint */}
       {entered && (
-        <div className={`pointer-events-none absolute inset-x-0 bottom-24 z-10 flex justify-center transition-opacity duration-700 md:bottom-28 ${hint && !moving ? "opacity-100" : "opacity-0"}`}>
+        <div
+          className={`pointer-events-none absolute inset-x-0 bottom-24 z-10 flex justify-center transition-opacity duration-700 md:bottom-28 ${hint && !moving ? "opacity-100" : "opacity-0"}`}
+        >
           <div className="glass rounded-full px-5 py-2.5 text-[13px] text-white/90">
             {isTouch ? "Drag to look around · Tap the floor to walk" : "Drag to look around · Click the floor to walk · Arrow keys to move"}
           </div>
@@ -330,12 +415,31 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
         </div>
       )}
 
-      <LoadingOverlay data={data} progress={progress} loaded={loaded} entered={entered} error={error} onEnter={enter} />
+      <LoadingOverlay
+        data={data}
+        progress={progress}
+        loaded={loaded}
+        entered={entered}
+        error={webgl ? error : "Your browser has 3D graphics (WebGL) turned off. Try the latest Chrome, Safari, Edge or Firefox."}
+        onEnter={enter}
+      />
     </div>
   );
 }
 
-function IconButton({ label, onClick, children, className = "", active = false }: { label: string; onClick: () => void; children: ReactNode; className?: string; active?: boolean }) {
+function IconButton({
+  label,
+  onClick,
+  children,
+  className = "",
+  active = false,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+  className?: string;
+  active?: boolean;
+}) {
   return (
     <button
       onClick={onClick}
@@ -382,7 +486,9 @@ function RoomList({
                         active ? "bg-white/15 text-white" : "text-white/75 hover:bg-white/10 hover:text-white"
                       }`}
                     >
-                      <span className={`size-1.5 shrink-0 rounded-full transition ${active ? "bg-[#d6b67c] shadow-[0_0_10px_#d6b67c]" : "bg-white/25 group-hover:bg-white/60"}`} />
+                      <span
+                        className={`size-1.5 shrink-0 rounded-full transition ${active ? "bg-[#d6b67c] shadow-[0_0_10px_#d6b67c]" : "bg-white/25 group-hover:bg-white/60"}`}
+                      />
                       {r.name}
                     </button>
                   </li>
@@ -400,7 +506,10 @@ function InfoDrawer({ open, onClose, data, onShare }: { open: boolean; onClose: 
   const p = data.property;
   return (
     <>
-      <div className={`absolute inset-0 z-40 bg-black/30 transition-opacity duration-300 ${open ? "opacity-100" : "pointer-events-none opacity-0"}`} onClick={onClose} />
+      <div
+        className={`absolute inset-0 z-40 bg-black/30 transition-opacity duration-300 ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        onClick={onClose}
+      />
       <aside
         className={`absolute inset-y-0 right-0 z-50 flex w-full max-w-[420px] flex-col bg-[#f7f4ef] text-neutral-900 shadow-2xl transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
           open ? "translate-x-0" : "translate-x-full"
@@ -428,7 +537,10 @@ function InfoDrawer({ open, onClose, data, onShare }: { open: boolean; onClose: 
               <p key={i}>{para}</p>
             ))}
           </div>
-          <button onClick={onShare} className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-neutral-900 px-5 py-3.5 text-sm font-medium text-white transition hover:bg-neutral-800">
+          <button
+            onClick={onShare}
+            className="mt-8 flex w-full items-center justify-center gap-2 rounded-full bg-neutral-900 px-5 py-3.5 text-sm font-medium text-white transition hover:bg-neutral-800"
+          >
             <Share2 className="size-4" /> Share this walkthrough
           </button>
           <p className="mt-6 text-center text-xs text-neutral-400">
@@ -473,7 +585,9 @@ function LoadingOverlay({
   }, [entered]);
   if (gone) return null;
   return (
-    <div className={`absolute inset-0 z-[60] flex items-center justify-center transition-opacity duration-[900ms] ${entered ? "pointer-events-none opacity-0" : "opacity-100"}`}>
+    <div
+      className={`absolute inset-0 z-[60] flex items-center justify-center transition-opacity duration-[900ms] ${entered ? "pointer-events-none opacity-0" : "opacity-100"}`}
+    >
       <div className="absolute inset-0 bg-[#141210]" />
       {p.coverImageUrl && (
         // eslint-disable-next-line @next/next/no-img-element

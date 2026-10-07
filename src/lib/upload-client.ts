@@ -13,13 +13,7 @@ interface UploadTarget {
  * Upload a file straight to storage (local signed URL or Supabase Storage)
  * with progress reporting. Returns the asset URL to store on the property.
  */
-export async function uploadFile(
-  propertyId: string,
-  kind: UploadKind,
-  file: Blob,
-  filename: string,
-  onProgress?: (fraction: number) => void,
-): Promise<string> {
+export async function uploadFile(propertyId: string, kind: UploadKind, file: Blob, filename: string, onProgress?: (fraction: number) => void): Promise<string> {
   const res = await fetch(`/api/properties/${propertyId}/uploads`, {
     method: "POST",
     headers: { "content-type": "application/json" },

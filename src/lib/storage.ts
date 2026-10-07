@@ -79,13 +79,7 @@ export function extensionOf(filename: string): string {
   return filename.split(".").pop()?.toLowerCase() ?? "";
 }
 
-export async function createUploadTarget(
-  userId: string,
-  propertyId: string,
-  kind: UploadKind,
-  filename: string,
-  size: number,
-): Promise<UploadTarget> {
+export async function createUploadTarget(userId: string, propertyId: string, kind: UploadKind, filename: string, size: number): Promise<UploadTarget> {
   const ext = extensionOf(filename);
   const rules = UPLOAD_RULES[kind];
   if (!rules.extensions.includes(ext)) throw new Error(`Please choose a ${rules.extensions.map((e) => "." + e).join(" or ")} file.`);

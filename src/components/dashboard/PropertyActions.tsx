@@ -27,7 +27,13 @@ export function PublishPanel({ propertyId, slug, published, hasCapture }: { prop
         </span>
         <div>
           <p className="font-medium text-ink">{published ? "Live — anyone with the link can walk through" : "Draft — only you can preview"}</p>
-          <p className="text-sm text-neutral-500">{published ? "Share the link in listings, texts and emails." : hasCapture ? "Publish to get a shareable public link." : "Attach a 3D capture to publish."}</p>
+          <p className="text-sm text-neutral-500">
+            {published
+              ? "Share the link in listings, texts and emails."
+              : hasCapture
+                ? "Publish to get a shareable public link."
+                : "Attach a 3D capture to publish."}
+          </p>
         </div>
       </div>
       <div className="mt-4 flex items-center gap-2 rounded-2xl border border-sand bg-paper/70 py-1.5 pl-4 pr-1.5">
@@ -56,7 +62,11 @@ const noopSubscribe = () => () => {};
 
 function PublicUrl({ path }: { path: string }) {
   // The real deployment origin is only known in the browser; the server renders the path alone.
-  const host = useSyncExternalStore(noopSubscribe, () => window.location.host, () => "");
+  const host = useSyncExternalStore(
+    noopSubscribe,
+    () => window.location.host,
+    () => "",
+  );
   return (
     <span>
       {host}

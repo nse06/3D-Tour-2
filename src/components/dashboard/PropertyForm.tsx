@@ -127,7 +127,13 @@ export function PropertyForm({ mode, action, initial }: Props) {
             <input name="squareFeet" defaultValue={v("squareFeet")} placeholder="4,200" className={inputClass} inputMode="numeric" />
           </Field>
           <Field label="Description" className="col-span-2 md:col-span-4">
-            <textarea name="description" defaultValue={v("description")} rows={6} placeholder="What makes this home special?" className={`${inputClass} resize-y leading-relaxed`} />
+            <textarea
+              name="description"
+              defaultValue={v("description")}
+              rows={6}
+              placeholder="What makes this home special?"
+              className={`${inputClass} resize-y leading-relaxed`}
+            />
           </Field>
         </div>
       </section>
@@ -137,9 +143,27 @@ export function PropertyForm({ mode, action, initial }: Props) {
           <SectionTitle n={3} title="3D capture" subtitle="The walkthrough buyers will explore." />
           <input type="hidden" name="capture" value={capture} />
           <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <ChoiceCard active={capture === "demo"} onClick={() => setCapture("demo")} icon={<Box className="size-5" strokeWidth={1.5} />} title="Sample capture" text="Attach the 1234 Sheridan Road demo home — 10 rooms, 2 floors." />
-            <ChoiceCard active={capture === "upload"} onClick={() => setCapture("upload")} icon={<UploadCloud className="size-5" strokeWidth={1.5} />} title="Upload a model" text="A .glb or .gltf of the property. Rooms are detected if the file includes a scan manifest." />
-            <ChoiceCard active={capture === "later"} onClick={() => setCapture("later")} icon={<Clock className="size-5" strokeWidth={1.5} />} title="Add later" text="Save the listing now and attach a capture from its page." />
+            <ChoiceCard
+              active={capture === "demo"}
+              onClick={() => setCapture("demo")}
+              icon={<Box className="size-5" strokeWidth={1.5} />}
+              title="Sample capture"
+              text="Attach the 1234 Sheridan Road demo home — 10 rooms, 2 floors."
+            />
+            <ChoiceCard
+              active={capture === "upload"}
+              onClick={() => setCapture("upload")}
+              icon={<UploadCloud className="size-5" strokeWidth={1.5} />}
+              title="Upload a model"
+              text="A .glb or .gltf of the property. Rooms are detected if the file includes a scan manifest."
+            />
+            <ChoiceCard
+              active={capture === "later"}
+              onClick={() => setCapture("later")}
+              icon={<Clock className="size-5" strokeWidth={1.5} />}
+              title="Add later"
+              text="Save the listing now and attach a capture from its page."
+            />
           </div>
           {capture === "upload" && (
             <label className="mt-4 flex cursor-pointer items-center gap-4 rounded-2xl border border-dashed border-sand bg-paper/60 px-5 py-4 transition hover:border-neutral-400">

@@ -21,6 +21,10 @@ interface Props {
   onRoomChange: (roomId: string | null) => void;
   onMovingChange: (moving: boolean) => void;
   onFade: (visible: boolean) => void;
+  /** Guided autoplay: slowly pan while dwelling in a room. */
+  autoPan?: boolean;
+  /** Fired when the visitor takes control (drag, tap, keys). */
+  onUserInteract?: () => void;
 }
 
 interface Motion {
@@ -70,7 +74,20 @@ function travelProgress(t: number, ramp: number) {
   return (t - r / 2) / (1 - r);
 }
 
-export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, active, mode, onRoomChange, onMovingChange, onFade }: Props) {
+export function CameraRig({
+  space,
+  modelRef,
+  apiRef,
+  poseRef,
+  startWaypoint,
+  active,
+  mode,
+  onRoomChange,
+  onMovingChange,
+  onFade,
+  autoPan = false,
+  onUserInteract,
+}: Props) {
   const { camera, gl, raycaster, scene, size } = useThree();
   const baseFov = baseFovFor(size.width / size.height);
   const baseFovRef = useRef(baseFov);
@@ -96,8 +113,8 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
     started: false,
   });
 
-  const latest = useRef({ onRoomChange, onMovingChange, onFade, space, mode });
-  latest.current = { onRoomChange, onMovingChange, onFade, space, mode };
+  const latest = useRef({ onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract });
+  latest.current = { onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract };
 
   // Initial placement (before the visitor enters, the camera slowly drifts).
   useEffect(() => {
@@ -118,9 +135,7 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
   const glideTo = (points: Vec3[], yaw1: number, pitch1: number, opts: { travelFacing?: boolean; speed?: number } = {}) => {
     const st = s.current;
     const start = camera.position.clone();
-    const pts = [start, ...points.map((p) => new THREE.Vector3(...p))].filter(
-      (p, i, arr) => i === 0 || p.distanceTo(arr[i - 1]) > 0.05,
-    );
+    const pts = [start, ...points.map((p) => new THREE.Vector3(...p))].filter((p, i, arr) => i === 0 || p.distanceTo(arr[i - 1]) > 0.05);
     let curve: THREE.Curve<THREE.Vector3> | null = null;
     let length = 0;
     if (pts.length === 2) {
@@ -262,7 +277,7 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
     raycaster.setFromCamera(ndc, camera);
     raycaster.far = 30;
     const hits = raycaster.intersectObject(model, true);
-    const hit = hits.find((h) => (h.object as THREE.Mesh).isMesh && !(h.object.userData.noPick));
+    const hit = hits.find((h) => (h.object as THREE.Mesh).isMesh && !h.object.userData.noPick);
     if (!hit || !hit.face) return null;
     normalMatrix.getNormalMatrix(hit.object.matrixWorld);
     const n = tmpV.copy(hit.face.normal).applyMatrix3(normalMatrix).normalize();
@@ -302,6 +317,7 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
 
     const onDown = (e: PointerEvent) => {
       if (!st.started) return;
+      latest.current.onUserInteract?.();
       el.setPointerCapture(e.pointerId);
       st.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (st.pointers.size === 1) st.downAt = { x: e.clientX, y: e.clientY, time: performance.now(), moved: 0 };
@@ -374,6 +390,7 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
       const k = e.key.toLowerCase();
       if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d", "q", "e", "r", "f", "shift"].includes(k)) {
         st.keys.add(k);
+        if (k !== "shift") latest.current.onUserInteract?.();
         if (k.startsWith("arrow")) e.preventDefault();
       }
     };
@@ -479,6 +496,7 @@ export function CameraRig({ space, modelRef, apiRef, poseRef, startWaypoint, act
         }
       }
       if (!st.started) st.yawTarget -= dt * 0.02;
+      else if (latest.current.autoPan && st.pointers.size === 0) st.yawTarget += dt * 0.07;
       const damp = 1 - Math.exp(-dt * 11);
       st.yaw += wrapAngle(st.yawTarget - st.yaw) * damp;
       st.pitch += (st.pitchTarget - st.pitch) * damp;

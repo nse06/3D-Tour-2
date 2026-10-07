@@ -85,7 +85,9 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
                   <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-stone">3D capture</p>
                   <p className="mt-1 text-lg font-medium">{tour ? SOURCE_LABEL[tour.source] : "No capture attached yet"}</p>
                   <p className="text-sm text-neutral-500">
-                    {tour ? `${floors.length} floor${floors.length === 1 ? "" : "s"} · ${roomCount} room${roomCount === 1 ? "" : "s"} with viewpoints` : "Upload a .glb/.gltf model or use the sample capture."}
+                    {tour
+                      ? `${floors.length} floor${floors.length === 1 ? "" : "s"} · ${roomCount} room${roomCount === 1 ? "" : "s"} with viewpoints`
+                      : "Upload a .glb/.gltf model or use the sample capture."}
                   </p>
                 </div>
                 {tour && (
@@ -96,7 +98,8 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
               </div>
               {tour && roomCount === 0 && (
                 <p className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  <MousePointerClick className="mt-0.5 size-4 shrink-0" /> This capture has no rooms yet. Open <b className="font-semibold">Rooms & viewpoints</b> to walk the model and drop a viewpoint in each room.
+                  <MousePointerClick className="mt-0.5 size-4 shrink-0" /> This capture has no rooms yet. Open{" "}
+                  <b className="font-semibold">Rooms & viewpoints</b> to walk the model and drop a viewpoint in each room.
                 </p>
               )}
               {floors.length > 0 && roomCount > 0 && (

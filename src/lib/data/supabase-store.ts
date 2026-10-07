@@ -121,9 +121,7 @@ export class SupabaseRepository implements Repository {
   private async loadSpace(db: SupabaseClient, tour: Tour): Promise<TourSpace> {
     const floors = check(await db.from("floors").select("*").eq("tour_id", tour.id).order("floor_number")) as FloorRow[];
     const floorIds = floors.map((f) => f.id);
-    const rooms = floorIds.length
-      ? (check(await db.from("rooms").select("*").in("floor_id", floorIds).order("sort_order")) as RoomRow[])
-      : [];
+    const rooms = floorIds.length ? (check(await db.from("rooms").select("*").in("floor_id", floorIds).order("sort_order")) as RoomRow[]) : [];
     const roomIds = new Set(rooms.map((r) => r.id));
     return {
       floors: floors.map((f) => ({
@@ -179,7 +177,12 @@ export class SupabaseRepository implements Repository {
         ),
       );
     }
-    check(await db.from("tours").update({ navigation: { links: space.links, eyeHeight: space.eyeHeight } }).eq("id", tourId));
+    check(
+      await db
+        .from("tours")
+        .update({ navigation: { links: space.links, eyeHeight: space.eyeHeight } })
+        .eq("id", tourId),
+    );
   }
 
   private async ownedProperty(db: SupabaseClient, userId: string, propertyId: string): Promise<PropertyRow> {
@@ -233,7 +236,13 @@ export class SupabaseRepository implements Repository {
     const base = uniqueSlug(input.addressLine, () => false);
     const { data: free } = await db.rpc("available_slug", { base });
     const slug = typeof free === "string" && free ? free : `${base}-${Date.now().toString(36)}`;
-    const row = check(await db.from("properties").insert({ ...fromInput(input), user_id: userId, slug }).select("*").single()) as PropertyRow;
+    const row = check(
+      await db
+        .from("properties")
+        .insert({ ...fromInput(input), user_id: userId, slug })
+        .select("*")
+        .single(),
+    ) as PropertyRow;
     return toProperty(row);
   }
 

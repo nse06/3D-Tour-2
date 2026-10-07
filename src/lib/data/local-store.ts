@@ -213,4 +213,3 @@ export class LocalRepository implements Repository {
     return { property, tour, space: spaceFor(db, tour) };
   }
 }
-

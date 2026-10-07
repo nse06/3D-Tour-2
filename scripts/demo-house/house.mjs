@@ -146,16 +146,106 @@ function defineMaterials(b) {
 function defineRooms(M) {
   // rect: [x0, x1, z0, z1]; ext: exterior sides (n=-z, s=+z, w=-x, e=+x)
   return [
-    { key: "entry", name: "Entry", floor: "main", rect: [-2.5, 2.5, -1, 6.5], y0: F1, y1: H1, ext: "s", wall: M.wall, trim: M.trim, floorMat: M.marbleTile, ceiling: [[-2.5, 2.5, -1, 0.8]] },
+    {
+      key: "entry",
+      name: "Entry",
+      floor: "main",
+      rect: [-2.5, 2.5, -1, 6.5],
+      y0: F1,
+      y1: H1,
+      ext: "s",
+      wall: M.wall,
+      trim: M.trim,
+      floorMat: M.marbleTile,
+      ceiling: [[-2.5, 2.5, -1, 0.8]],
+    },
     { key: "living", name: "Living Room", floor: "main", rect: [2.5, 9, 0.5, 6.5], y0: F1, y1: H1, ext: "se", wall: M.wall, trim: M.trim, floorMat: M.oak },
-    { key: "dining", name: "Dining Room", floor: "main", rect: [2.5, 9, -6.5, 0.5], y0: F1, y1: H1, ext: "ne", wall: M.wallMist, trim: M.trim, floorMat: M.oak },
+    {
+      key: "dining",
+      name: "Dining Room",
+      floor: "main",
+      rect: [2.5, 9, -6.5, 0.5],
+      y0: F1,
+      y1: H1,
+      ext: "ne",
+      wall: M.wallMist,
+      trim: M.trim,
+      floorMat: M.oak,
+    },
     { key: "kitchen", name: "Kitchen", floor: "main", rect: [-8, 2.5, -6.5, -1], y0: F1, y1: H1, ext: "nw", wall: M.wall, trim: M.trim, floorMat: M.oak },
-    { key: "office", name: "Office", floor: "main", rect: [-8, -2.5, -1, 6.5], y0: F1, y1: H1, ext: "sw", wall: M.wallOffice, trim: M.trimOffice, floorMat: M.oak },
-    { key: "landing", name: "Upper Landing", floor: "upper", rect: [-8, 2.5, -1.2, 0.8], y0: F2, y1: H2, ext: "w", skip: "s", wall: M.wall, trim: M.trim, floorMat: M.oak },
-    { key: "primary", name: "Primary Bedroom", floor: "upper", rect: [2.5, 9, -1.5, 6.5], y0: F2, y1: H2, ext: "se", wall: M.wallGreige, trim: M.trim, floorMat: M.oak },
-    { key: "primaryBath", name: "Primary Bathroom", floor: "upper", rect: [2.5, 9, -6.5, -1.5], y0: F2, y1: H2, ext: "ne", wall: M.wall, trim: M.trim, floorMat: M.marbleTile },
-    { key: "bedroom2", name: "Bedroom 2", floor: "upper", rect: [-8, -2.5, 0.8, 6.5], y0: F2, y1: H2, ext: "sw", wall: M.wallMist, trim: M.trim, floorMat: M.oak },
-    { key: "bedroom3", name: "Bedroom 3", floor: "upper", rect: [-8, -2.5, -6.5, -1.2], y0: F2, y1: H2, ext: "nw", wall: M.wallSage, trim: M.trim, floorMat: M.oak },
+    {
+      key: "office",
+      name: "Office",
+      floor: "main",
+      rect: [-8, -2.5, -1, 6.5],
+      y0: F1,
+      y1: H1,
+      ext: "sw",
+      wall: M.wallOffice,
+      trim: M.trimOffice,
+      floorMat: M.oak,
+    },
+    {
+      key: "landing",
+      name: "Upper Landing",
+      floor: "upper",
+      rect: [-8, 2.5, -1.2, 0.8],
+      y0: F2,
+      y1: H2,
+      ext: "w",
+      skip: "s",
+      wall: M.wall,
+      trim: M.trim,
+      floorMat: M.oak,
+    },
+    {
+      key: "primary",
+      name: "Primary Bedroom",
+      floor: "upper",
+      rect: [2.5, 9, -1.5, 6.5],
+      y0: F2,
+      y1: H2,
+      ext: "se",
+      wall: M.wallGreige,
+      trim: M.trim,
+      floorMat: M.oak,
+    },
+    {
+      key: "primaryBath",
+      name: "Primary Bathroom",
+      floor: "upper",
+      rect: [2.5, 9, -6.5, -1.5],
+      y0: F2,
+      y1: H2,
+      ext: "ne",
+      wall: M.wall,
+      trim: M.trim,
+      floorMat: M.marbleTile,
+    },
+    {
+      key: "bedroom2",
+      name: "Bedroom 2",
+      floor: "upper",
+      rect: [-8, -2.5, 0.8, 6.5],
+      y0: F2,
+      y1: H2,
+      ext: "sw",
+      wall: M.wallMist,
+      trim: M.trim,
+      floorMat: M.oak,
+    },
+    {
+      key: "bedroom3",
+      name: "Bedroom 3",
+      floor: "upper",
+      rect: [-8, -2.5, -6.5, -1.2],
+      y0: F2,
+      y1: H2,
+      ext: "nw",
+      wall: M.wallSage,
+      trim: M.trim,
+      floorMat: M.oak,
+    },
   ];
 }
 
@@ -413,7 +503,8 @@ function furnishLiving(b, M) {
     for (const y of [1.45, 2.05]) b.box(M.trim, [8.48, y, za], [wallX, y + 0.035, zb]);
     const zc = (za + zb) / 2;
     b.sphere(M.ceramic, [8.6, 1.02, zc - 0.35], 0.12, [1, 1.1, 1]);
-    for (let i = 0; i < 9; i++) b.box(M.books[i % M.books.length], [8.5, 1.485, zc + 0.05 + i * 0.035], [8.75, 1.485 + 0.22 + (i % 3) * 0.03, zc + 0.08 + i * 0.035]);
+    for (let i = 0; i < 9; i++)
+      b.box(M.books[i % M.books.length], [8.5, 1.485, zc + 0.05 + i * 0.035], [8.75, 1.485 + 0.22 + (i % 3) * 0.03, zc + 0.08 + i * 0.035]);
     b.cyl(M.ceramicDark, [8.62, 2.18, zc], 0.08, 0.1, 0.22, 20);
   }
 
@@ -544,7 +635,8 @@ function furnishKitchen(b, M) {
   for (const dx of [-1.1, 0, 1.1]) F.pendant(b, M, { pos: [ix + dx, 2.05, iz], ceilingY: H1, r: 0.19, mat: M.brass });
   b.light({ position: [ix, 1.9, iz], intensity: 16, range: 7, name: "Kitchen_Island" });
   b.cyl(M.ceramic, [ix + 0.6, 1.0, iz - 0.1], 0.2, 0.12, 0.1, 24);
-  for (let i = 0; i < 5; i++) b.sphere(M.fruit, [ix + 0.6 + Math.cos(i * 1.3) * 0.08, 1.07 + (i % 2) * 0.03, iz - 0.1 + Math.sin(i * 1.3) * 0.08], 0.045, [1, 0.85, 1], 1);
+  for (let i = 0; i < 5; i++)
+    b.sphere(M.fruit, [ix + 0.6 + Math.cos(i * 1.3) * 0.08, 1.07 + (i % 2) * 0.03, iz - 0.1 + Math.sin(i * 1.3) * 0.08], 0.045, [1, 0.85, 1], 1);
   F.vase(b, M, { pos: [ix - 0.9, 0.95, iz - 0.05], mat: M.ceramicDark, seed: 41 });
   // Breakfast nook.
   const nx = -6.35;
@@ -588,10 +680,9 @@ function furnishOffice(b, M) {
   b.cbox(M.books[0], [-4.4, 0.44, 3.15], [0.28, 0.04, 0.2]);
   // Full-height library wall.
   F.bookshelf(b, M, { pos: [-5.2, 0, -1 + INT_T + 0.19], rotY: 0, w: 4.8, h: 2.8, d: 0.38, shelves: 6, frame: M.walnutDark, seed: 19, fill: 0.82 });
-  b.light({ position: [-5.2, 2.2, 0.4], intensity: 4, range: 4, name: "Office_Shelves" });
   F.floorLamp(b, M, { pos: [-7.5, 0, 5.9] });
   F.plant(b, M, { pos: [-3.0, 0, 6.0], height: 1.5, pot: "ceramicDark", seed: 51 });
-  b.light({ position: [-5.2, 2.05, 3.0], intensity: 12, range: 7, name: "Office" });
+  b.light({ position: [-5.2, 2.05, 3.0], intensity: 13, range: 8, name: "Office" });
   for (const [xa, xb] of [
     [-7.2, -5.6],
     [-4.9, -3.3],
@@ -613,8 +704,7 @@ function furnishLanding(b, M) {
     b.cyl(M.brass, [x, H2 - 0.03, -0.2], 0.2, 0.2, 0.04, 24);
     b.cyl(M.globe, [x, H2 - 0.07, -0.2], 0.17, 0.18, 0.05, 24);
   }
-  b.light({ position: [-2.6, H2 - 0.95, -0.2], intensity: 8, range: 7, name: "Landing_A" });
-  b.light({ position: [-6.0, H2 - 0.95, -0.2], intensity: 5, range: 5, name: "Landing_B" });
+  b.light({ position: [-2.6, H2 - 0.95, -0.2], intensity: 10, range: 9, name: "Landing_A" });
 }
 
 function furnishPrimary(b, M) {
@@ -623,10 +713,20 @@ function furnishPrimary(b, M) {
   F.rugAt(b, M, { pos: [7.0, F2, bz], w: 3.2, d: 3.6, mat: M.rugBed });
   // Upholstered wall panel behind the bed.
   b.rbox(M.linenTaupe, [wallX - 0.04, F2 + 1.35, bz], [0.08, 2.1, 3.4], 0.03);
-  F.bed(b, M, { pos: [7.6, F2, bz], rotY: -Math.PI / 2, width: 2.0, length: 2.15, frame: M.linenTaupe, headboard: M.linenTaupe, duvet: M.duvet, sheet: M.linen, pillows: M.sage, throwMat: M.velvetNavy });
+  F.bed(b, M, {
+    pos: [7.6, F2, bz],
+    rotY: -Math.PI / 2,
+    width: 2.0,
+    length: 2.15,
+    frame: M.linenTaupe,
+    headboard: M.linenTaupe,
+    duvet: M.duvet,
+    sheet: M.linen,
+    pillows: M.sage,
+    throwMat: M.velvetNavy,
+  });
   for (const s of [-1, 1]) {
     F.nightstand(b, M, { pos: [8.45, F2, bz + s * 1.38], rotY: -Math.PI / 2, mat: M.walnut });
-    b.light({ position: [8.45, F2 + 1.1, bz + s * 1.38], intensity: 2.2, range: 3, name: `Primary_Lamp_${s}` });
   }
   b.rbox(M.velvetNavy, [6.2, F2 + 0.42, bz], [0.45, 0.14, 1.5], 0.04);
   for (const dz of [-0.6, 0.6]) b.box(M.walnutDark, [6.0, F2, bz + dz - 0.02], [6.4, F2 + 0.36, bz + dz + 0.02]);
@@ -651,7 +751,7 @@ function furnishPrimary(b, M) {
     F.drape(b, M, { pos: [xa - 0.12, F2, 6.5 - EXT_T - 0.09], rotY: Math.PI, w: 0.4, h: H2 - F2 - 0.12 });
     F.drape(b, M, { pos: [xb + 0.12, F2, 6.5 - EXT_T - 0.09], rotY: Math.PI, w: 0.4, h: H2 - F2 - 0.12 });
   }
-  b.light({ position: [5.75, H2 - 0.95, 2.5], intensity: 11, range: 8, name: "Primary" });
+  b.light({ position: [5.75, H2 - 0.95, 2.5], intensity: 12, range: 8, name: "Primary" });
 }
 
 function furnishPrimaryBath(b, M) {
@@ -709,31 +809,51 @@ function furnishBedroom2(b, M) {
   const wallX = -8 + EXT_T;
   const bz = 3.7;
   F.rugAt(b, M, { pos: [-6.0, F2, bz], w: 2.6, d: 3.2, mat: M.rugBlue });
-  F.bed(b, M, { pos: [-6.6, F2, bz], rotY: Math.PI / 2, width: 1.65, length: 2.1, frame: M.walnut, headboard: M.velvetNavy, duvet: M.duvet, sheet: M.linen, pillows: M.linenTaupe, throwMat: M.sage });
+  F.bed(b, M, {
+    pos: [-6.6, F2, bz],
+    rotY: Math.PI / 2,
+    width: 1.65,
+    length: 2.1,
+    frame: M.walnut,
+    headboard: M.velvetNavy,
+    duvet: M.duvet,
+    sheet: M.linen,
+    pillows: M.linenTaupe,
+    throwMat: M.sage,
+  });
   for (const s of [-1, 1]) F.nightstand(b, M, { pos: [wallX + 0.3, F2, bz + s * 1.2], rotY: Math.PI / 2, mat: M.cabinet });
-  b.light({ position: [wallX + 0.3, F2 + 1.1, bz - 1.2], intensity: 2, range: 3, name: "Bed2_Lamp" });
   F.art(b, M, { pos: [wallX, F2 + 1.95, bz], rotY: Math.PI / 2, w: 1.1, h: 0.75, canvas: M.artCircles, frame: M.walnut });
   // Desk on the east wall.
   F.rectTable(b, M, { pos: [-2.85, F2, 5.1], rotY: Math.PI / 2, w: 1.3, d: 0.55, h: 0.75, top: M.walnut, legs: M.blackMetal });
   F.diningChair(b, M, { pos: [-3.4, F2, 5.1], rotY: Math.PI / 2, mat: M.sage });
   F.tableLamp(b, M, [-2.8, F2 + 0.75, 5.55], 0.85);
   F.plant(b, M, { pos: [-2.95, F2, 1.35], height: 1.3, seed: 91 });
-  b.light({ position: [-5.25, H2 - 0.95, 3.6], intensity: 9, range: 7, name: "Bedroom2" });
+  b.light({ position: [-5.25, H2 - 0.95, 3.6], intensity: 10, range: 7, name: "Bedroom2" });
 }
 
 function furnishBedroom3(b, M) {
   const wallX = -2.5 - INT_T;
   const bz = -3.9;
   F.rugAt(b, M, { pos: [-4.0, F2, bz], w: 2.4, d: 3.0, mat: M.rugBed });
-  F.bed(b, M, { pos: [-3.65, F2, bz], rotY: -Math.PI / 2, width: 1.5, length: 2.05, frame: M.cabinet, headboard: M.sage, duvet: M.duvet, sheet: M.linen, pillows: M.rust, throwMat: M.linenTaupe });
+  F.bed(b, M, {
+    pos: [-3.65, F2, bz],
+    rotY: -Math.PI / 2,
+    width: 1.5,
+    length: 2.05,
+    frame: M.cabinet,
+    headboard: M.sage,
+    duvet: M.duvet,
+    sheet: M.linen,
+    pillows: M.rust,
+    throwMat: M.linenTaupe,
+  });
   for (const s of [-1, 1]) F.nightstand(b, M, { pos: [wallX - 0.3, F2, bz + s * 1.1], rotY: -Math.PI / 2, mat: M.walnut });
-  b.light({ position: [wallX - 0.3, F2 + 1.1, bz + 1.1], intensity: 2, range: 3, name: "Bed3_Lamp" });
   F.art(b, M, { pos: [wallX, F2 + 1.95, bz], rotY: -Math.PI / 2, w: 0.8, h: 1.0, canvas: M.artField, frame: M.walnut });
   // Reading corner + bookshelf.
   F.loungeChair(b, M, { pos: [-7.2, F2, -5.7], rotY: 0.75, mat: M.rust });
   F.floorLamp(b, M, { pos: [-7.55, F2, -4.95] });
   F.bookshelf(b, M, { pos: [-7.78 + 0.18, F2, -1.5 - 0.6], rotY: Math.PI / 2, w: 1.0, h: 1.9, d: 0.34, shelves: 4, frame: M.cabinet, seed: 29, fill: 0.7 });
-  b.light({ position: [-5.25, H2 - 0.95, -3.85], intensity: 9, range: 7, name: "Bedroom3" });
+  b.light({ position: [-5.25, H2 - 0.95, -3.85], intensity: 10, range: 7, name: "Bedroom3" });
 }
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,11 @@ export default function Home() {
       {/* Hero */}
       <section className="relative min-h-[100svh] overflow-hidden bg-[#141210] text-white">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/demo/sheridan-road-cover.jpg" alt="Inside the 3D walkthrough of 1234 Sheridan Road" className="absolute inset-0 size-full scale-[1.02] object-cover opacity-80" />
+        <img
+          src="/demo/sheridan-road-cover.jpg"
+          alt="Inside the 3D walkthrough of 1234 Sheridan Road"
+          className="absolute inset-0 size-full scale-[1.02] object-cover opacity-80"
+        />
         <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/20 to-black/75" />
         <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-5 py-6 md:px-8">
           <Wordmark className="text-white" />
@@ -19,7 +23,10 @@ export default function Home() {
             <Link href="/tour/sample" className="hidden rounded-full px-3 py-1.5 text-white/80 hover:text-white sm:inline">
               Sample tour
             </Link>
-            <Link href="/dashboard" className="ml-2 rounded-full bg-white/15 px-4 py-2 font-medium text-white ring-1 ring-white/25 backdrop-blur hover:bg-white/25">
+            <Link
+              href="/dashboard"
+              className="ml-2 rounded-full bg-white/15 px-4 py-2 font-medium text-white ring-1 ring-white/25 backdrop-blur hover:bg-white/25"
+            >
               Agent dashboard
             </Link>
           </nav>
@@ -33,13 +40,19 @@ export default function Home() {
             Turn it into a 3D walkthrough that buyers can explore from anywhere — room by room, floor by floor, from a single link.
           </p>
           <div className="rise mt-10 flex flex-wrap gap-3" style={{ animationDelay: "240ms" }}>
-            <Link href="/tour/sample" className="group inline-flex h-14 items-center gap-3 rounded-full bg-white pl-7 pr-2 text-[15px] font-medium text-ink shadow-xl transition hover:scale-[1.02]">
+            <Link
+              href="/tour/sample"
+              className="group inline-flex h-14 items-center gap-3 rounded-full bg-white pl-7 pr-2 text-[15px] font-medium text-ink shadow-xl transition hover:scale-[1.02]"
+            >
               Walk through a sample home
               <span className="grid size-10 place-items-center rounded-full bg-ink text-white transition group-hover:translate-x-0.5">
                 <ArrowRight className="size-4" />
               </span>
             </Link>
-            <Link href="/dashboard" className="inline-flex h-14 items-center rounded-full px-6 text-[15px] font-medium text-white ring-1 ring-white/40 backdrop-blur transition hover:bg-white/10">
+            <Link
+              href="/dashboard"
+              className="inline-flex h-14 items-center rounded-full px-6 text-[15px] font-medium text-white ring-1 ring-white/40 backdrop-blur transition hover:bg-white/10"
+            >
               Create a listing
             </Link>
           </div>
@@ -65,7 +78,12 @@ export default function Home() {
             title="We build the walkthrough"
             text="The capture becomes a 3D model with rooms, floors, a floor plan and a guided path — no 3D modeling or setup on your end."
           />
-          <Step icon={<Link2 className="size-6" strokeWidth={1.4} />} n="03" title="Share one link" text="Publish and send the link. Buyers open it in any browser and step inside — no app, no account." />
+          <Step
+            icon={<Link2 className="size-6" strokeWidth={1.4} />}
+            n="03"
+            title="Share one link"
+            text="Publish and send the link. Buyers open it in any browser and step inside — no app, no account."
+          />
         </div>
       </section>
 
@@ -76,15 +94,35 @@ export default function Home() {
             <p className="text-[12px] font-semibold uppercase tracking-[0.28em] text-stone">Not a slideshow</p>
             <h2 className="font-display mt-4 text-5xl leading-[1.05]">Buyers move through the home — not past photos of it.</h2>
             <ul className="mt-10 space-y-6">
-              <Feature icon={<MousePointerClick className="size-5" />} title="Walk naturally" text="Glide room to room, look in every direction, and step anywhere by tapping the floor." />
-              <Feature icon={<Layers className="size-5" />} title="Every floor, connected" text="Climb the stairs to the next level the way you would in person." />
-              <Feature icon={<MapIcon className="size-5" />} title="Always oriented" text="A live floor plan shows where you are and which way you're facing." />
-              <Feature icon={<Box className="size-5" />} title="Built for real scans" text="The same viewer will play iPhone LiDAR captures automatically when the capture app launches." />
+              <Feature
+                icon={<MousePointerClick className="size-5" />}
+                title="Walk naturally"
+                text="Glide room to room, look in every direction, and step anywhere by tapping the floor."
+              />
+              <Feature
+                icon={<Layers className="size-5" />}
+                title="Every floor, connected"
+                text="Climb the stairs to the next level the way you would in person."
+              />
+              <Feature
+                icon={<MapIcon className="size-5" />}
+                title="Always oriented"
+                text="A live floor plan shows where you are and which way you're facing."
+              />
+              <Feature
+                icon={<Box className="size-5" />}
+                title="Built for real scans"
+                text="The same viewer will play iPhone LiDAR captures automatically when the capture app launches."
+              />
             </ul>
           </div>
           <Link href="/tour/sample" className="group relative block overflow-hidden rounded-[28px] shadow-2xl">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/demo/sheridan-road-cover.jpg" alt="" className="aspect-[4/5] w-full object-cover transition duration-700 group-hover:scale-[1.03] md:aspect-[4/5]" />
+            <img
+              src="/demo/sheridan-road-cover.jpg"
+              alt=""
+              className="aspect-[4/5] w-full object-cover transition duration-700 group-hover:scale-[1.03] md:aspect-[4/5]"
+            />
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent" />
             <div className="absolute inset-x-6 bottom-6 flex items-end justify-between text-white">
               <div>

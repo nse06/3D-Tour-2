@@ -21,7 +21,14 @@ export function LoginForm({ next }: { next: string }) {
         <input name="email" type="email" required className={inputClass} autoComplete="email" placeholder="you@brokerage.com" />
       </Field>
       <Field label="Password">
-        <input name="password" type="password" required minLength={8} className={inputClass} autoComplete={mode === "signup" ? "new-password" : "current-password"} />
+        <input
+          name="password"
+          type="password"
+          required
+          minLength={8}
+          className={inputClass}
+          autoComplete={mode === "signup" ? "new-password" : "current-password"}
+        />
       </Field>
       {state.error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>}
       {state.notice && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{state.notice}</p>}
@@ -31,7 +38,11 @@ export function LoginForm({ next }: { next: string }) {
       </Button>
       <p className="text-center text-sm text-neutral-500">
         {mode === "signin" ? "New to Atrium?" : "Already have an account?"}{" "}
-        <button type="button" className="font-medium text-ink underline-offset-4 hover:underline" onClick={() => setMode(mode === "signin" ? "signup" : "signin")}>
+        <button
+          type="button"
+          className="font-medium text-ink underline-offset-4 hover:underline"
+          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+        >
           {mode === "signin" ? "Create an account" : "Sign in"}
         </button>
       </p>

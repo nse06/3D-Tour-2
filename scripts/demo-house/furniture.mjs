@@ -190,18 +190,28 @@ export function vase(b, M, { pos, mat, branches = true, seed = 3 }) {
         const a = r() * Math.PI * 2;
         const tilt = 0.2 + r() * 0.35;
         const len = 0.45 + r() * 0.35;
-        b.cyl(M.stem, [Math.cos(a) * Math.sin(tilt) * len * 0.5, 0.35 + Math.cos(tilt) * len * 0.5, Math.sin(a) * Math.sin(tilt) * len * 0.5], 0.006, 0.009, len, 5, [
-          Math.sin(a) * tilt,
-          0,
-          -Math.cos(a) * tilt,
-        ]);
+        b.cyl(
+          M.stem,
+          [Math.cos(a) * Math.sin(tilt) * len * 0.5, 0.35 + Math.cos(tilt) * len * 0.5, Math.sin(a) * Math.sin(tilt) * len * 0.5],
+          0.006,
+          0.009,
+          len,
+          5,
+          [Math.sin(a) * tilt, 0, -Math.cos(a) * tilt],
+        );
         for (let k = 0; k < 4; k++) {
           const tt = 0.4 + k * 0.17;
-          b.sphere(M.leaf2, [
-            Math.cos(a) * Math.sin(tilt) * len * tt + (r() - 0.5) * 0.06,
-            0.35 + Math.cos(tilt) * len * tt,
-            Math.sin(a) * Math.sin(tilt) * len * tt + (r() - 0.5) * 0.06,
-          ], 0.035, [1.5, 0.4, 1], 0);
+          b.sphere(
+            M.leaf2,
+            [
+              Math.cos(a) * Math.sin(tilt) * len * tt + (r() - 0.5) * 0.06,
+              0.35 + Math.cos(tilt) * len * tt,
+              Math.sin(a) * Math.sin(tilt) * len * tt + (r() - 0.5) * 0.06,
+            ],
+            0.035,
+            [1.5, 0.4, 1],
+            0,
+          );
         }
       }
     }
