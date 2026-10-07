@@ -45,15 +45,18 @@ and glTF `matrix`).
     "ceilingY": 2.61                  // ceiling height (top of the room's walls)
   }],
   "walls": [{
-    "id": "…", "transform": [16 floats], "width": 4.2, "height": 2.6
+    "id": "…", "roomId": "8F2C…",     // optional: the room it was scanned from (finds its inside face)
+    "transform": [16 floats], "width": 4.2, "height": 2.6
   }],
   "openings": [{
     "id": "…", "kind": "door" | "window" | "opening", "isOpen": true,
     "wallId": "…" | null,             // parent wall (RoomPlan parentIdentifier), may be null
+    "roomId": "…",                    // optional
     "transform": [16 floats], "width": 0.9, "height": 2.05
   }],
   "objects": [{
     "id": "…", "category": "sofa",    // RoomPlan CapturedRoom.Object.Category case name (see §3.4)
+    "roomId": "…",                    // optional
     "transform": [16 floats], "size": [x, y, z]
   }],
   "trajectory": [{ "t": 12.4, "p": [x,y,z], "f": [x,y,z] }]   // seconds since start, camera position, camera forward (−Z axis) in world
@@ -77,6 +80,12 @@ public enum ScanProcessor {
 ```
 
 `scanproc <scan.json> <out.glb> [--manifest out.json]` runs the same function from the command line.
+
+Before meshing, the scan is moved into a tidy frame (`normalizeFrame`, on by default): rotated about Y so the dominant
+wall direction lies along X, centered in plan, lowest floor at y = 0. The applied transform is recorded in the glTF at
+`scenes[0].extras.atriumCapture.frame` (16 numbers, column-major). Each room scanned separately reports its own face of a
+shared partition: facing walls less than 0.5 m apart become two slabs that each fill half the gap, and a door seen from
+only one side is cut through both faces.
 
 ### 2.1 Geometry (meshes, one primitive per material)
 
@@ -118,7 +127,8 @@ Identical to the web's `ScanManifest` (`src/lib/tour/scan-manifest.ts`):
 * **links**: (1) every door/opening whose two sides (0.6 m along the wall normal) fall in two different rooms
   ⇒ link through `[side A, side B]` at eye height; (2) every trajectory transition A → B not already linked
   ⇒ link through the walked samples around the transition (≤ 8 points); transitions between floors are
-  `kind: "stairs"` and keep the climb (≤ 12 points).
+  `kind: "stairs"` and keep the climb (≤ 12 points); (3) rooms that flow into each other with no wall between
+  them (open plan, overlapping scans) ⇒ link through the middle of the open stretch of their shared edge.
 
 ## 3. Atrium web API (phone ⇄ server)
 
@@ -151,9 +161,11 @@ In Supabase mode these endpoints need `SUPABASE_SERVICE_ROLE_KEY` (the phone has
 scan.json            CaptureScan (reprocess with `scanproc`)
 manifest.json        the generated scan manifest
 roomplan/structure.json   CapturedStructure (JSONEncoder) — raw Apple data for future processing
-roomplan/room-N.json      each CapturedRoom
+roomplan/room-N.json      each CapturedRoom (RoomBuilder output)
+roomplan/room-N-data.json each CapturedRoomData (raw capture, can be rebuilt with RoomBuilder)
 roomplan/structure.usdz   RoomPlan's own USDZ export
-frames/frames.json   [{ file, t, transform[16], intrinsics[9], width, height }]
+frames/frames.json   [{ file, t, transform[16], intrinsics[9], width, height, imageWidth, imageHeight }]
+                     (images are downscaled, in sensor orientation; intrinsics refer to width × height)
 frames/000123.jpg    RGB keyframes (~every 1.5 s, ≤1280 px) for future photo texturing
 info.json            app / device / capture metadata
 ```
