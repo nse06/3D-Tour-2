@@ -111,7 +111,7 @@ public struct AlignmentReport: Codable, Sendable, Equatable {
     public var segments: Int
     /// Origin resets found in the recorded path.
     public var pathResets: Int
-    /// Doorways seen from both of their rooms and lined up.
+    /// Doorways seen from both of their rooms that were far enough apart to move a room.
     public var doorwayPairs: Int
     public var pathSamples: Int
     public var pathSamplesDropped: Int
@@ -126,6 +126,8 @@ public struct AlignmentReport: Codable, Sendable, Equatable {
         var parts: [String] = []
         if n <= 1 {
             parts.append("Single room")
+        } else if rooms.allSatisfy({ $0.method == .asRecorded }) {
+            parts.append("Rooms kept as recorded")
         } else if unplaced == n {
             parts.append("Rooms kept as recorded (no layout data)")
         } else if fromStructure == n {
@@ -135,7 +137,7 @@ public struct AlignmentReport: Codable, Sendable, Equatable {
         } else {
             parts.append("\(n - unplaced) of \(n) rooms placed by following your path")
         }
-        if doorwayPairs > 0 { parts.append("\(doorwayPairs) doorway\(doorwayPairs == 1 ? "" : "s") lined up") }
+        if doorwayPairs > 0 { parts.append("\(doorwayPairs) doorway\(doorwayPairs == 1 ? "" : "s") straightened") }
         return parts.joined(separator: " · ")
     }
 }
@@ -198,7 +200,7 @@ public enum RoomAlignment {
         }
 
         // 3. Doorway snapping (a plan shift per room).
-        let snap = doorwayCorrections(parts: parts, motions: motions)
+        let snap = doorwayCorrections(parts: parts, motions: motions, pinned: Set(parts.indices.filter { methods[$0] == .structure }))
         func shift(_ c: P2) -> Motion { Motion(yaw: 0, t: Vec3(Float(c.x), 0, Float(c.y))) }
         // A segment placed by following the path from another inherits that one's doorway shift,
         // unless a room of its own was lined up at a doorway (or placed on the structure).
@@ -609,9 +611,15 @@ public enum RoomAlignment {
 
     // MARK: Doorway snapping
 
-    /// Plan shifts that line up each doorway seen from both of its rooms. Small
-    /// by design: views more than ~0.8 m apart aren't treated as one doorway.
-    static func doorwayCorrections(parts: [RoomPart], motions: [Motion?]) -> (corrections: [P2], pairs: Int, snapped: Set<Int>) {
+    /// Plan shifts that pull a room back where one of its doorways is far from
+    /// the other room's view of the same doorway. RoomPlan's two views of a
+    /// doorway always differ a little, so only the excess beyond that moves
+    /// rooms, and views more than ~0.8 m apart aren't treated as one doorway.
+    /// `pinned` rooms (placed on the merged structure) never move.
+    static func doorwayCorrections(parts: [RoomPart], motions: [Motion?], pinned: Set<Int>) -> (corrections: [P2], pairs: Int, snapped: Set<Int>) {
+        guard parts.indices.contains(where: { motions[$0] != nil && !pinned.contains($0) }) else {
+            return ([P2](repeating: P2(0, 0), count: parts.count), 0, [])
+        }
         struct View {
             let part: Int
             let c: P2
@@ -663,13 +671,17 @@ public enum RoomAlignment {
                 let along = pdot(d, va.u), across = pdot(d, va.n)
                 // b's face sits behind a's (in the other room), a partition's thickness away.
                 guard abs(along) < 0.8, across > -0.9, across < 0.3 else { continue }
-                // The partition's thickness isn't known: firmly pull implausible gaps to a typical
-                // interior wall, gently pull plausible ones.
-                let plausible = across >= -0.35 && across <= -0.04
+                guard !(pinned.contains(va.part) && pinned.contains(vb.part)) else { continue }
+                // RoomPlan's two views of one doorway differ by up to ~0.2 m along the wall, and
+                // the gap between them (the partition) runs from about −0.4 to +0.12 m. Only the
+                // excess is corrected; within that, the two rooms just keep their relative placement.
+                let alongExcess = along - clamp(along, -0.2, 0.2)
+                let acrossExcess = across - clamp(across, -0.4, 0.12)
                 let sameWidth = abs(va.width - vb.width) < 0.15
                 let pair = Pair(
-                    i: va.part, j: vb.part, along: va.u, alongValue: -along, alongWeight: sameWidth ? 1 : 0.1, across: va.n,
-                    acrossValue: -0.12 - across, acrossWeight: plausible ? 0.1 : 1, cost: along * along + 0.5 * (across + 0.12) * (across + 0.12))
+                    i: va.part, j: vb.part, along: va.u, alongValue: -alongExcess, alongWeight: alongExcess == 0 ? 0.05 : (sameWidth ? 1 : 0.3),
+                    across: va.n, acrossValue: -acrossExcess, acrossWeight: acrossExcess == 0 ? 0.05 : 1,
+                    cost: along * along + 0.5 * (across + 0.08) * (across + 0.08))
                 candidates.append((a, b, pair))
             }
         }
@@ -682,7 +694,8 @@ public enum RoomAlignment {
             pairs.append(c.pair)
         }
 
-        // The largest room of each group of doorway-connected rooms stays put; the others move to it.
+        // Rooms on the merged structure stay put; so does the largest room of each group of
+        // doorway-connected rooms that has none. The others move to them.
         let areas = parts.indices.map { k in motions[k] == nil ? 0 : area(parts[k].room.floorPolygon.map(plan)) }
         func anchors(_ pairs: [Pair]) -> Set<Int> {
             var group = Array(parts.indices)
@@ -692,9 +705,12 @@ public enum RoomAlignment {
                 return k
             }
             for p in pairs { group[root(p.i)] = root(p.j) }
+            var result = pinned
+            let pinnedGroups = Set(pinned.map(root))
             var best: [Int: Int] = [:]
-            for k in parts.indices where areas[k] > (best[root(k)].map { areas[$0] } ?? -1) { best[root(k)] = k }
-            return Set(best.values)
+            for k in parts.indices where !pinnedGroups.contains(root(k)) && areas[k] > (best[root(k)].map { areas[$0] } ?? -1) { best[root(k)] = k }
+            result.formUnion(best.values)
+            return result
         }
 
         var corrections = [P2](repeating: P2(0, 0), count: parts.count)
@@ -720,7 +736,8 @@ public enum RoomAlignment {
             corrections = solved
             break
         }
-        return (corrections, pairs.count, Set(pairs.flatMap { [$0.i, $0.j] }))
+        let moved = Set(pairs.flatMap { [$0.i, $0.j] }).subtracting(pinned)
+        return (corrections, pairs.filter { $0.alongWeight >= 0.3 || $0.acrossWeight >= 1 }.count, moved)
     }
 
     /// Least-squares plan shifts for rooms given wanted relative shifts along
