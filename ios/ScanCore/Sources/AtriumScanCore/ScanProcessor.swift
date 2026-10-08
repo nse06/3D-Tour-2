@@ -180,7 +180,8 @@ public enum ScanProcessor {
         }
 
         var manifest = ManifestBuilder(
-            rooms: rooms, walls: walls, openings: scan.openings, objects: scan.objects, trajectory: scan.trajectory, eyeHeight: options.eyeHeight
+            rooms: rooms, walls: walls, openings: scan.openings, objects: scan.objects, trajectory: scan.trajectory, eyeHeight: options.eyeHeight,
+            photoSpots: scan.frames.map(\.transform.translation)
         ).build(generator: generator)
         manifest.appearance = "captured"
         let manifestObject = try JSONSerialization.jsonObject(with: try manifest.jsonData())

@@ -478,4 +478,24 @@ final class PhotoTexturingTests: XCTestCase {
         let json = glb.subdata(in: 20..<(20 + Int(length)))
         return try XCTUnwrap(try JSONSerialization.jsonObject(with: json) as? [String: Any])
     }
+
+    func testPhotoScanViewpointsStandWherePhotosWereTaken() {
+        // The phone passed a corner with a long view across the room but took its photos further
+        // in: a photo scan's viewpoint goes where the photos were taken.
+        let scan = Self.room()
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        let corner = Vec3(0.6, 1.4, 0.5), spot = Vec3(2.4, 1.4, 2.0)
+        let path = [PoseSample(t: 0, p: corner, f: Vec3(1, 0, 0)), PoseSample(t: 1, p: spot, f: Vec3(-1, 0, 0))]
+        let photos = (0..<12).map { k in spot + Vec3(Float(k % 3) * 0.1 - 0.1, 0, Float(k / 3) * 0.05 - 0.1) }
+        func viewpoint(_ spots: [Vec3]) -> P2 {
+            let manifest = ManifestBuilder(
+                rooms: rooms, walls: walls, openings: [], objects: scan.objects, trajectory: path, eyeHeight: 1.5, photoSpots: spots
+            ).build(generator: "test")
+            let p = manifest.rooms[0].waypoint.position
+            return P2(p[0], p[2])
+        }
+        XCTAssertLessThan(plength(viewpoint([]) - plan(corner)), 0.3, "without photos: the deepest view")
+        XCTAssertLessThan(plength(viewpoint(photos) - plan(spot)), 0.3, "with photos: among them")
+    }
 }

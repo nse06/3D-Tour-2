@@ -207,6 +207,7 @@ function PropertyModel({
         onFade={onFade}
         autoPan={autoPan}
         onUserInteract={onUserInteract}
+        photoScan={photoLook === "captured"}
       />
       {effects && !captured && (
         <EffectComposer multisampling={4}>

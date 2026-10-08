@@ -25,6 +25,8 @@ interface Props {
   autoPan?: boolean;
   /** Fired when the visitor takes control (drag, tap, keys). */
   onUserInteract?: () => void;
+  /** A photo scan: keep the view no wider than the photos were (see `baseFovFor`). */
+  photoScan?: boolean;
 }
 
 interface Motion {
@@ -40,9 +42,20 @@ interface Motion {
 }
 
 const BASE_FOV = 68;
+/**
+ * Photo scans: at most 85° across on wide screens (68° tall is ~100° across in a desktop window).
+ * The phone's photos span about 65°, so the edges of a wider view show painted surfaces at angles no
+ * photo saw them from, stretched further by the wide lens.
+ */
+const MAX_PHOTO_HFOV = 85;
 /** Keep at least ~54° of horizontal view on portrait phones (vertical FOV grows instead). */
-function baseFovFor(aspect: number) {
-  if (!(aspect > 0) || aspect >= 1) return BASE_FOV;
+function baseFovFor(aspect: number, photoScan = false) {
+  if (!(aspect > 0)) return BASE_FOV;
+  if (aspect >= 1) {
+    if (!photoScan) return BASE_FOV;
+    const capped = (2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(MAX_PHOTO_HFOV) / 2) / aspect) * 180) / Math.PI;
+    return Math.min(BASE_FOV, capped);
+  }
   const v = (2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(54) / 2) / aspect) * 180) / Math.PI;
   return THREE.MathUtils.clamp(v, BASE_FOV, 96);
 }
@@ -87,9 +100,10 @@ export function CameraRig({
   onFade,
   autoPan = false,
   onUserInteract,
+  photoScan = false,
 }: Props) {
   const { camera, gl, raycaster, scene, size } = useThree();
-  const baseFov = baseFovFor(size.width / size.height);
+  const baseFov = baseFovFor(size.width / size.height, photoScan);
   const baseFovRef = useRef(baseFov);
   baseFovRef.current = baseFov;
   const cam = camera as THREE.PerspectiveCamera;

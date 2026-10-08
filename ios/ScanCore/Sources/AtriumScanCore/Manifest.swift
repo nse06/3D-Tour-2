@@ -82,6 +82,9 @@ struct ManifestBuilder {
     let objects: [ScanObject]
     let trajectory: [PoseSample]
     let eyeHeight: Double
+    /// Photo scans: where the photos were taken. A room's viewpoint leans toward spots with many
+    /// of them, where its painted surfaces look their best.
+    var photoSpots: [Vec3] = []
 
     func build(generator: String) -> ScanManifest {
         let floorOfRoom = clusterFloors()
@@ -165,10 +168,13 @@ struct ManifestBuilder {
 
     /// A viewpoint with a deep view across the room: candidates are the spots
     /// the phone stood in plus the room's center; the best keeps clear of walls
-    /// and furniture and sees the farthest corner.
+    /// and furniture and sees the farthest corner — and, in a photo scan, has
+    /// many photos taken around it.
     func waypoint(for r: RoomInfo) -> ScanManifest.Waypoint {
         var candidates = [r.center]
         for s in trajectory where Layout.room(at: s.p, rooms: rooms)?.index == r.index { candidates.append(plan(s.p)) }
+        let spots = photoSpots.map(plan).filter { pointInPolygon($0, r.poly) }
+        candidates += spots
         let furniture: [[P2]] = objects.compactMap { o in
             guard o.size.y > 0.3, o.category != "stairs" else { return nil }
             let c = Double(o.transform.translation.y)
@@ -183,6 +189,8 @@ struct ManifestBuilder {
             let clearance = distanceToBoundary(p, r.poly)
             var score = r.poly.map { plength($0 - p) }.max() ?? 0
             if clearance < minClearance { score -= (minClearance - clearance) * 8 }
+            // Up to 2 m more view for ten photos or more within 80 cm.
+            if !spots.isEmpty { score += 2 * min(1, Double(spots.filter { plength($0 - p) < 0.8 }.count) / 10) }
             // Never inside furniture, and preferably not brushing against it.
             for f in furniture {
                 if pointInPolygon(p, f) {

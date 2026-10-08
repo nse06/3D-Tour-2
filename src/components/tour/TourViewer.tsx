@@ -318,7 +318,7 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
 
       {/* Floor plan */}
       {entered && planFloor && planOpen && (
-        <div className="glass absolute bottom-24 right-4 z-20 w-[min(88vw,340px)] rounded-2xl p-3 md:bottom-8 md:right-8">
+        <div className="glass-strong absolute bottom-24 right-4 z-20 w-[min(88vw,340px)] rounded-2xl p-3 md:bottom-8 md:right-8">
           <div className="mb-1 flex items-center justify-between gap-2 px-1">
             <div className="flex gap-1">
               {floors.map((f) => (
