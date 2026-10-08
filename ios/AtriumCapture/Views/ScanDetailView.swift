@@ -99,14 +99,30 @@ struct ScanDetailView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if let triangles = scan.stats.meshTriangles, triangles > 0 {
-                Label("Furniture shaped from the LiDAR mesh", systemImage: "cube.transparent")
+            if let lidar = lidarNote(scan) {
+                Label(lidar.text, systemImage: lidar.used ? "cube.transparent" : "cube")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .card()
+    }
+
+    /// Whether furniture was shaped from the LiDAR mesh, from the scan's info.json (scans captured
+    /// with build 7 on): a positive line, or why the boxes were used.
+    private func lidarNote(_ scan: ScanRecord) -> (text: String, used: Bool)? {
+        let url = model.store.directory(for: scan.id).appendingPathComponent("info.json")
+        guard let data = try? Data(contentsOf: url), let info = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let mode = info["lidarMesh"] as? String, mode != "not recorded"
+        else { return nil }
+        let rooms = info["lidarMeshRooms"] as? Int ?? 0, triangles = info["meshTriangles"] as? Int ?? 0
+        if triangles > 0 {
+            return ("Furniture shaped from the LiDAR mesh (\(rooms) of \(scan.stats.rooms) room\(scan.stats.rooms == 1 ? "" : "s"))", true)
+        }
+        if mode == "switched off" { return ("Real furniture shapes were off for this scan", false) }
+        if rooms == 0 { return ("No LiDAR mesh was recorded (session: \(mode)) — furniture uses RoomPlan's shapes", false) }
+        return ("The LiDAR mesh had no furniture in it — furniture uses RoomPlan's shapes", false)
     }
 
     /// Scans built by an older pipeline (see ScanBuilder.pipelineVersion).

@@ -291,7 +291,7 @@ roomplan/structure.usdz   RoomPlan's own USDZ export
 roomplan/capture.json     what a rebuild needs besides RoomPlan's files: startedAt, device, rooms
                           [{ name, file: "room-N.json", segment, mesh: "mesh-run-N.bin" }], path (raw: each
                           sample in its run's frame), meshMode (what the AR session reconstructed: "mesh+classes",
-                          "mesh", "off")
+                          "mesh", "off"; "switched off" when the realtor turned real furniture shapes off)
 roomplan/mesh-run-N.bin   build 7 on: ARKit's LiDAR mesh when RoomPlan run N ended, world space in that run's frame.
                           "ATMESH01", little-endian UInt32 vertex count, triangle count, flags (1 normals, 2 classes),
                           Float32 xyz per vertex, Float32 xyz per normal, 3 × UInt32 per triangle, UInt8 per triangle
@@ -352,7 +352,8 @@ info.json            app / device / capture metadata, pipeline version, alignmen
      scans built by an older pipeline (`record.pipeline` < `ScanBuilder.pipelineVersion`) show it as a card
      ("Fix overlapping rooms" … "Paint people out of the photos"). A rebuilt scan has to be sent again;
    * the summary says how much the photos cover, how many photos had people painted out, and whether furniture
-     was shaped from the LiDAR mesh;
+     was shaped from the LiDAR mesh (in how many rooms) — or why not (switched off, no mesh recorded: the
+     session's mode, from info.json);
    * **Delete**.
 
 ### 4.2 Deep link

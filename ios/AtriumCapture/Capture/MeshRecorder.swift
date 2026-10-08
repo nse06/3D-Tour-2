@@ -13,7 +13,8 @@ final class MeshRecorder {
     let directory: URL
     /// Triangles saved per RoomPlan run.
     private(set) var triangles: [Int: Int] = [:]
-    /// What the AR session reconstructed when the last room ended: "mesh", "mesh+classes", "off" or "unknown".
+    /// What the AR session reconstructed when the last room ended: "mesh", "mesh+classes", "off" or
+    /// "unknown"; "switched off" if the realtor turned real furniture shapes off.
     private(set) var mode = "unknown"
     private var writes: [Task<Void, Never>] = []
 
@@ -23,6 +24,7 @@ final class MeshRecorder {
 
     init(directory: URL) {
         self.directory = directory
+        if !Self.isEnabled { mode = "switched off" }
     }
 
     nonisolated static func fileName(segment: Int) -> String { "mesh-run-\(segment).bin" }
@@ -30,7 +32,7 @@ final class MeshRecorder {
     /// Saves the mesh around the room RoomPlan run `segment` scanned (once per run).
     func snapshot(_ session: ARSession, segment: Int) {
         guard segment >= 0, triangles[segment] == nil else { return }
-        if let configuration = session.configuration as? ARWorldTrackingConfiguration {
+        if Self.isEnabled, let configuration = session.configuration as? ARWorldTrackingConfiguration {
             let r = configuration.sceneReconstruction
             mode = r == .meshWithClassification ? "mesh+classes" : r == .mesh ? "mesh" : r.isEmpty ? "off" : "other"
         }
