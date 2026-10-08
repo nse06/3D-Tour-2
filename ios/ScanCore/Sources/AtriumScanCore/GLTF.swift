@@ -114,12 +114,12 @@ enum GLBWriter {
             if !extensions.isEmpty { material["extensions"] = extensions }
             materials.append(material)
 
+            // Unlit models need no normals (viewers derive flat ones if they want them): a quarter less to download.
+            var attributes: [String: Any] = ["POSITION": floatAccessor(buffer.positions, components: 3)]
+            if !unlit { attributes["NORMAL"] = floatAccessor(buffer.normals, components: 3) }
+            attributes["TEXCOORD_0"] = floatAccessor(buffer.uvs, components: 2)
             let primitive: [String: Any] = [
-                "attributes": [
-                    "POSITION": floatAccessor(buffer.positions, components: 3),
-                    "NORMAL": floatAccessor(buffer.normals, components: 3),
-                    "TEXCOORD_0": floatAccessor(buffer.uvs, components: 2),
-                ],
+                "attributes": attributes,
                 "indices": indexAccessor(buffer.indices),
                 "material": materials.count - 1,
                 "mode": 4,

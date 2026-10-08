@@ -232,4 +232,38 @@ final class MeshShapesTests: XCTestCase {
         XCTAssertEqual(radii.max() ?? 0, Self.pouf.radius, accuracy: 0.05, "only the pouf is left")
         XCTAssertEqual(radii.min() ?? 0, Self.pouf.radius, accuracy: 0.05, "only the pouf is left")
     }
+
+    func testSmoothingFlattensBumpsWithoutShrinking() {
+        // A 1 m square tabletop of 2.5 cm triangles, its inner vertices bumped up to ±1 cm.
+        var shapes = MeshShapes()
+        let n = 40
+        var seed: UInt32 = 7
+        func bump() -> Float {
+            seed = seed &* 1_664_525 &+ 1_013_904_223
+            return (Float(seed >> 8) / Float(1 << 24) - 0.5) * 0.02
+        }
+        for j in 0...n {
+            for i in 0...n {
+                let inner = i > 0 && j > 0 && i < n && j < n
+                shapes.vertices.append(Vec3(Float(i) / Float(n), 0.75 + (inner ? bump() : 0), Float(j) / Float(n)))
+            }
+        }
+        for j in 0..<n {
+            for i in 0..<n {
+                let a = Int32(j * (n + 1) + i), b = a + 1, c = a + Int32(n + 1), d = c + 1
+                shapes.triangles += [SIMD3(a, c, b), SIMD3(b, c, d)]
+            }
+        }
+        func roughness() -> Float {
+            let ys = shapes.vertices.map(\.y)
+            let mean = ys.reduce(0, +) / Float(ys.count)
+            return (ys.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Float(ys.count)).squareRoot()
+        }
+        let before = roughness(), corner = shapes.vertices[0]
+        shapes.smooth(iterations: 4)
+        XCTAssertLessThan(roughness(), before * 0.5, "bumps flattened")
+        XCTAssertEqual(shapes.vertices[0], corner, "the open edge stays put")
+        let xs = shapes.vertices.map(\.x)
+        XCTAssertEqual(xs.max()! - xs.min()!, 1, accuracy: 1e-5, "no shrinking")
+    }
 }

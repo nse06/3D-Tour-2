@@ -24,6 +24,20 @@ struct ScanPhotos: PhotoSource {
         return Self.rgb(image)
     }
 
+    /// A small copy for lining the photos up with each other: ImageIO decodes the JPEG at a fraction
+    /// of its size, far faster than decoding it whole.
+    func thumbnail(for frame: CameraFrame, side: Int) -> RGBImage? {
+        let url = directory.appendingPathComponent(frame.file)
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: side,
+            kCGImageSourceCreateThumbnailWithTransform: false, kCGImageSourceShouldCache: false,
+        ]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        else { return nil }
+        return Self.rgb(image)
+    }
+
     /// Where the photo shows people — the realtor in a mirror, someone walking through — so the
     /// texturing paints those spots from other photos. The photo is turned upright for Vision
     /// (people are found best standing up) and the mask turned back to the photo's orientation.

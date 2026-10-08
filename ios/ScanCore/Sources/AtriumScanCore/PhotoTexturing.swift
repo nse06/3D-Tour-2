@@ -16,8 +16,10 @@ import Foundation
 //   2. photo by photo — each photo's pixels are sampled into the texels that
 //      chose it. The photos' auto-exposure is evened out where they overlap,
 //      and texels no photo saw are filled from their neighbours.
-// People in a photo (its mask) don't count as seeing the surface behind them,
-// so other photos paint it.
+// Before pass 1 the photos are aligned with each other on the model's surfaces
+// (PoseRefinement: tracking drifts a centimeter or two). People in a photo (its
+// mask) don't count as seeing the surface behind them, so other photos paint it;
+// near an object's outline in a photo, the photo counts for less.
 
 /// Decoded photos for texturing. The iPhone app decodes the scan's JPEGs; tests synthesize images.
 public protocol PhotoSource: Sendable {
@@ -29,10 +31,17 @@ public protocol PhotoSource: Sendable {
     /// Where the photo shows people, in the same orientation as `image(for:)`; nil if none (the
     /// default). Masks are widened a little before use. Called for every photo, concurrently.
     func mask(for frame: CameraFrame) -> PhotoMask?
+
+    /// The photo at most `side` pixels on its long side, same orientation, for lining the photos up
+    /// with each other. The default scales `image(for:)` down; the app decodes a JPEG thumbnail.
+    /// Called for every photo, concurrently.
+    func thumbnail(for frame: CameraFrame, side: Int) -> RGBImage?
 }
 
 extension PhotoSource {
     public func mask(for frame: CameraFrame) -> PhotoMask? { nil }
+
+    public func thumbnail(for frame: CameraFrame, side: Int) -> RGBImage? { image(for: frame)?.scaledDown(toFit: side) }
 }
 
 /// Encodes an atlas for the .glb: the bytes and their MIME type (PNG by default; the app uses JPEG).
@@ -46,12 +55,15 @@ public struct PhotoTexturingOptions: Sendable {
     public var texelSize: Double
     /// Depth images used for visibility, pixels across.
     public var depthWidth: Int
+    /// Line the photos up with each other before painting (see `PoseRefinement`).
+    public var alignPhotos: Bool
 
-    public init(atlasSize: Int = 2048, maxAtlases: Int = 4, texelSize: Double = 0.008, depthWidth: Int = 192) {
+    public init(atlasSize: Int = 2048, maxAtlases: Int = 4, texelSize: Double = 0.008, depthWidth: Int = 320, alignPhotos: Bool = true) {
         self.atlasSize = atlasSize
         self.maxAtlases = maxAtlases
         self.texelSize = texelSize
         self.depthWidth = depthWidth
+        self.alignPhotos = alignPhotos
     }
 }
 
@@ -347,9 +359,13 @@ struct PhotoCamera {
     /// How far the phone turned while the shutter was open, radians (0 if unknown). Times the
     /// distance, it is how far the photo is smeared across a surface.
     let smear: Float
-    // Depth image (camera distance along the view axis; +∞ where nothing was drawn).
+    // Depth image: distance along the view axis in millimeters (`far` where nothing was drawn).
     let depthWidth: Int, depthHeight: Int
-    var depth: [Float]
+    var depth: [UInt16]
+    /// Per depth pixel, its distance to the nearest outline in the photo (see `findEdges`).
+    var edgeDistance: [UInt8] = []
+    /// The angle one depth pixel spans, radians.
+    let pixelAngle: Float
     /// Where the photo shows people (widened), if anywhere.
     var mask: PhotoMask?
 
@@ -374,8 +390,14 @@ struct PhotoCamera {
         smear = rate * exposure
         self.depthWidth = depthWidth
         depthHeight = max(1, Int((Double(depthWidth) * Double(frame.imageHeight) / Double(frame.imageWidth)).rounded()))
-        depth = [Float](repeating: .infinity, count: depthWidth * depthHeight)
+        depth = [UInt16](repeating: Self.far, count: depthWidth * depthHeight)
+        pixelAngle = Float(frame.imageWidth) / Float(depthWidth) / fx
     }
+
+    static let far = UInt16.max
+    /// Outlines push a photo down within this many depth pixels of them (about 0.6°: two or three
+    /// centimeters at a few meters, what a little error in the LiDAR shapes or the phone's pose shifts).
+    var edgeBand: Float { max(1.5, Float(depthWidth) * 0.01) }
 
     /// Camera-space depth and image pixel of a world point (nil if behind the camera).
     @inline(__always) func project(_ p: Vec3) -> (depth: Float, u: Float, v: Float)? {
@@ -434,21 +456,90 @@ struct PhotoCamera {
                 guard w0 >= -1e-4, w1 >= -1e-4, w2 >= -1e-4 else { continue }
                 let inv = w0 * a.2 + w1 * b.2 + w2 * c.2
                 guard inv > 0 else { continue }
-                let z = 1 / inv
+                let mm = UInt16(min(max(1000 / inv, 1), 65534))
                 let i = py * depthWidth + px
-                if z < depth[i] { depth[i] = z }
+                if mm < depth[i] { depth[i] = mm }
             }
         }
     }
 
-    /// Whether a point at `z` projecting to pixel (u, v) is the nearest surface there.
-    @inline(__always) func isVisible(z: Float, u: Float, v: Float) -> Bool {
+    /// Whether a point at `z` meters projecting to pixel (u, v) is the nearest surface there.
+    /// `slant`: the tangent of the angle between the view ray and the surface's normal — how fast
+    /// the surface's own depth changes from one depth pixel to the next, which the test allows for.
+    @inline(__always) func isVisible(z: Float, u: Float, v: Float, slant: Float) -> Bool {
         let dx = u * Float(depthWidth) / Float(width) - 0.5, dy = v * Float(depthHeight) / Float(height) - 0.5
         let x0 = clamp(Int(floor(dx)), 0, depthWidth - 1), y0 = clamp(Int(floor(dy)), 0, depthHeight - 1)
         let x1 = min(x0 + 1, depthWidth - 1), y1 = min(y0 + 1, depthHeight - 1)
         // The nearest of the four neighbours, so texels right next to an occluder's edge are left to other photos.
         let nearest = min(depth[y0 * depthWidth + x0], depth[y0 * depthWidth + x1], depth[y1 * depthWidth + x0], depth[y1 * depthWidth + x1])
-        return z <= nearest * 1.03 + 0.04
+        guard nearest != Self.far else { return true }
+        let tolerance = 0.015 + 0.01 * z + 2.5 * z * pixelAngle * min(slant, 6)
+        return z <= Float(nearest) * 0.001 + tolerance
+    }
+
+    /// Finds the outlines in the depth image — a jump of more than 6 cm and 6% between neighbouring
+    /// pixels (a slanted surface's depth changes gradually) — and each pixel's distance to the
+    /// nearest one, in depth pixels (at most 255). Near an outline a small error in the shapes or the
+    /// pose paints one surface's color onto the other: the shards along furniture edges.
+    mutating func findEdges() {
+        let w = depthWidth, h = depthHeight
+        var d = [Int](repeating: 255, count: w * h)
+        @inline(__always) func jump(_ a: UInt16, _ b: UInt16) -> Bool {
+            if a == Self.far || b == Self.far { return a != b }
+            let lo = Int(min(a, b)), hi = Int(max(a, b))
+            return hi - lo > max(60, lo * 6 / 100)
+        }
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = y * w + x
+                if x + 1 < w, jump(depth[i], depth[i + 1]) {
+                    d[i] = 0
+                    d[i + 1] = 0
+                }
+                if y + 1 < h, jump(depth[i], depth[i + w]) {
+                    d[i] = 0
+                    d[i + w] = 0
+                }
+            }
+        }
+        // Chessboard distance in two passes: from the top left, then from the bottom right.
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = y * w + x
+                var v = d[i]
+                if x > 0 { v = min(v, d[i - 1] + 1) }
+                if y > 0 {
+                    v = min(v, d[i - w] + 1)
+                    if x > 0 { v = min(v, d[i - w - 1] + 1) }
+                    if x + 1 < w { v = min(v, d[i - w + 1] + 1) }
+                }
+                d[i] = v
+            }
+        }
+        for y in stride(from: h - 1, through: 0, by: -1) {
+            for x in stride(from: w - 1, through: 0, by: -1) {
+                let i = y * w + x
+                var v = d[i]
+                if x + 1 < w { v = min(v, d[i + 1] + 1) }
+                if y + 1 < h {
+                    v = min(v, d[i + w] + 1)
+                    if x + 1 < w { v = min(v, d[i + w + 1] + 1) }
+                    if x > 0 { v = min(v, d[i + w - 1] + 1) }
+                }
+                d[i] = v
+            }
+        }
+        edgeDistance = d.map { UInt8(min($0, 255)) }
+    }
+
+    /// How much the photo counts at pixel (u, v): a tenth right on an outline, fully from `edgeBand`
+    /// depth pixels away. Spots seen only near outlines still take the best of those photos.
+    @inline(__always) func edgeWeight(u: Float, v: Float) -> Float {
+        guard !edgeDistance.isEmpty else { return 1 }
+        let x = clamp(Int(u * Float(depthWidth) / Float(width)), 0, depthWidth - 1)
+        let y = clamp(Int(v * Float(depthHeight) / Float(height)), 0, depthHeight - 1)
+        let d = Float(edgeDistance[y * depthWidth + x]) / edgeBand
+        return d >= 1 ? 1 : 0.1 + 0.9 * d * d
     }
 
     /// Whether the photo shows a person at pixel (u, v).
@@ -529,6 +620,10 @@ struct PhotoBaker {
         var blended: Double
         /// Photos that showed people (painted around them).
         var photosWithPeople: Int
+        /// How the photos were lined up with each other (`PoseRefinement`).
+        var alignment = PoseRefinement.Result()
+        /// The photos' poses as painted (after alignment), in input order.
+        var poses: [Transform] = []
     }
 
     /// Photos are chosen per cell of this many texels across (about 3 cm).
@@ -596,7 +691,8 @@ struct PhotoBaker {
 
         init(_ kind: PhotoChart.Kind) {
             squareOn = kind == .object
-            minFacing = squareOn ? 0.2 : 0.12
+            // About 78° off head-on at most: beyond, a photo smears what it shows across the surface.
+            minFacing = 0.2
         }
     }
 
@@ -615,7 +711,8 @@ struct PhotoBaker {
         if rule.squareOn { score *= facing * facing }
         let smear = cam.smear * dist / smearScale
         score /= 1 + smear * smear
-        guard score > threshold, cam.isVisible(z: q.depth, u: q.u, v: q.v) else { return 0 }
+        score *= cam.edgeWeight(u: q.u, v: q.v)
+        guard score > threshold, cam.isVisible(z: q.depth, u: q.u, v: q.v, slant: (1 - facing * facing).squareRoot() / facing) else { return 0 }
         if !masked && cam.isMasked(u: q.u, v: q.v) { return 0 }
         return score
     }
@@ -634,10 +731,10 @@ struct PhotoBaker {
             guard let base = cams.baseAddress else { return }
             DispatchQueue.concurrentPerform(iterations: cams.count) { i in
                 for b in buffers { base[i].rasterize(b.positions, b.indices) }
+                base[i].findEdges()
                 base[i].setMask(photos.mask(for: base[i].frame))
             }
         }
-        let cams = cameras
 
         // Texels and cells: each photo chart's are a contiguous range (solid charts have none).
         var offsets: [Int] = [], cellOffsets: [Int] = [], grids: [(w: Int, h: Int)] = []
@@ -666,6 +763,52 @@ struct PhotoBaker {
             return charts[ci].point(t % charts[ci].w, t / charts[ci].w)
         }
         @inline(__always) func normal(_ ci: Int, _ t: Int) -> Vec3 { surfaces.buffer[ci]?.normals[t] ?? charts[ci].normal }
+
+        // The photos lined up with each other, on points about 10 cm apart on every surface, each with
+        // the photos that see it best away from outlines; moved photos get their depth images redrawn.
+        var alignment = PoseRefinement.Result()
+        var gray: SharedArray<GrayImage?>? = nil
+        if options.alignPhotos {
+            let before = cameras
+            let perChart = SharedArray<[PoseRefinement.Sample]>(repeating: [], count: charts.count)
+            DispatchQueue.concurrentPerform(iterations: charts.count) { ci in
+                let chart = charts[ci]
+                guard !chart.isSolid else { return }
+                let cands = candidateCameras(for: chart, cameras: before)
+                guard cands.count >= 2 else { return }
+                let rule = Rule(chart.kind), step = max(1, Int((0.1 / chart.texel).rounded()))
+                var out: [PoseRefinement.Sample] = []
+                var best: [(Float, Int32)] = []
+                for j in stride(from: step / 2, to: chart.h, by: step) {
+                    for i in stride(from: step / 2, to: chart.w, by: step) where inside.buffer[offsets[ci] + j * chart.w + i] {
+                        let t = j * chart.w + i, p = point(ci, t), n = normal(ci, t)
+                        best.removeAll(keepingCapacity: true)
+                        for k in cands {
+                            let s = score(before[k], at: p, normal: n, rule: rule, above: 0)
+                            guard s > 0, let q = before[k].project(p), before[k].edgeWeight(u: q.u, v: q.v) >= 1 else { continue }
+                            best.append((s, Int32(k)))
+                        }
+                        guard best.count >= 2 else { continue }
+                        best.sort { $0.0 > $1.0 }
+                        out.append(PoseRefinement.Sample(point: p, cameras: best.prefix(6).map(\.1)))
+                    }
+                }
+                perChart.buffer[ci] = out
+            }
+            let samples = perChart.array(0..<charts.count).flatMap { $0 }
+            let images = PoseRefinement.thumbnails(cameras, photos: photos, side: PoseRefinement.Options().side, wanted: cameras.map { _ in true })
+            alignment = PoseRefinement.refine(&cameras, samples: samples, images: images)
+            gray = images
+            cameras.withUnsafeMutableBufferPointer { cams in
+                guard let base = cams.baseAddress else { return }
+                DispatchQueue.concurrentPerform(iterations: cams.count) { i in
+                    guard base[i].edgeDistance.isEmpty else { return }
+                    for b in buffers { base[i].rasterize(b.positions, b.indices) }
+                    base[i].findEdges()
+                }
+            }
+        }
+        let cams = cameras
         let insideTotal = inside.buffer.prefix(total).filter { $0 }.count
         // Each cell is judged at its face texel nearest the cell's center (texel index in the chart; −1: none).
         let cellSpot = SharedArray<Int32>(repeating: -1, count: cellTotal)
@@ -723,6 +866,7 @@ struct PhotoBaker {
                         }
                     }
                     collect(masked: false)
+                    if kept >= 3, let gray { outvote(cams: cams, gray: gray, alignment: alignment, at: p, cameras: cc, scores: cs, base: base, kept: kept) }
                     if kept == 0 {
                         // Every photo of this spot shows a person on it. If they saw it from different
                         // sides, it is something on the surface (a poster of a person): a person in front
@@ -990,7 +1134,47 @@ struct PhotoBaker {
         return Result(
             atlases: atlases, coverage: insideTotal > 0 ? Double(seenTotal) / Double(insideTotal) : 0, photosUsed: photosUsed, seen: masks,
             texelsPerPhoto: texelsPerPhoto, blended: seenTotal > 0 ? Double(blendedTotal) / Double(seenTotal) : 0,
-            photosWithPeople: cams.filter { $0.mask != nil }.count)
+            photosWithPeople: cams.filter { $0.mask != nil }.count, alignment: alignment, poses: cams.map(\.frame.transform))
+    }
+
+    /// Photo consensus at a cell's spot: a candidate whose brightness there (gray copy, exposure
+    /// matched by the alignment) differs from what at least two others agree on saw something else —
+    /// a plant in front of the wall, someone walking through, an edge a little off — and counts a
+    /// quarter. Candidates are then re-sorted, best first.
+    static func outvote(
+        cams: [PhotoCamera], gray: SharedArray<GrayImage?>, alignment: PoseRefinement.Result, at p: Vec3, cameras cc: UnsafeMutableBufferPointer<UInt16>,
+        scores cs: UnsafeMutableBufferPointer<Float>, base: Int, kept: Int
+    ) {
+        var luma = [Float](repeating: .nan, count: kept)
+        var values: [Float] = []
+        for i in 0..<kept {
+            let k = Int(cc[base + i])
+            guard let image = gray.buffer[k], let q = cams[k].project(p) else { continue }
+            let scale = Float(image.width) / Float(cams[k].width)
+            let x = q.u * scale - 0.5, y = q.v * scale - 0.5
+            guard x >= 0, y >= 0, x < Float(image.width - 1), y < Float(image.height - 1) else { continue }
+            let gain = k < alignment.gains.count ? alignment.gains[k] : 1, offset = k < alignment.offsets.count ? alignment.offsets[k] : 0
+            luma[i] = gain * image.at(x, y) + offset
+            values.append(luma[i])
+        }
+        guard values.count >= 3 else { return }
+        values.sort()
+        let median = values[values.count / 2]
+        guard values.filter({ abs($0 - median) <= 12 }).count >= 2 else { return }
+        var changed = false
+        for i in 0..<kept where luma[i].isFinite && abs(luma[i] - median) > 28 {
+            cs[base + i] *= 0.25
+            changed = true
+        }
+        guard changed else { return }
+        for a in 1..<kept {
+            var b = a
+            while b > 0 && cs[base + b - 1] < cs[base + b] {
+                cs.swapAt(base + b - 1, base + b)
+                cc.swapAt(base + b - 1, base + b)
+                b -= 1
+            }
+        }
     }
 
     /// The four cells around texel (i, j) in a gw × gh grid of cells, with bilinear weights;

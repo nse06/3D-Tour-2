@@ -313,7 +313,8 @@ final class ScanCoreTests: XCTestCase {
                 let position = accessors[attrs["POSITION"]!]
                 XCTAssertNotNil(position["min"], file: file, line: line)
                 let vertexCount = position["count"] as! Int
-                XCTAssertEqual(accessors[attrs["NORMAL"]!]["count"] as? Int, vertexCount, file: file, line: line)
+                // Unlit (photo) models carry no normals.
+                if let normal = attrs["NORMAL"] { XCTAssertEqual(accessors[normal]["count"] as? Int, vertexCount, file: file, line: line) }
                 XCTAssertEqual(accessors[attrs["TEXCOORD_0"]!]["count"] as? Int, vertexCount, file: file, line: line)
                 // Every index points at a vertex.
                 let indices = accessors[prim["indices"] as! Int]

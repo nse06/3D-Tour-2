@@ -23,11 +23,15 @@ struct MeshShapes {
         var surfaceMargin: Double = 0.06
         /// ...and this close if ARKit also classified it as one.
         var classifiedMargin: Double = 0.15
-        /// Vertex grid the mesh is simplified on, meters (coarsened to stay within `maxTriangles`).
-        var grid: Float = 0.035
-        var maxTriangles = 60_000
+        /// Vertex grid the mesh is simplified on, meters (coarsened to stay within `maxTriangles`, which
+        /// only a big home reaches).
+        var grid: Float = 0.025
+        var maxTriangles = 150_000
         /// Loose pieces smaller than this across (meters) are noise.
         var minPiece: Float = 0.1
+        /// Rounds of smoothing after simplifying: flatter tops and fronts make bigger patches, each
+        /// painted from one photo, instead of a patchwork of facets.
+        var smoothing = 4
         /// A patch's faces turn at most this far from its normal (cosine; about 44°: each texel is
         /// painted at its own point on the faces, so a patch only has to stay unfolded).
         var patchCos: Float = 0.72
@@ -102,6 +106,7 @@ struct MeshShapes {
             grid *= 1.25
         } while grid < 0.5
         shapes.grid = grid
+        shapes.smooth(iterations: options.smoothing)
 
         // 3. Objects the mesh shows replace their boxes; the others keep them, and the mesh inside goes.
         shapes.settle(objects, rooms: rooms)
@@ -178,6 +183,47 @@ struct MeshShapes {
                 vertices.append(points[Int(tri[k])])
             }
             triangles.append(SIMD3(used[Int(tri.x)], used[Int(tri.y)], used[Int(tri.z)]))
+        }
+    }
+
+    /// Taubin smoothing (λ|μ): the scanner's bumps go, the shape doesn't shrink. Vertices on the
+    /// mesh's open edges (where it was cut off at the floor or a wall) stay put.
+    mutating func smooth(iterations: Int, lambda: Float = 0.5, mu: Float = -0.53) {
+        guard iterations > 0, !triangles.isEmpty else { return }
+        var neighbours = [[Int32]](repeating: [], count: vertices.count)
+        var edgeUse: [UInt64: Int] = [:]
+        func key(_ a: Int32, _ b: Int32) -> UInt64 { UInt64(UInt32(min(a, b))) << 32 | UInt64(UInt32(max(a, b))) }
+        for t in triangles {
+            for (a, b) in [(t.x, t.y), (t.y, t.z), (t.z, t.x)] {
+                edgeUse[key(a, b), default: 0] += 1
+                if !neighbours[Int(a)].contains(b) { neighbours[Int(a)].append(b) }
+                if !neighbours[Int(b)].contains(a) { neighbours[Int(b)].append(a) }
+            }
+        }
+        var fixed = [Bool](repeating: false, count: vertices.count)
+        for (k, uses) in edgeUse where uses == 1 {
+            fixed[Int(k >> 32)] = true
+            fixed[Int(k & 0xFFFF_FFFF)] = true
+        }
+        let facing = triangles.map(normal)
+        for _ in 0..<iterations {
+            for factor in [lambda, mu] {
+                let before = vertices
+                for i in vertices.indices where !fixed[i] && !neighbours[i].isEmpty {
+                    var mean = Vec3(0, 0, 0)
+                    for j in neighbours[i] { mean += before[Int(j)] }
+                    mean /= Float(neighbours[i].count)
+                    vertices[i] = before[i] + (mean - before[i]) * factor
+                }
+            }
+        }
+        // A sliver the smoothing turned over (or flattened to nothing) goes.
+        let points = vertices
+        var index = 0
+        keep { t in
+            defer { index += 1 }
+            let n = vcross(points[Int(t.y)] - points[Int(t.x)], points[Int(t.z)] - points[Int(t.x)])
+            return vlength(n) > 1e-10 && vdot(vnormalize(n), facing[index]) > 0.2
         }
     }
 
@@ -271,7 +317,7 @@ struct MeshShapes {
     }
 
     /// Region growing over shared edges: a patch takes neighbouring faces while they keep facing
-    /// its way; tiny patches join the neighbour they face most like.
+    /// its way (and its seed's); tiny patches join the neighbour they face most like.
     private mutating func makePatches(_ options: Options) {
         let n = triangles.count
         guard n > 0 else { return }
@@ -306,7 +352,8 @@ struct MeshShapes {
                 let f = queue[head]
                 head += 1
                 let dir = vnormalize(sum)
-                for g in neighbours(f) where patchOf[g] < 0 && vdot(normals[g], dir) > options.patchCos {
+                // Also never far from the seed's way, so a patch can't creep around a rounded shape.
+                for g in neighbours(f) where patchOf[g] < 0 && vdot(normals[g], dir) > options.patchCos && vdot(normals[g], normals[seed]) > 0.6 {
                     patchOf[g] = id
                     faces.append(g)
                     sum += normals[g] * areas[g]
@@ -319,7 +366,8 @@ struct MeshShapes {
             areaOf.append(total)
         }
 
-        // Tiny patches join the neighbouring patch they face most like (if it faces their way at all).
+        // Tiny patches join the neighbouring patch they face most like (if every face of theirs is
+        // within about 70° of it: beyond, its texture would stretch).
         for id in members.indices where areaOf[id] < options.tinyPatch && !members[id].isEmpty {
             let dir = vnormalize(sums[id])
             var best = -1, bestDot: Float = 0.35
@@ -327,7 +375,7 @@ struct MeshShapes {
                 for g in neighbours(f) where patchOf[g] != id {
                     let other = patchOf[g]
                     let d = vdot(vnormalize(sums[other]), dir)
-                    if d > bestDot, members[id].allSatisfy({ vdot(normals[$0], vnormalize(sums[other])) > 0.1 }) {
+                    if d > bestDot, members[id].allSatisfy({ vdot(normals[$0], vnormalize(sums[other])) > 0.3 }) {
                         bestDot = d
                         best = other
                     }

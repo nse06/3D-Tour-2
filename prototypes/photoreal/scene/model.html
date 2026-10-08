@@ -12,7 +12,7 @@ renderer.setSize(480, 360);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#e7e2da");
+scene.background = new THREE.Color("#cfe2f3"); // the real scene's sky, as in main.js
 const camera = new THREE.PerspectiveCamera(50, 4 / 3, 0.05, 160);
 camera.matrixAutoUpdate = false;
 window.model = {

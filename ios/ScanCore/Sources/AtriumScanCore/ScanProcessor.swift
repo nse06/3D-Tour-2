@@ -49,6 +49,11 @@ public struct ScanStats: Codable, Sendable, Equatable {
     /// RoomPlan objects they replaced.
     public var meshTriangles: Int? = nil
     public var meshObjects: Int? = nil
+    /// Photo-textured models: photos lined up with each other before painting, and their mean
+    /// correction (centimeters, degrees).
+    public var photosAligned: Int? = nil
+    public var photoShiftCm: Double? = nil
+    public var photoTurnDegrees: Double? = nil
 }
 
 public struct ProcessedScan: Sendable {
@@ -61,6 +66,9 @@ public struct ProcessedScan: Sendable {
     /// Photo-textured scans only: the same rooms as the styled model, without the photos — the
     /// viewer's "photos off" view. Same frame and manifest as `glb`.
     public var cleanGLB: Data? = nil
+    /// Photo-textured scans only: each photo's pose as painted (after alignment), in the frames' order
+    /// and the scan's own frame.
+    public var photoPoses: [Transform]? = nil
 }
 
 public enum ScanProcessingError: Error, LocalizedError, Equatable {
@@ -191,8 +199,11 @@ public enum ScanProcessor {
             openings: scan.openings.filter { $0.kind == .opening }.count, objects: scan.objects.count, links: manifest.links.count,
             triangles: mesh.triangleCount, floorArea: rounded(rooms.reduce(0) { $0 + $1.area }, 2), glbBytes: glb.count,
             photoCoverage: rounded(baked.coverage, 3), photosUsed: baked.photosUsed, photosWithPeople: baked.photosWithPeople,
-            meshTriangles: model.meshTriangles, meshObjects: model.meshObjects)
-        return ProcessedScan(glb: glb, manifest: manifest, stats: stats, frame: frame)
+            meshTriangles: model.meshTriangles, meshObjects: model.meshObjects, photosAligned: baked.alignment.aligned,
+            photoShiftCm: rounded(baked.alignment.meanShift * 100, 2), photoTurnDegrees: rounded(baked.alignment.meanTurn * 180 / .pi, 3))
+        var processed = ProcessedScan(glb: glb, manifest: manifest, stats: stats, frame: frame)
+        processed.photoPoses = baked.poses
+        return processed
     }
 
     static func photoMaterial(_ atlas: Int) -> String { "Photo_\(atlas + 1)" }

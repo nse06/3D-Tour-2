@@ -66,6 +66,28 @@ public struct RGBImage: Sendable {
         self.pixels = pixels
     }
 
+    /// This image box-filtered down to at most `side` pixels on its long side (itself if it fits).
+    public func scaledDown(toFit side: Int) -> RGBImage {
+        guard side > 0, max(width, height) > side else { return self }
+        let w = max(1, width * side / max(width, height)), h = max(1, height * side / max(width, height))
+        var sum = [Int](repeating: 0, count: w * h * 3), count = [Int](repeating: 0, count: w * h)
+        for y in 0..<height {
+            let ty = min(h - 1, y * h / height)
+            for x in 0..<width {
+                let tx = min(w - 1, x * w / width), i = (y * width + x) * 3, o = ty * w + tx
+                sum[o * 3] += Int(pixels[i])
+                sum[o * 3 + 1] += Int(pixels[i + 1])
+                sum[o * 3 + 2] += Int(pixels[i + 2])
+                count[o] += 1
+            }
+        }
+        var out = [UInt8](repeating: 0, count: w * h * 3)
+        for o in 0..<(w * h) where count[o] > 0 {
+            for c in 0..<3 { out[o * 3 + c] = UInt8((sum[o * 3 + c] + count[o] / 2) / count[o]) }
+        }
+        return RGBImage(width: w, height: h, pixels: out)
+    }
+
     init(width: Int, height: Int, fill: (_ u: Double, _ v: Double) -> (Double, Double, Double)) {
         self.width = width
         self.height = height
