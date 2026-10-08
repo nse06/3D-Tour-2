@@ -37,9 +37,19 @@ Branch: `claude/3d-real-estate-tour-mvp-pxgyqw`
 | Rebuild saved scans without rescanning | done (build 3) — the user rebuilt their apartment: floor plans line up |
 | Photos painted on the model (build 4): charts + atlases, two-pass baking with depth-tested best views, exposure matching, unlit model, captured look by default | done — the user's verdict: works and makes the space feel real, but soft; ghosting on appliances, stretched bed/armchair, bright band under the kitchen ceiling, white strips on wall edges |
 | Sharper photo painting (build 5): one photo per ~3 cm cell with neighbour smoothing and seam-only blending, blur-aware scores, furniture in parts, face-only sampling, per-channel exposure/white-balance gains, seam leveling, wall-colored edges, walls extended to the ceiling, 8 mm texels; app takes full-resolution photos when the phone is steady and shows a photo count / slow-down hint | done — 10 photo XCTests + turn-rate test; waiting on the user's rebuild and a new slow scan |
-
 | Photos on/off (build 6): photo scans also carry the clean styled model; buyers flip "Photos on/off" in the walkthrough, the realtor picks what buyers see first; the camera stays put; the DB column adds itself on first use | done — e2e in a browser (phone API → publish → buyer toggle → realtor default) |
 | People painted out (build 7): Vision person segmentation per photo (upright thumbnail, mask turned back); masked photos don't count as seeing what's behind the person; spots every photo flags are painted only if seen ≥ 20° apart (posters) | done — 4 XCTests (a person in every photo: 68k texels → 0; a flagged poster still painted); works on rebuilds of existing scans |
 | LiDAR shapes (build 7): RoomPlan runs on the app's own AR session with scene reconstruction; the mesh is saved per room; ScanCore crops it to the room, drops walls/floor/ceiling, welds, replaces the RoomPlan boxes it covers, cuts it into patches painted at their true surface points | done — 5 XCTests + a simulator rebuild with a mesh per room; needs a new scan on the phone to confirm RoomPlan keeps the session's mesh setting (info.json `lidarMesh`) |
 
-Next: the user's rescan with build 7; 360° photo spots at the waypoints; turn email confirmation back on before opening sign-ups.
+## Photoreal prototype (`prototypes/photoreal`)
+
+| Piece | Status |
+|-------|--------|
+| Synthetic apartment with ground truth: the demo scan rendered as a real home (real furniture shapes, clutter, two mirrors, a glossy floor, window views); 665 scan-like photos at 480 × 360 plus 12 held-out views | done |
+| Painted models from those photos with the phone's own code (`scanproc paint`): today's boxes and build 7's LiDAR shapes | done |
+| Gaussian splats on the CPU: C++ tile rasterizer with a hand-written backward pass (gradient-checked), PyTorch projection/SH/Adam, densify/prune/opacity resets, `.spz` export | done: 12,000 steps, 549k Gaussians, 2.7 h on 4 cores; the screen-size prune is now off (in rooms it deleted 45% of the splats and cost 3 dB) |
+| Comparison page (published artifact): the same camera for all three, the real photo, 12 scored views, notes | done: PSNR today 20.70 / build 7 23.29 / splats 29.26 dB (SSIM 0.806 / 0.851 / 0.939); splats lead at all 12 views. three.js's splat viewer is patched to the trained kernel (its defaults cost 2.3 dB) |
+
+Verdict so far: photoreal is far closer to the real rooms (window views, reflections, plants), at the cost of a cloud GPU step (15–30 min, ~$0.25–1 per listing), uploading the photos (100–400 MB; today they stay on the phone) and a 9 MB download. Suggested: ship build 7 now, add photoreal as a cloud upgrade.
+
+Next: the user's rescan with build 7; their call on photoreal as a cloud upgrade; 360° photo spots at the waypoints; turn email confirmation back on before opening sign-ups.

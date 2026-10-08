@@ -59,7 +59,7 @@ for k in ("today", "lidar", "splat"):
     summary.setdefault(k, {"psnr": 0, "ssim": 0})
 summary["today"].update(size=size(site / "models/today.glb"), where="On the iPhone", time="About 10 seconds", cost="Free", clean="Yes")
 summary["lidar"].update(size=size(site / "models/lidar.glb"), where="On the iPhone", time="About 10 seconds", cost="Free", clean="Yes")
-summary["splat"].update(size=size(site / "models/splats.spz"), where="Cloud GPU", time=summary["splat"].get("time", "—"), cost="About $0.10–0.50 of GPU time", clean="No (needs the painted model)")
+summary["splat"].update(size=size(site / "models/splats.spz"), where="Cloud GPU", time=summary["splat"].get("time", "—"), cost="About $0.25–1 of GPU time", clean="No (needs the painted model)")
 doc = {
     "fovY": 2 * math.degrees(math.atan(h / 2 / fy)),
     "files": {k: {"url": f"models/{name}.txt", "bytes": (site / "models" / name).stat().st_size, "textBytes": (site / "models" / f"{name}.txt").stat().st_size}

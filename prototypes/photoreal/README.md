@@ -13,6 +13,29 @@ materials, two mirrors, a glossy kitchen floor and views out of the windows (`sc
 665 photos are taken the way a realtor scans (standing spots, three tilts, the walk between rooms) at
 480 × 360; 12 eye-level views are held out for scoring.
 
+## Results
+
+Scored on the page's own screenshots at the 12 held-out views, against the real photo:
+
+| | Today (build 6) | Build 7 (LiDAR shapes) | Photoreal (splats) |
+|---|---|---|---|
+| PSNR | 20.70 dB | 23.29 dB | **29.26 dB** |
+| SSIM | 0.806 | 0.851 | **0.939** |
+| Download | 0.8 MB | 3.0 MB | 9.3 MB |
+| Made | on the phone, ~10 s | on the phone, ~10 s | here 2.7 h on 4 CPU cores; 15–30 min on a cloud GPU |
+
+The splats are closer to the real photo at all 12 views. They lead most where a painted surface can't
+follow the scene: views out of windows (a painted model pastes the view seen from elsewhere onto the
+glass), reflections in mirrors and the glossy floor, plants and thin parts. They are softest where few
+photos looked (a chair seat at the edge of a view, the side of a mirror frame), and their smallest
+leads are at the two mirrors and the kitchen table. Everything here is softer than a real scan (480 × 360
+photos, a CPU-sized model), so read the splats' quality as a floor.
+
+The run: 12,000 steps, 549,227 Gaussians (485,878 above the export's opacity cut). Test PSNR with the
+trainer's renderer: 25.6 at step 2,000, 27.2 at 4,000, 28.2 at 6,000, 28.6 at 8,000, 29.0 at 10,000 and
+29.4 at 12,000. It was resumed once, at step 2,000, after the screen-size prune was switched off (below);
+the opacity reset at step 6,000 cost 0.5 dB, which was back by step 8,000.
+
 ## Run it
 
 Needs Node 20+, Python 3.11+ with numpy, Pillow and PyTorch (CPU is fine), a C++ compiler with OpenMP,
@@ -33,7 +56,7 @@ python3 tools/glb_jpeg.py out/painted-today.glb out/painted-today.jpg.glb
 python3 tools/glb_jpeg.py out/painted-lidar.glb out/painted-lidar.jpg.glb
 
 python splat/gradcheck.py                    # the rasterizer's gradients vs. finite differences
-python splat/train.py data runs/main --iters 12000 --max-gaussians 650000 --densify-until 0.6   # ~2 h on 4 CPU cores
+python splat/train.py data runs/main --iters 12000 --max-gaussians 650000 --densify-until 0.6   # ~3 h on 4 CPU cores
 
 mkdir -p vendor && curl -sL https://registry.npmjs.org/three/-/three-0.186.0.tgz | tar -xz -C vendor && mv vendor/package vendor/three@0.186.0
 PY=python tools/final.sh runs/main          # export → page → screenshots → scores → notes
@@ -63,7 +86,9 @@ cost 3 dB of test PSNR. `splat/export.py` writes `.spz` (version 2, gzip) for th
 `SPZLoader` / `GaussianSplat`; the page converts the splats' sRGB colors for three's linear pipeline.
 
 On a cloud GPU the same method (gsplat or the reference CUDA rasterizer) trains on full-resolution
-photos with millions of Gaussians in 10–20 minutes; the CPU run here is a lower bound on quality.
+photos with millions of Gaussians in 15–30 minutes (gsplat's paper: 19 minutes for 30,000 steps on an
+A100, on Mip-NeRF 360 scenes), which is about $0.25–1 at today's hourly GPU prices; the CPU run here is
+a lower bound on quality.
 
 ## Drawing the splats in the page
 
@@ -71,9 +96,9 @@ three.js r186's `GaussianSplat` is tuned for splats trained with anti-aliasing (
 for standard 3DGS models like these. It cuts each Gaussian off at 2σ, fades small splats (Mip-Splatting's
 opacity compensation) and, through three's color management, blends them in linear light, while the
 trainer blends the photos' sRGB values. `splat/viewer_check.py` imitates each difference with the
-trainer's rasterizer and scores it on the held-out views. On the step-2000 model the 2σ cutoff costs
-0.83 dB, the fading 0.05 dB and linear blending 0.51 dB: 1.4 dB in all, the gap first seen between the
-page and the trainer. So `tools/build_site.py` writes `site/js/GaussianSplat.js`, a copy of three's file
+trainer's rasterizer and scores it on the held-out views. On the final model the 2σ cutoff costs
+0.8 dB, the fading 0.4 dB and linear blending 1.1 dB: 2.3 dB in all (1.4 dB on the step-2000 model,
+where the gap between the page and the trainer first showed). So `tools/build_site.py` writes `site/js/GaussianSplat.js`, a copy of three's file
 with the reference kernel (3σ, no fading), and the page blends the splats' colors as they are: no output
 color conversion, plus an identity tone map that keeps three's half-float framebuffer. The page's
 splats then match the trainer's renders to 45 dB. A production viewer should do the same, or the
