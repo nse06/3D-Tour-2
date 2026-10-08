@@ -71,6 +71,34 @@ python splat/viewer_check.py runs/main/ckpt.pt data eval/page-final   # page vs.
 base64 text, for hosts that only serve text and images) and `img/`. `tools/shot.mjs` takes a full-page
 screenshot for a quick look.
 
+## Tuning the painted model on a messy capture
+
+The clean capture flatters the painting: perfect poses, near-perfect meshes, one exposure. `tools/roughen.py`
+makes a copy as rough as a real scan — ARKit-like LiDAR meshes (fused on a 2.5 cm grid, swollen 1.5 cm,
+only the sides the photos faced), poses drifting about 1.5 cm and 0.3° through the scan, and auto-exposure —
+and `tools/bench_paint.sh` paints a capture with `scanproc`, renders the model at the 12 held-out views
+(`scene/render_model.mjs` with `scene/model.html`) and scores it (`tools/score.py`). `tools/pose_error.py`
+says how far poses are from the truth in pixels, e.g. the ones the painting lined up (`--poses`).
+
+```sh
+python3 tools/roughen.py data data-rough
+SCANPROC=$SCANPROC tools/bench_paint.sh data-rough lidar --meshes    # → out/bench-lidar.glb, eval/bench-lidar/, PSNR / SSIM
+python3 tools/pose_error.py data/scan.json data-rough/scan.json out/bench-lidar.poses.json
+```
+
+| Capture, shapes | Build 7 | Build 8 |
+|---|---|---|
+| Rough, LiDAR | 21.22 dB (SSIM 0.776) | **22.00 dB** (0.796) |
+| Rough, boxes | 19.76 dB | **20.16 dB** |
+| Clean, LiDAR | 23.40 dB | **23.65 dB** |
+| Clean, boxes | 20.72 dB | **20.95 dB** |
+
+(Renders from `scene/model.html` with the models' PNG textures, so clean build 7 scores 23.40 here and 23.29
+on the comparison page.) Taking the roughness apart (one kind at a time on the clean capture, build 7): pose drift costs 1.9 dB,
+the swollen meshes 0.5 dB, exposure 0.1 dB. Build 8 lines the photos up with each other, which fixes their
+drift relative to one another; drift that neighbouring photos share stays, and needs an absolute anchor
+(each photo's own LiDAR depth, a capture change).
+
 ## How the splats are trained
 
 `splat/rasterize.cpp` is a CPU tile rasterizer (16 × 16 tiles, depth-sorted, early termination) with
