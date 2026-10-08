@@ -198,18 +198,23 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   can't see the texel drop out, and a texel no chosen photo sees takes its cell's next best that does.
 * **Baking**, two passes so only one photo is decoded at a time: (1) geometry only, as above; (2) photo by photo —
   each photo's pixels are sampled into the texels that chose it and into every cell that listed it. **Exposure
-  matching**: the phone's auto-exposure makes one photo darker than the next, so every cell two photos both see gives
-  a brightness ratio (weighted by the weaker photo's score), and one gain per photo is solved by least squares
-  (centered on the typical photo). Texels no photo saw are filled smoothly from their neighbours (pull-push); charts
-  no photo saw take the typical color of their kind of surface. If the photos cover less than 15% of the surfaces,
-  the styled model is built instead.
+  and white-balance matching**: the phone's auto-exposure and white balance make one photo darker or warmer than the
+  next, so every cell two photos both see gives a ratio per color channel (weighted by the weaker photo's score), and
+  one gain per photo and channel is solved by least squares (centered on the typical photo). **Seam leveling**, per
+  chart: what gains can't fix (glare on a glossy floor that differs from view to view, tone-curve differences) would
+  show as a step where one photo's patch meets the next, so each patch (connected cells that took one photo) gets one
+  offset per channel; across every seam the two photos' difference (median along the seam, from cells where both
+  were sampled) should vanish, small patches yield to big ones, at most 40 levels. Texels no photo saw are filled
+  smoothly from their neighbours (pull-push); charts no photo saw take the typical color of their kind of surface.
+  If the photos cover less than 15% of the surfaces, the styled model is built instead.
 * **Output**: one material per atlas with the photo as base color (JPEG from the app, PNG elsewhere), clamped
   sampling, `KHR_materials_unlit` on every material and no lights (the lighting is in the photos). The manifest says
   `"appearance": "captured"`, which the web app uses as the tour's default look; `ScanStats.photoCoverage` is the
   share of surfaces the photos covered. Tested by ray-casting photos of a room whose surfaces are colored by
   position: seen texels reproduce the pattern, a cabinet never leaks onto the wall behind it, under 20% of texels mix
-  photos, exposure differences are evened out, steady photos win over blurry ones from the same spot, and a wall's
-  edges take its color.
+  photos, exposure differences are evened out, glare that differs per photo leaves no steps between patches (2.9% of
+  neighbouring floor texels step without leveling, none with it), steady photos win over blurry ones from the same
+  spot, and a wall's edges take its color.
 * **Lights**: one warm point light per room (`KHR_lights_punctual`), 0.6 m below the ceiling at the room's visual
   center, intensity scaled by floor area.
 

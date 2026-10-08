@@ -559,7 +559,10 @@ struct PhotoBaker {
         return score
     }
 
-    static func bake(model: PhotoModel, cameras inputCameras: [PhotoCamera], photos: PhotoSource, atlasCount: Int, options: PhotoTexturingOptions) -> Result {
+    /// - Parameter leveling: seam leveling (off only to measure what it does).
+    static func bake(
+        model: PhotoModel, cameras inputCameras: [PhotoCamera], photos: PhotoSource, atlasCount: Int, options: PhotoTexturingOptions, leveling: Bool = true
+    ) -> Result {
         let charts = model.charts
         let size = options.atlasSize
         var cameras = inputCameras
@@ -600,6 +603,7 @@ struct PhotoBaker {
         // Pass 1: the photos each cell and texel take their color from.
         let cellCam = SharedArray<UInt16>(repeating: .max, count: cellTotal * perCell)
         let cellScore = SharedArray<Float>(repeating: 0, count: cellTotal * perCell)
+        let cellLabel = SharedArray<UInt16>(repeating: .max, count: cellTotal)
         let texelCam = SharedArray<UInt16>(repeating: .max, count: total * slots)
         let texelWeight = SharedArray<Float>(repeating: 0, count: total * slots)
         let candidates: [[Int]] = charts.map { $0.isSolid ? [] : candidateCameras(for: $0, cameras: cams) }
@@ -649,32 +653,24 @@ struct PhotoBaker {
             // One photo per cell, leaning toward the neighbours' choice.
             let range = (cellBase * perCell)..<((cellBase + gw * gh) * perCell)
             let labels = smoothLabels(width: gw, height: gh, cameras: cellCam.array(range), scores: cellScore.array(range), perCell: perCell)
+            for c in labels.indices { cellLabel.buffer[cellBase + c] = labels[c] }
 
             // Texels blend the photos of the four cells around them by distance: a single photo
             // inside a patch, a short ramp across a seam. Photos that can't see the texel drop out.
-            let fc = Float(cell)
             for j in 0..<chart.h {
-                let y = (Float(j) + 0.5) / fc - 0.5
-                let y0 = clamp(Int(y.rounded(.down)), 0, gh - 1), y1 = min(y0 + 1, gh - 1)
-                let ay = clamp(y - Float(y0), 0, 1)
                 for i in 0..<chart.w where inside.buffer[offsets[ci] + j * chart.w + i] {
-                    let x = (Float(i) + 0.5) / fc - 0.5
-                    let x0 = clamp(Int(x.rounded(.down)), 0, gw - 1), x1 = min(x0 + 1, gw - 1)
-                    let ax = clamp(x - Float(x0), 0, 1)
-                    var around = PhotoBlend()
-                    around.add(labels[y0 * gw + x0], (1 - ax) * (1 - ay))
-                    around.add(labels[y0 * gw + x1], ax * (1 - ay))
-                    around.add(labels[y1 * gw + x0], (1 - ax) * ay)
-                    around.add(labels[y1 * gw + x1], ax * ay)
+                    let near = around(i, j, gw: gw, gh: gh)
+                    var from = PhotoBlend()
+                    for n in 0..<4 { from.add(labels[Int(near.cells[n])], near.weights[n]) }
                     let p = chart.point(i, j)
                     var blend = PhotoBlend()
-                    for n in 0..<around.count where score(cams[Int(around.cams[n])], at: p, normal: chart.normal, rule: rule, above: 0) > 0 {
-                        blend.add(around.cams[n], around.weights[n])
+                    for n in 0..<from.count where score(cams[Int(from.cams[n])], at: p, normal: chart.normal, rule: rule, above: 0) > 0 {
+                        blend.add(from.cams[n], from.weights[n])
                     }
                     if blend.count == 0 {
                         // Hidden from the patch's photo (behind furniture, say): the nearest cell's
                         // next best photo that sees it, so neighbouring texels agree; else any photo.
-                        let nearest = clamp(Int(y.rounded()), 0, gh - 1) * gw + clamp(Int(x.rounded()), 0, gw - 1)
+                        let nearest = clamp(Int(near.y.rounded()), 0, gh - 1) * gw + clamp(Int(near.x.rounded()), 0, gw - 1)
                         let base = (cellBase + nearest) * perCell
                         for s in 0..<perCell where cs[base + s] > 0 {
                             if score(cams[Int(cc[base + s])], at: p, normal: chart.normal, rule: rule, above: 0) > 0 {
@@ -761,7 +757,8 @@ struct PhotoBaker {
             }
         }
 
-        // The phone's auto-exposure makes one photo darker than the next; match them where they overlap.
+        // The phone's auto-exposure and white balance make one photo darker or warmer than the next;
+        // match them where they overlap.
         let gains = exposureGains(
             cameras: UnsafeBufferPointer(cellCam.buffer), scores: UnsafeBufferPointer(cellScore.buffer), rgb: UnsafeBufferPointer(cellRGB.buffer),
             sampled: UnsafeBufferPointer(cellSampled.buffer), count: cellTotal, perCell: perCell, photos: cams.count)
@@ -787,19 +784,43 @@ struct PhotoBaker {
             guard !c.isSolid else { return }
             let tc = texelCam.buffer, tw = texelWeight.buffer, trgb = texelRGB.buffer, ts = texelSampled.buffer
             let n = c.w * c.h
+            // Seam leveling: an offset per cell for its photo, so patches meet without a step.
+            let (gw, gh) = grids[ci]
+            let cellRange = cellOffsets[ci]..<(cellOffsets[ci] + gw * gh)
+            let candidates = (cellRange.lowerBound * perCell)..<(cellRange.upperBound * perCell)
+            let candidateColors = candidates.map { k -> SIMD3<Float> in
+                let cam = cellCam.buffer[k]
+                guard cam != .max else { return .zero }
+                return SIMD3(Float(cellRGB.buffer[k * 3]), Float(cellRGB.buffer[k * 3 + 1]), Float(cellRGB.buffer[k * 3 + 2])) * gains[Int(cam)]
+            }
+            let labels = cellLabel.array(cellRange)
+            let shift =
+                leveling
+                ? levelSeams(
+                    width: gw, height: gh, labels: labels, cameras: cellCam.array(candidates), colors: candidateColors,
+                    sampled: cellSampled.array(candidates), perCell: perCell)
+                : [SIMD3<Float>](repeating: .zero, count: gw * gh)
             var rgb = [Float](repeating: 0, count: n * 3)
             var mask = [Float](repeating: 0, count: n)
             var histogram = [Int](repeating: 0, count: 768)
             var count = 0
             for t in 0..<n {
                 let texel = offsets[ci] + t
+                let near = around(t % c.w, t / c.w, gw: gw, gh: gh)
                 var sum = SIMD3<Float>(0, 0, 0), weight: Float = 0
                 for s in 0..<slots {
                     let slot = texel * slots + s
                     guard ts[slot] else { continue }
-                    let g = gains[Int(tc[slot])], w = tw[slot]
-                    let color = SIMD3<Float>(Float(trgb[slot * 3]), Float(trgb[slot * 3 + 1]), Float(trgb[slot * 3 + 2])) * g
-                    sum += SIMD3<Float>(min(255, color.x), min(255, color.y), min(255, color.z)) * w
+                    let cam = tc[slot], w = tw[slot]
+                    // This photo's offset: from the cells around that took it (none for a stand-in photo).
+                    var offset = SIMD3<Float>(0, 0, 0), share: Float = 0
+                    for k in 0..<4 where labels[Int(near.cells[k])] == cam {
+                        offset += shift[Int(near.cells[k])] * near.weights[k]
+                        share += near.weights[k]
+                    }
+                    if share > 0 { offset /= share }
+                    let color = SIMD3<Float>(Float(trgb[slot * 3]), Float(trgb[slot * 3 + 1]), Float(trgb[slot * 3 + 2])) * gains[Int(cam)] + offset
+                    sum += color.clamped(lowerBound: SIMD3(repeating: 0), upperBound: SIMD3(repeating: 255)) * w
                     weight += w
                 }
                 guard weight > 0 else { continue }
@@ -871,6 +892,110 @@ struct PhotoBaker {
         return Result(
             atlases: atlases, coverage: insideTotal > 0 ? Double(seenTotal) / Double(insideTotal) : 0, photosUsed: photosUsed, seen: masks,
             texelsPerPhoto: texelsPerPhoto, blended: seenTotal > 0 ? Double(blendedTotal) / Double(seenTotal) : 0)
+    }
+
+    /// The four cells around texel (i, j) in a gw × gh grid of cells, with bilinear weights;
+    /// `x`, `y`: the texel's position in cell units (cell k's center at k).
+    struct Around {
+        var cells: SIMD4<Int32>
+        var weights: SIMD4<Float>
+        var x: Float, y: Float
+    }
+
+    @inline(__always) static func around(_ i: Int, _ j: Int, gw: Int, gh: Int) -> Around {
+        let x = (Float(i) + 0.5) / Float(cell) - 0.5, y = (Float(j) + 0.5) / Float(cell) - 0.5
+        let x0 = clamp(Int(x.rounded(.down)), 0, gw - 1), x1 = min(x0 + 1, gw - 1)
+        let y0 = clamp(Int(y.rounded(.down)), 0, gh - 1), y1 = min(y0 + 1, gh - 1)
+        let ax = clamp(x - Float(x0), 0, 1), ay = clamp(y - Float(y0), 0, 1)
+        return Around(
+            cells: SIMD4(Int32(y0 * gw + x0), Int32(y0 * gw + x1), Int32(y1 * gw + x0), Int32(y1 * gw + x1)),
+            weights: SIMD4((1 - ax) * (1 - ay), ax * (1 - ay), (1 - ax) * ay, ax * ay), x: x, y: y)
+    }
+
+    /// Seam leveling: an offset (sRGB levels per channel) for each cell's photo, so neighbouring
+    /// patches from different photos meet without a step — the leftovers of exposure and white
+    /// balance, glare on a glossy floor. Each patch (connected cells that took one photo) gets one
+    /// offset; across every seam the two photos' difference (median along the seam, from cells where
+    /// both were sampled) should vanish; small patches yield to big ones; at most 40 levels.
+    /// `cameras`, `colors` (gain-adjusted) and `sampled` hold `perCell` candidates per cell.
+    static func levelSeams(width w: Int, height h: Int, labels: [UInt16], cameras: [UInt16], colors: [SIMD3<Float>], sampled: [Bool], perCell: Int) -> [SIMD3<Float>] {
+        let none = [SIMD3<Float>](repeating: .zero, count: w * h)
+        var patch = [Int32](repeating: -1, count: w * h)
+        var sizes: [Int] = []
+        var stack: [Int] = []
+        for start in 0..<(w * h) where labels[start] != .max && patch[start] < 0 {
+            let id = Int32(sizes.count)
+            var size = 0
+            patch[start] = id
+            stack.append(start)
+            while let c = stack.popLast() {
+                size += 1
+                let x = c % w, y = c / w
+                func visit(_ n: Int) {
+                    if patch[n] < 0 && labels[n] == labels[c] {
+                        patch[n] = id
+                        stack.append(n)
+                    }
+                }
+                if x > 0 { visit(c - 1) }
+                if x < w - 1 { visit(c + 1) }
+                if y > 0 { visit(c - w) }
+                if y < h - 1 { visit(c + w) }
+            }
+            sizes.append(size)
+        }
+        let n = sizes.count
+        guard n > 1 else { return none }
+        func color(_ cam: UInt16, _ c: Int) -> SIMD3<Float>? {
+            for s in 0..<perCell where cameras[c * perCell + s] == cam && sampled[c * perCell + s] { return colors[c * perCell + s] }
+            return nil
+        }
+        // B − A wherever patch P (photo A) meets patch Q (photo B), keyed by P·n + Q with P < Q.
+        var differences: [Int: [SIMD3<Float>]] = [:]
+        func seam(_ c1: Int, _ c2: Int) {
+            guard patch[c1] >= 0, patch[c2] >= 0, patch[c1] != patch[c2] else { return }
+            var (p, q) = (Int(patch[c1]), Int(patch[c2]))
+            var (a, b) = (labels[c1], labels[c2])
+            if p > q {
+                swap(&p, &q)
+                swap(&a, &b)
+            }
+            for c in [c1, c2] {
+                if let ca = color(a, c), let cb = color(b, c) { differences[p * n + q, default: []].append(cb - ca) }
+            }
+        }
+        for y in 0..<h {
+            for x in 0..<w {
+                if x < w - 1 { seam(y * w + x, y * w + x + 1) }
+                if y < h - 1 { seam(y * w + x, (y + 1) * w + x) }
+            }
+        }
+        var links = [[(q: Int, weight: Float, target: SIMD3<Float>)]](repeating: [], count: n)
+        for (key, list) in differences where list.count >= 2 {
+            var median = SIMD3<Float>(0, 0, 0)
+            for k in 0..<3 {
+                let sorted = list.map { $0[k] }.sorted()
+                median[k] = sorted[sorted.count / 2]
+            }
+            let p = key / n, q = key % n, weight = Float(list.count)
+            // A + o_P = B + o_Q: o_P − o_Q = B − A.
+            links[p].append((q, weight, median))
+            links[q].append((p, weight, -median))
+        }
+        guard links.contains(where: { !$0.isEmpty }) else { return none }
+        var offset = [SIMD3<Float>](repeating: .zero, count: n)
+        for _ in 0..<300 {
+            for p in 0..<n where !links[p].isEmpty {
+                var sum = SIMD3<Float>(0, 0, 0), total = 0.002 * Float(sizes[p])
+                for link in links[p] {
+                    sum += (offset[link.q] + link.target) * link.weight
+                    total += link.weight
+                }
+                offset[p] = sum / total
+            }
+        }
+        let limit = SIMD3<Float>(repeating: 40)
+        return patch.map { $0 < 0 ? .zero : offset[Int($0)].clamped(lowerBound: -limit, upperBound: limit) }
     }
 
     /// Texels of a chart whose centers lie on one of its faces (`faces`: the chart's triangles, UVs in
@@ -946,72 +1071,73 @@ struct PhotoBaker {
         return label
     }
 
-    /// A brightness factor per photo, so overlapping photos agree: wherever two photos are both
-    /// candidates for a cell, their brightness ratio is one observation (weighted by the weaker
-    /// photo's score); the log-gains are solved by least squares (lightly pulled to 1) and
-    /// centered so the typical photo keeps its exposure.
+    /// A color factor per photo and channel, so overlapping photos agree in exposure and white
+    /// balance: wherever two photos are both candidates for a cell, their ratio in each channel is
+    /// one observation (weighted by the weaker photo's score); the log-gains are solved by least
+    /// squares (lightly pulled to 1) and centered so the typical photo keeps its color.
     static func exposureGains(
         cameras: UnsafeBufferPointer<UInt16>, scores: UnsafeBufferPointer<Float>, rgb: UnsafeBufferPointer<UInt8>, sampled: UnsafeBufferPointer<Bool>,
         count: Int, perCell: Int, photos n: Int
-    ) -> [Float] {
-        guard n > 1 else { return [Float](repeating: 1, count: max(n, 0)) }
-        var weight = [Double](repeating: 0, count: n * n), delta = [Double](repeating: 0, count: n * n)
-        func luminance(_ slot: Int) -> Double {
-            0.299 * Double(rgb[slot * 3]) + 0.587 * Double(rgb[slot * 3 + 1]) + 0.114 * Double(rgb[slot * 3 + 2])
-        }
-        for c in 0..<count {
-            let base = c * perCell
-            let top = Double(scores[base])
-            guard top > 0 else { continue }
-            for a in 0..<perCell {
-                let sa = base + a
-                guard sampled[sa] else { continue }
-                let la = luminance(sa)
-                guard la > 12, la < 243 else { continue }
-                for b in (a + 1)..<perCell {
-                    let sb = base + b
-                    guard sampled[sb] else { continue }
-                    let lb = luminance(sb)
-                    guard lb > 12, lb < 243 else { continue }
-                    var ca = Int(cameras[sa]), cb = Int(cameras[sb])
-                    var d = log(lb) - log(la)  // wanted: g[ca] − g[cb]
-                    // Far apart is a different surface showing (misplaced or moved), not exposure.
-                    guard abs(d) < 1 else { continue }
-                    if ca > cb {
-                        swap(&ca, &cb)
-                        d = -d
+    ) -> [SIMD3<Float>] {
+        guard n > 1 else { return [SIMD3<Float>](repeating: SIMD3(repeating: 1), count: max(n, 0)) }
+        var gains = [SIMD3<Float>](repeating: SIMD3(repeating: 1), count: n)
+        for channel in 0..<3 {
+            var weight = [Double](repeating: 0, count: n * n), delta = [Double](repeating: 0, count: n * n)
+            for c in 0..<count {
+                let base = c * perCell
+                let top = Double(scores[base])
+                guard top > 0 else { continue }
+                for a in 0..<perCell {
+                    let sa = base + a
+                    guard sampled[sa] else { continue }
+                    let va = Double(rgb[sa * 3 + channel])
+                    guard va > 12, va < 243 else { continue }
+                    for b in (a + 1)..<perCell {
+                        let sb = base + b
+                        guard sampled[sb] else { continue }
+                        let vb = Double(rgb[sb * 3 + channel])
+                        guard vb > 12, vb < 243 else { continue }
+                        var ca = Int(cameras[sa]), cb = Int(cameras[sb])
+                        var d = log(vb) - log(va)  // wanted: g[ca] − g[cb]
+                        // Far apart is a different surface showing (misplaced or moved), not exposure.
+                        guard abs(d) < 1 else { continue }
+                        if ca > cb {
+                            swap(&ca, &cb)
+                            d = -d
+                        }
+                        let w = Double(min(scores[sa], scores[sb])) / top
+                        weight[ca * n + cb] += w
+                        delta[ca * n + cb] += w * d
                     }
-                    let w = Double(min(scores[sa], scores[sb])) / top
-                    weight[ca * n + cb] += w
-                    delta[ca * n + cb] += w * d
                 }
             }
-        }
-        var pairs: [(a: Int, b: Int, w: Double, d: Double)] = []
-        for a in 0..<n {
-            for b in (a + 1)..<n where weight[a * n + b] > 3 { pairs.append((a, b, weight[a * n + b], delta[a * n + b] / weight[a * n + b])) }
-        }
-        guard !pairs.isEmpty else { return [Float](repeating: 1, count: n) }
-        var g = [Double](repeating: 0, count: n)
-        var linked = [Bool](repeating: false, count: n)
-        for p in pairs {
-            linked[p.a] = true
-            linked[p.b] = true
-        }
-        let pull = 0.5
-        for _ in 0..<200 {
-            var sum = [Double](repeating: 0, count: n), total = [Double](repeating: pull, count: n)
-            for p in pairs {
-                sum[p.a] += p.w * (g[p.b] + p.d)
-                total[p.a] += p.w
-                sum[p.b] += p.w * (g[p.a] - p.d)
-                total[p.b] += p.w
+            var pairs: [(a: Int, b: Int, w: Double, d: Double)] = []
+            for a in 0..<n {
+                for b in (a + 1)..<n where weight[a * n + b] > 3 { pairs.append((a, b, weight[a * n + b], delta[a * n + b] / weight[a * n + b])) }
             }
-            for k in 0..<n { g[k] = sum[k] / total[k] }
+            guard !pairs.isEmpty else { continue }
+            var g = [Double](repeating: 0, count: n)
+            var linked = [Bool](repeating: false, count: n)
+            for p in pairs {
+                linked[p.a] = true
+                linked[p.b] = true
+            }
+            let pull = 0.5
+            for _ in 0..<200 {
+                var sum = [Double](repeating: 0, count: n), total = [Double](repeating: pull, count: n)
+                for p in pairs {
+                    sum[p.a] += p.w * (g[p.b] + p.d)
+                    total[p.a] += p.w
+                    sum[p.b] += p.w * (g[p.a] - p.d)
+                    total[p.b] += p.w
+                }
+                for k in 0..<n { g[k] = sum[k] / total[k] }
+            }
+            let center = g.enumerated().filter { linked[$0.offset] }.map(\.element).sorted()
+            let median = center.isEmpty ? 0 : center[center.count / 2]
+            for k in 0..<n { gains[k][channel] = Float(exp(clamp(g[k] - median, -0.8, 0.8))) }
         }
-        let center = g.enumerated().filter { linked[$0.offset] }.map(\.element).sorted()
-        let median = center.isEmpty ? 0 : center[center.count / 2]
-        return g.map { Float(exp(clamp($0 - median, -0.8, 0.8))) }
+        return gains
     }
 
     /// The per-channel median of colors, each counted `weight` times.

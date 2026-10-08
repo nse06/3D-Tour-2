@@ -23,10 +23,24 @@ final class PhotoTexturingTests: XCTestCase {
         var poses = Dictionary(uniqueKeysWithValues: PhotoTexturingTests.frames().map { ($0.file, $0.transform) })
         /// Auto-exposure: each photo comes out up to this much brighter or darker.
         var exposureSpread: Float = 0
+        /// Each photo's colors shifted by up to this many levels per channel.
+        var offsetSpread: Float = 0
+        /// A glossy floor: in each photo the floor looks up to this many levels brighter or darker
+        /// (what no per-photo gain fixes, since the walls in the same photo don't change).
+        var floorGlare: Float = 0
+        /// Plain painted surfaces instead of the pattern.
+        var plain = false
+        static let paint: (Float, Float, Float) = (186, 176, 162)
 
-        func exposure(_ file: String) -> Float {
-            let h = file.unicodeScalars.reduce(UInt32(2166136261)) { ($0 ^ $1.value) &* 16777619 }
-            return 1 + exposureSpread * (Float(h % 1000) / 500 - 1)
+        static func hash(_ file: String, _ salt: UInt32) -> Float {
+            let h = file.unicodeScalars.reduce(UInt32(2166136261) ^ salt) { ($0 ^ $1.value) &* 16777619 }
+            return Float(h % 1000) / 500 - 1
+        }
+
+        func exposure(_ file: String) -> Float { 1 + exposureSpread * Self.hash(file, 0) }
+
+        func offset(_ file: String) -> (Float, Float, Float) {
+            (offsetSpread * Self.hash(file, 11), offsetSpread * Self.hash(file, 23), offsetSpread * Self.hash(file, 37))
         }
 
         func image(for frame: CameraFrame) -> RGBImage? {
@@ -38,9 +52,11 @@ final class PhotoTexturingTests: XCTestCase {
                 for u in 0..<w {
                     let dc = Vec3((Float(u) + 0.5 - k[6]) / k[0], -(Float(v) + 0.5 - k[7]) / k[4], -1)
                     let d = vnormalize(t.applyDirection(dc))
-                    var (r, g, b) = PhotoTexturingTests.trace(from: t.translation, d)
-                    let e = exposure(frame.file)
-                    (r, g, b) = (r * e, g * e, b * e)
+                    let hit = PhotoTexturingTests.hit(from: t.translation, d)
+                    var (r, g, b) = hit.cabinet ? PhotoTexturingTests.magenta : plain ? Self.paint : PhotoTexturingTests.color(at: hit.point)
+                    let e = exposure(frame.file), o = offset(frame.file)
+                    let glare = !hit.cabinet && hit.point.y < 0.001 ? floorGlare * Self.hash(frame.file, 51) : 0
+                    (r, g, b) = (r * e + o.0 + glare, g * e + o.1 + glare, b * e + o.2 + glare)
                     let i = (v * w + u) * 3
                     pixels[i] = UInt8(clamp(r, 0, 255))
                     pixels[i + 1] = UInt8(clamp(g, 0, 255))
@@ -52,6 +68,12 @@ final class PhotoTexturingTests: XCTestCase {
     }
 
     static func trace(from o: Vec3, _ d: Vec3) -> (Float, Float, Float) {
+        let h = hit(from: o, d)
+        return h.cabinet ? magenta : color(at: h.point)
+    }
+
+    /// Where a ray from inside the room lands, and whether that's the cabinet.
+    static func hit(from o: Vec3, _ d: Vec3) -> (point: Vec3, cabinet: Bool) {
         // The cabinet (slab test) first, then the room's six planes from the inside.
         var tNear: Float = -.infinity, tFar: Float = .infinity
         for axis in 0..<3 {
@@ -72,8 +94,8 @@ final class PhotoTexturingTests: XCTestCase {
             let t = (value - o[axis]) / d[axis]
             if t > 1e-4 && t < best { best = t }
         }
-        if let c = cabinetHit, c < best { return magenta }
-        return color(at: o + d * best)
+        if let c = cabinetHit, c < best { return (o + d * c, true) }
+        return (o + d * best, false)
     }
 
     static func room() -> CaptureScan {
@@ -234,6 +256,54 @@ final class PhotoTexturingTests: XCTestCase {
         let styled = try ScanProcessor.process(Self.room(), options: ScanProcessorOptions(textureSize: 32))
         XCTAssertNil(styled.manifest.appearance)
         XCTAssertNil(styled.stats.photoCoverage)
+    }
+
+    func testPatchesMeetWithoutASeam() throws {
+        // A plain room with a glossy floor whose glare differs from photo to photo — what no
+        // per-photo gain fixes, since the walls in the same photos don't change. Seam leveling makes
+        // neighbouring patches agree, so no step shows where one photo hands over to the next.
+        var scan = Self.room()
+        scan.frames = Self.frames()
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        var model = PhotoModel.build(scan: scan, rooms: rooms, walls: walls, defaultThickness: 0.12, includeCeilings: true)
+        model.measureCharts()
+        let options = PhotoTexturingOptions(atlasSize: 1024, maxAtlases: 2, texelSize: 0.02, depthWidth: 160)
+        let atlases = try XCTUnwrap(PhotoBaker.pack(&model.charts, options: options))
+        let cameras = scan.frames.compactMap { PhotoCamera($0, depthWidth: options.depthWidth) }
+        let source = Raycast(floorGlare: 15, plain: true)
+        let pad = PhotoChart.pad
+        /// The color change between horizontally neighbouring texels (none on a plain surface), and
+        /// how far the texels stray from the surface's typical color.
+        func measure(leveling: Bool) -> (steps: [Float], spread: Float) {
+            let baked = PhotoBaker.bake(model: model, cameras: cameras, photos: source, atlasCount: atlases, options: options, leveling: leveling)
+            func pixel(_ c: PhotoChart, _ i: Int, _ j: Int) -> SIMD3<Float> {
+                let a = ((c.y + j) * options.atlasSize + c.x + i) * 3, px = baked.atlases[c.atlas].pixels
+                return SIMD3(Float(px[a]), Float(px[a + 1]), Float(px[a + 2]))
+            }
+            var steps: [Float] = [], levels: [Float] = []
+            for (ci, chart) in model.charts.enumerated() where chart.kind == .floor {
+                for j in (pad + 2)..<(chart.h - pad - 2) {
+                    for i in (pad + 2)..<(chart.w - pad - 3) where baked.seen[ci][j * chart.w + i] && baked.seen[ci][j * chart.w + i + 1] {
+                        let p = chart.point(i, j)
+                        let near = p.x > Self.cabinet.lo.x - 0.1 && p.x < Self.cabinet.hi.x + 0.1 && p.z < Self.cabinet.hi.z + 0.1 && p.y < Self.cabinet.hi.y + 0.1
+                        if near { continue }
+                        let d = pixel(chart, i, j) - pixel(chart, i + 1, j)
+                        steps.append(max(abs(d.x), abs(d.y), abs(d.z)))
+                        levels.append(pixel(chart, i, j).y)
+                    }
+                }
+            }
+            levels.sort()
+            return (steps.sorted(), levels[levels.count * 99 / 100] - levels[levels.count / 100])
+        }
+        let raw = measure(leveling: false), leveled = measure(leveling: true)
+        func share(_ steps: [Float]) -> Double { Double(steps.filter { $0 > 1.5 }.count) / Double(steps.count) }
+        // Measured: 2.9% of neighbouring texels step by more than 1.5 levels without leveling, ~0 with it.
+        XCTAssertGreaterThan(share(raw.steps), 0.01, "the photos should disagree at the seams")
+        XCTAssertLessThan(share(leveled.steps), share(raw.steps) / 4, "steps: \(share(raw.steps)) → \(share(leveled.steps))")
+        XCTAssertLessThan(leveled.steps[leveled.steps.count * 999 / 1000], 2, "largest steps")
+        XCTAssertLessThan(leveled.spread, raw.spread, "patches end up closer to one color")
     }
 
     func testCellsLeanTowardTheirNeighboursPhoto() {
