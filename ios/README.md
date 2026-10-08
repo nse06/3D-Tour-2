@@ -105,9 +105,11 @@ The **map** in the top right corner (build 8 on) shows what your photos cover so
 from above, turned the way you're facing (red on the map's left is the wall on your left), with
 walls, floor and furniture in green where a photo covers them well, amber where only from the
 side or far away, and red where none does yet. Before **Done with this room**, turn toward the red
-until it goes green — the floor near where you stand usually needs a slow look down. The numbers
-under it are the shares covered well; tap the map to fold it away. If much is still red when you
-finish a room, the app asks first.
+until it goes green — the floor near where you stand usually needs a slow look down; a bed or table
+turns green once you've looked down at it from a step or two away, from more than one side. Walls
+hidden behind a wardrobe or headboard show as a thin gray line: nothing to photograph there. The
+numbers under it are the shares covered well; tap the map to fold it away. If much of the walls or
+floor is still red when you finish a room, the app asks first.
 
 **A scan from an earlier version?** Builds 1–2 took each room where RoomPlan reported it, and
 RoomPlan reports every room relative to where its scan started, so rooms piled up; builds 1–3

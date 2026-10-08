@@ -5,7 +5,9 @@ import Foundation
 /// screen's map. A photo covers a spot by the painting's own rules: it faces the spot, points at it,
 /// is close enough and nothing stands in between (walls, furniture boxes). Good: within 60° of
 /// head-on, 4.5 m and away from the photo's edges; weak: seen at all (from the side, far away or at
-/// the edge of the frame), which paints soft or stretched.
+/// the edge of the frame), which paints soft or stretched. What furniture stands right in front of
+/// (the wall behind a wardrobe, the side of a cabinet against the next one) needs no photo and
+/// doesn't count.
 public struct CaptureCoverage: Sendable, Equatable {
     public enum Level: UInt8, Sendable, Comparable {
         case missing = 0, weak = 1, good = 2
@@ -13,11 +15,12 @@ public struct CaptureCoverage: Sendable, Equatable {
         public static func < (a: Level, b: Level) -> Bool { a.rawValue < b.rawValue }
     }
 
-    /// A wall seen from above: from `a` to `b` (plan x, z), its stretches in order, each 25 cm or so.
+    /// A wall seen from above: from `a` to `b` (plan x, z), its stretches in order, each 25 cm or so
+    /// (nil where furniture stands against it and hides it).
     public struct Wall: Sendable, Equatable {
         public var a: SIMD2<Double>
         public var b: SIMD2<Double>
-        public var levels: [Level]
+        public var levels: [Level?]
     }
 
     /// A square of floor, `cellSize` across.
@@ -37,7 +40,7 @@ public struct CaptureCoverage: Sendable, Equatable {
     public var floor: [Cell] = []
     public var cellSize: Double = 0.3
     public var items: [Item] = []
-    /// Shares covered well (0–1; nil where there's nothing of that kind yet).
+    /// Shares covered well (0–1, furniture by surface; nil where there's nothing of that kind yet).
     public var wallShare: Double?
     public var floorShare: Double?
     public var itemShare: Double?
@@ -80,19 +83,20 @@ public struct CaptureCoverage: Sendable, Equatable {
         for (k, w) in walls.enumerated() {
             let length = plength(w.b - w.a)
             let columns = max(1, Int((length / 0.25).rounded()))
-            var levels: [Level] = []
+            var levels: [Level?] = []
             for i in 0..<columns {
                 let s = (Double(i) + 0.5) / Double(columns)
                 let q = w.a + (w.b - w.a) * s
                 var column: [Level] = []
                 for h in [0.35, 1.1, 1.85] where w.bottom + h < w.top - 0.05 {
                     let p = Vec3(Float(q.x), Float(w.bottom + h), Float(q.y)) + w.normal * 0.01
+                    if occluders.covers(p, facing: w.normal, skipBox: nil) { continue }
                     let level = best(views, at: p, normal: w.normal, occluders: occluders, skipWall: k, skipBox: nil)
                     column.append(level)
                     wallTotal += 1
                     if level == .good { wallGood += 1 }
                 }
-                levels.append(column.isEmpty ? .missing : column.sorted()[column.count / 2])
+                levels.append(column.isEmpty ? nil : column.sorted()[column.count / 2])
             }
             out.walls.append(Wall(a: w.a, b: w.b, levels: levels))
         }
@@ -119,37 +123,45 @@ public struct CaptureCoverage: Sendable, Equatable {
         }
         if !out.floor.isEmpty { out.floorShare = Double(floorGood) / Double(out.floor.count) }
 
-        // Furniture: its top (on a 30 cm grid; unless it's above eye level, where no one sees it) and
-        // the middle of each side not against a wall, each face counting once; good if most are.
-        var itemGood = 0
+        // Furniture: its top (unless it's above eye level, where no one sees it) and its sides, a spot
+        // every 30 cm (60 cm up the sides) that isn't against a wall or other furniture; its level is
+        // the best that at least half of what shows of it reaches.
+        var itemGoodArea = 0.0, itemArea = 0.0
         for (k, box) in occluders.boxes.enumerated() {
             let (t, half) = box
             let X = vnormalize(t.xAxis), Y = vnormalize(t.yAxis), Z = vnormalize(t.zAxis), c = t.translation
-            var faces: [Level] = []
-            if Double(c.y + half.y) - floorY < 1.4 {
-                var top: [Level] = []
-                let nx = max(1, Int((Double(half.x) * 2 / 0.3).rounded())), nz = max(1, Int((Double(half.z) * 2 / 0.3).rounded()))
-                for i in 0..<nx {
-                    for j in 0..<nz {
-                        let u = (Float(i) + 0.5) / Float(nx) * 2 - 1, v = (Float(j) + 0.5) / Float(nz) * 2 - 1
-                        let p = c + X * (u * half.x) + Z * (v * half.z) + Y * (half.y + 0.01)
-                        top.append(best(views, at: p, normal: Y, occluders: occluders, skipWall: nil, skipBox: k))
+            var spots: [(level: Level, area: Double)] = []
+            /// The face around `center` facing `normal`, spanning ±`hu` along `u` and ±`hv` along `v`.
+            func face(_ center: Vec3, _ normal: Vec3, _ u: Vec3, _ hu: Float, _ v: Vec3, _ hv: Float, step: (Float, Float), isSide: Bool) {
+                let nu = max(1, Int((2 * hu / step.0).rounded())), nv = max(1, Int((2 * hv / step.1).rounded()))
+                let area = Double(4 * hu * hv) / Double(nu * nv)
+                for i in 0..<nu {
+                    for j in 0..<nv {
+                        let a = (Float(i) + 0.5) / Float(nu) * 2 - 1, b = (Float(j) + 0.5) / Float(nv) * 2 - 1
+                        let p = center + u * (a * hu) + v * (b * hv) + normal * 0.01
+                        // A side right against a wall shows nothing.
+                        if isSide, occluders.walls.contains(where: { distanceToSegment(plan(p), $0.0, $0.1) < 0.12 }) { continue }
+                        if occluders.covers(p, facing: normal, skipBox: k) { continue }
+                        spots.append((best(views, at: p, normal: normal, occluders: occluders, skipWall: nil, skipBox: k), area))
                     }
                 }
-                faces.append(top.sorted()[top.count / 2])
             }
-            for (axis, extent) in [(X, half.x), (-X, half.x), (Z, half.z), (-Z, half.z)] {
-                let p = c + axis * (extent + 0.01)
-                // A side right against a wall shows nothing.
-                if occluders.walls.contains(where: { distanceToSegment(plan(p), $0.0, $0.1) < 0.12 }) { continue }
-                faces.append(best(views, at: p, normal: axis, occluders: occluders, skipWall: nil, skipBox: k))
-            }
-            let level = faces.isEmpty ? .missing : faces.sorted()[(faces.count - 1) / 2]
-            if level == .good { itemGood += 1 }
+            if Double(c.y + half.y) - floorY < 1.4 { face(c + Y * half.y, Y, X, half.x, Z, half.z, step: (0.3, 0.3), isSide: false) }
+            face(c + X * half.x, X, Z, half.z, Y, half.y, step: (0.3, 0.6), isSide: true)
+            face(c - X * half.x, -X, Z, half.z, Y, half.y, step: (0.3, 0.6), isSide: true)
+            face(c + Z * half.z, Z, X, half.x, Y, half.y, step: (0.3, 0.6), isSide: true)
+            face(c - Z * half.z, -Z, X, half.x, Y, half.y, step: (0.3, 0.6), isSide: true)
+            // Nothing of it shows (a box inside another one): nothing to photograph.
+            let total = spots.reduce(0) { $0 + $1.area }
+            guard total > 0 else { continue }
+            func share(_ least: Level) -> Double { spots.filter { $0.level >= least }.reduce(0) { $0 + $1.area } / total }
+            let level: Level = share(.good) >= 0.5 ? .good : share(.weak) >= 0.5 ? .weak : .missing
+            itemArea += total
+            itemGoodArea += share(.good) * total
             let corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)].map { sx, sz in plan(c + X * (Float(sx) * half.x) + Z * (Float(sz) * half.z)) }
             out.items.append(Item(corners: corners, level: level))
         }
-        if !out.items.isEmpty { out.itemShare = Double(itemGood) / Double(out.items.count) }
+        if itemArea > 0 { out.itemShare = itemGoodArea / itemArea }
         return out
     }
 
@@ -174,6 +186,16 @@ public struct CaptureCoverage: Sendable, Equatable {
     struct Occluders {
         var walls: [(P2, P2)] = []
         var boxes: [(frame: Transform, half: Vec3)] = []
+
+        /// Whether furniture (but box `skipBox`) stands right in front of spot p facing `normal`: the
+        /// wall behind a wardrobe or a headboard, the side of a cabinet against the next one.
+        func covers(_ p: Vec3, facing normal: Vec3, skipBox: Int?) -> Bool {
+            let q = p + normal * 0.12
+            for (k, box) in boxes.enumerated() where k != skipBox {
+                if MeshShapes.inside(q, box.frame, box.half + Vec3(repeating: 0.02)) { return true }
+            }
+            return false
+        }
     }
 
     /// The best any photo does at point p (facing `normal`).

@@ -31,7 +31,7 @@ final class CaptureCoverageTests: XCTestCase {
         XCTAssertEqual(coverage.items.count, 1)
         XCTAssertEqual(coverage.wallShare, 0)
         XCTAssertEqual(coverage.floorShare, 0)
-        XCTAssertTrue(coverage.walls.allSatisfy { $0.levels.allSatisfy { $0 == .missing } })
+        XCTAssertTrue(coverage.walls.allSatisfy { $0.levels.compactMap { $0 }.allSatisfy { $0 == .missing } })
     }
 
     func testAPhotoCoversTheWallItFacesNotTheOneBehind() throws {
@@ -40,7 +40,7 @@ final class CaptureCoverageTests: XCTestCase {
         let front = try XCTUnwrap(Self.wall(coverage, atZ: 0)), back = try XCTUnwrap(Self.wall(coverage, atZ: 3))
         let good = front.levels.filter { $0 == .good }.count
         XCTAssertGreaterThan(Double(good) / Double(front.levels.count), 0.5, "most of the wall it faces: \(front.levels)")
-        XCTAssertTrue(back.levels.allSatisfy { $0 == .missing }, "nothing behind the phone")
+        XCTAssertTrue(back.levels.compactMap { $0 }.allSatisfy { $0 == .missing }, "nothing behind the phone")
         // The floor in front of the phone, not behind it.
         let seen = coverage.floor.filter { $0.level != .missing }
         XCTAssertFalse(seen.isEmpty)
@@ -51,7 +51,7 @@ final class CaptureCoverageTests: XCTestCase {
         // Outside the room, behind the z = 3 wall, looking in: the wall is in the way of everything.
         let coverage = CaptureCoverage.compute(Self.part(), photos: [Self.photo(Vec3(2, 1.4, 4.5), yaw: 0)])
         let front = try XCTUnwrap(Self.wall(coverage, atZ: 0))
-        XCTAssertTrue(front.levels.allSatisfy { $0 == .missing }, "\(front.levels)")
+        XCTAssertTrue(front.levels.compactMap { $0 }.allSatisfy { $0 == .missing }, "\(front.levels)")
         XCTAssertTrue(coverage.floor.allSatisfy { $0.level == .missing })
     }
 
@@ -65,5 +65,36 @@ final class CaptureCoverageTests: XCTestCase {
         // The cabinet is seen, though only from above its top's height and off to the side: weakly.
         XCTAssertEqual(all.items.first?.level, .weak)
         XCTAssertEqual(few.items.first?.level, CaptureCoverage.Level.missing, "not by the first photos")
+    }
+
+    func testTheWallBehindAWardrobeNeedsNoPhoto() throws {
+        // A wardrobe against the z = 3 wall: 1.2 m wide (x 1–2.2), 2 m tall.
+        var part = Self.part()
+        part.objects.append(
+            ScanObject(id: "O2", roomId: part.room.id, category: "storage", transform: .translating(Vec3(1.6, 1, 2.675)), size: Vec3(1.2, 2, 0.55)))
+        let coverage = CaptureCoverage.compute(part, photos: PhotoTexturingTests.frames())
+        let back = try XCTUnwrap(Self.wall(coverage, atZ: 3))
+        let hidden = back.levels.indices.filter { back.levels[$0] == nil }
+        let xs = hidden.map { back.a.x + (back.b.x - back.a.x) * (Double($0) + 0.5) / Double(back.levels.count) }
+        XCTAssertEqual(hidden.count, 5, "the stretches behind it: \(back.levels)")
+        XCTAssertTrue(xs.allSatisfy { $0 > 1 && $0 < 2.2 }, "and only those: \(xs)")
+        XCTAssertEqual(coverage.items.count, 2)
+    }
+
+    func testSidesAgainstOtherFurnitureNeedNoPhoto() {
+        // Three kitchen cabinets in a row along the z = 0 wall, photographed from in front of the middle one.
+        var part = Self.part()
+        part.objects = (0..<3).map { k in
+            ScanObject(
+                id: "C\(k)", roomId: part.room.id, category: "storage", transform: .translating(Vec3(1.3 + 0.6 * Float(k), 0.45, 0.35)), size: Vec3(0.6, 0.9, 0.6))
+        }
+        let photos = [Self.photo(Vec3(1.9, 1.45, 1.6), yaw: 0, pitch: 0.7)]
+        let row = CaptureCoverage.compute(part, photos: photos)
+        XCTAssertEqual(row.items.count, 3)
+        XCTAssertEqual(row.items[1].level, .good, "judged by its front and top: its sides touch its neighbours")
+        // On its own, its bare sides show, and no photo has seen them.
+        part.objects = [part.objects[1]]
+        let alone = CaptureCoverage.compute(part, photos: photos)
+        XCTAssertEqual(alone.items.first?.level, CaptureCoverage.Level.missing)
     }
 }

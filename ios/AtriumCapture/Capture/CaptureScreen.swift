@@ -68,16 +68,27 @@ struct CaptureScreen: View {
     @ViewBuilder
     private var coverageCard: some View {
         if model.phase == .scanning, let coverage = model.coverage, coverage.outline.count >= 3 {
-            VStack(alignment: .trailing, spacing: 6) {
+            VStack(spacing: 6) {
                 if mapOpen {
                     CoverageMapView(coverage: coverage, position: model.mapPosition, forward: model.mapForward)
                         .frame(width: 150, height: 150)
                 }
-                if let summary = CoverageMapView.summary(coverage) {
-                    Text(summary)
-                        .font(.caption2.weight(.semibold))
-                        .monospacedDigit()
+                HStack(spacing: 0) {
+                    ForEach(CoverageMapView.shares(coverage)) { share in
+                        VStack(spacing: 1) {
+                            Text(verbatim: "\(share.percent)%")
+                                .font(.caption.weight(.semibold))
+                                .monospacedDigit()
+                            Text(share.name)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity)
+                    }
                 }
+                .frame(width: 150)
             }
             .padding(8)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

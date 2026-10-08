@@ -360,13 +360,16 @@ info.json            app / device / capture metadata, pipeline version, alignmen
    * List of saved scans (date, rooms, floors, status: *Saved*, *Uploading 42%*, *Sent to Atrium*).
 2. **Capture** (full screen) — RoomPlan's live view with its own coaching. Top: "Room N" + Cancel, and below it the
    **coverage map** (build 8 on, `CaptureCoverage.swift` + `CoverageMapView`): the room so far from RoomPlan's live
-   updates, seen from above and turned so the phone looks up the map, with every 25 cm of wall (three heights), every
-   30 cm of floor and every piece of furniture (its top below 1.4 m and its open sides, each face counting once) in
-   green where a photo already covers it well (within 60° of head-on, 4.5 m and away from the photo's edges), amber
-   where only weakly (from the side, far away, the edge of the frame) and red where no photo has yet — by the
-   painting's own rules, walls and furniture boxes hiding what's behind them, with this run's photos. Below the map:
-   "Walls 80% · Floor 55% · Furniture 60%" (shares covered well); tapping folds the map away. Recomputed off the main
-   thread whenever the room or the photos change, at most twice a second. Bottom: **Done with this room** — if
+   updates, seen from above and turned so the phone looks up the map (turning only turns it: the scale fits the room
+   at every angle), with every 25 cm of wall (three heights), every 30 cm of floor and every piece of furniture (its
+   top below 1.4 m and its sides, a spot every 30 cm, 60 cm up the sides; a piece takes the level at least half of
+   what shows of it reaches) in green where a photo already covers it well (within 60° of head-on, 4.5 m and away from
+   the photo's edges), amber where only weakly (from the side, far away, the edge of the frame) and red where no photo
+   has yet — by the painting's own rules, walls and furniture boxes hiding what's behind them, with this run's photos.
+   What furniture stands right in front of needs no photo and doesn't count: the wall behind a wardrobe or a
+   headboard (a thin gray line on the map), the side of a cabinet against the next one. Below the map, the shares
+   covered well: walls, floor, furniture (by surface); tapping folds the map away. Recomputed off the main thread
+   whenever the room or the photos change, at most twice a second (under a millisecond for a room). Bottom: **Done with this room** — if
    under 60% of the walls or 35% of the floor is covered well, it asks first ("Parts of this room have no good photo
    yet" → Finish the room anyway / Keep scanning). After a room finishes: a sheet "What is this room?" with a text field prefilled from
    RoomPlan's detected label and quick chips (Living Room, Kitchen, Dining Room, Bedroom, Primary Bedroom, Bathroom,
