@@ -91,6 +91,8 @@ export interface PropertyInfo {
 export interface TourData {
   property: PropertyInfo;
   assetUrl: string;
+  /** iPhone photo scans: the same rooms as a clean model, behind the viewer's "photos off" switch. */
+  cleanAssetUrl: string | null;
   source: CaptureSource;
   appearance: TourAppearance;
   space: TourSpace;

@@ -108,7 +108,8 @@ every room returns exactly with the merged structure, and within 0.12 m from a 4
 
 ```swift
 public struct ScanProcessorOptions { eyeHeight = 1.6, wallThickness = 0.12, includeCeilings = true, includeLights = true }
-public struct ProcessedScan { public let glb: Data; public let manifest: ScanManifest; public let stats: ScanStats }
+public struct ProcessedScan { public let glb: Data; public let manifest: ScanManifest; public let stats: ScanStats
+                              public var cleanGLB: Data? }   // photo scans: the styled model too ("photos off")
 public protocol PhotoSource { func image(for frame: CameraFrame) -> RGBImage? }   // decoded photo, sensor orientation
 public enum ScanProcessor {
   public static func process(_ scan: CaptureScan, options: ScanProcessorOptions = .init(),
@@ -207,6 +208,10 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   were sampled) should vanish, small patches yield to big ones, at most 40 levels. Texels no photo saw are filled
   smoothly from their neighbours (pull-push); charts no photo saw take the typical color of their kind of surface.
   If the photos cover less than 15% of the surfaces, the styled model is built instead.
+* **Photos off**: alongside a photo-textured model, `ProcessedScan.cleanGLB` holds the styled model of the same
+  rooms (same frame and manifest). The app uploads it as `scan-clean.glb`; the viewer shows it when a buyer or the
+  realtor turns the photos off, and the realtor's default view (the tour's `appearance`: `captured` = photos on,
+  `studio` = photos off) decides what buyers see first.
 * **Output**: one material per atlas with the photo as base color (JPEG from the app, PNG elsewhere), clamped
   sampling, `KHR_materials_unlit` on every material and no lights (the lighting is in the photos). The manifest says
   `"appearance": "captured"`, which the web app uses as the tour's default look; `ScanStats.photoCoverage` is the
@@ -236,11 +241,14 @@ The realtor opens a listing in the dashboard → **Scan with iPhone** → the se
 | --- | --- | --- |
 | `GET /api/capture/sessions/{token}` | — | `{ property: { id, addressLine, city, state }, expiresAt }` or 404 |
 | `POST /api/capture/sessions/{token}/uploads` | `{ kind: "capture" \| "package", filename, size }` | `{ method: "PUT", url, headers, assetUrl }` — `url` may be relative (resolve against the base URL) |
-| `POST /api/capture/sessions/{token}/complete` | `{ assetUrl, packageUrl \| null, manifest }` | `{ ok, rooms, floors, propertyUrl, previewUrl }` |
+| `POST /api/capture/sessions/{token}/complete` | `{ assetUrl, cleanAssetUrl \| null, packageUrl \| null, manifest }` | `{ ok, rooms, floors, propertyUrl, previewUrl }` |
 
 Files go straight to storage with `PUT` (local signed URL or Supabase Storage signed upload URL) — large scans never
-pass through a serverless function body. `complete` validates that both URLs belong to this user/property, validates
-the manifest, attaches the capture with `source = "ios_scan"` and `scan_package_url`, and marks the session complete.
+pass through a serverless function body. `complete` validates that the URLs belong to this user/property, validates
+the manifest, attaches the capture with `source = "ios_scan"`, `scan_package_url` and `clean_asset_url` (the clean
+model, uploaded as a second `capture`; optional — a missing upload just means no "photos off" view), and marks the
+session complete. Databases created before `clean_asset_url` existed get the column on the first upload that needs it
+(or from `/setup`).
 In Supabase mode these endpoints need `SUPABASE_SERVICE_ROLE_KEY` (the phone has no user session).
 
 ### 3.3 Scan package (`package.zip`)

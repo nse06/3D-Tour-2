@@ -19,6 +19,8 @@ const TourScene = dynamic(() => import("@/components/tour/TourScene"), { ssr: fa
 interface Props {
   propertyId: string;
   assetUrl: string;
+  /** Photo scans: the clean model of the same rooms (buyers can turn the photos off). */
+  cleanAssetUrl?: string | null;
   initialSpace: TourSpace;
   initialAppearance: TourAppearance;
 }
@@ -28,7 +30,7 @@ interface Props {
  * in each room. (With iPhone scans this happens automatically; this editor is
  * for manual uploads and for fine-tuning.)
  */
-export function RoomEditor({ propertyId, assetUrl, initialSpace, initialAppearance }: Props) {
+export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, initialSpace, initialAppearance }: Props) {
   const router = useRouter();
   const apiRef = useRef<ViewerApi | null>(null);
   const [space, setSpace] = useState<TourSpace>(initialSpace);
@@ -304,6 +306,9 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace, initialAppearan
               onLoaded={() => setLoaded(true)}
               onError={(m) => flash("error", m)}
               appearance={appearance}
+              cleanAssetUrl={cleanAssetUrl}
+              photos={appearance !== "studio"}
+              onSwitchError={(m) => flash("error", `That view couldn't be loaded: ${m}`)}
               effects
             />
             {!loaded && (
@@ -317,12 +322,20 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace, initialAppearan
               <span className="size-6 rounded-full border border-white/70 shadow-[0_0_0_1px_rgba(0,0,0,0.25)]" />
             </div>
             <div className="glass absolute left-4 top-4 rounded-full px-3 py-1.5 text-xs font-medium text-white">Editing viewpoints</div>
-            <div className="glass absolute right-4 top-4 flex rounded-full p-1 text-xs font-medium" role="radiogroup" aria-label="Lighting">
-              {(
-                [
-                  ["studio", "Studio light", "Soft studio lighting — best for iPhone scans and modeled homes"],
-                  ["captured", "As captured", "Unlit, exactly as scanned — best for photo-textured scans"],
-                ] as const
+            <div
+              className="glass absolute right-4 top-4 flex rounded-full p-1 text-xs font-medium"
+              role="radiogroup"
+              aria-label={cleanAssetUrl ? "What buyers see first" : "Lighting"}
+            >
+              {(cleanAssetUrl
+                ? ([
+                    ["captured", "Photos on", "Buyers start with your photos painted on the model (they can turn them off)"],
+                    ["studio", "Photos off", "Buyers start with the clean 3D model (they can turn the photos on)"],
+                  ] as const)
+                : ([
+                    ["studio", "Studio light", "Soft studio lighting — best for iPhone scans and modeled homes"],
+                    ["captured", "As captured", "Unlit, exactly as scanned — best for photo-textured scans"],
+                  ] as const)
               ).map(([value, label, title]) => (
                 <button
                   key={value}
@@ -337,7 +350,8 @@ export function RoomEditor({ propertyId, assetUrl, initialSpace, initialAppearan
                     if (!res.ok) {
                       setAppearance(previous);
                       flash("error", res.error ?? "Could not change the lighting.");
-                    } else flash("ok", value === "captured" ? "Showing the capture as scanned" : "Using studio lighting");
+                    } else if (cleanAssetUrl) flash("ok", value === "captured" ? "Buyers start with the photos on" : "Buyers start with the photos off");
+                    else flash("ok", value === "captured" ? "Showing the capture as scanned" : "Using studio lighting");
                   }}
                   className={`rounded-full px-3 py-1 transition ${appearance === value ? "bg-white text-neutral-900" : "text-white/80 hover:text-white"}`}
                 >

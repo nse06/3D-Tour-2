@@ -39,6 +39,8 @@ export interface Tour {
   id: string;
   propertyId: string;
   assetUrl: string;
+  /** Photo-textured iPhone scans: a clean model of the same rooms (the viewer's "photos off" view). */
+  cleanAssetUrl: string | null;
   assetFormat: "glb" | "gltf";
   source: CaptureSource;
   scanPackageUrl: string | null;
@@ -70,6 +72,8 @@ export interface PropertySummary {
 
 export interface CaptureInput {
   assetUrl: string;
+  /** A clean model of the same rooms, for the viewer's "photos off" view. */
+  cleanAssetUrl?: string | null;
   assetFormat: "glb" | "gltf";
   source: CaptureSource;
   /** Raw scan package (.zip) of an iPhone capture, kept for reprocessing. */

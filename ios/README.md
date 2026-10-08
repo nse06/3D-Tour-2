@@ -96,9 +96,10 @@ page says how much your photos covered.
 **A scan from an earlier version?** Builds 1–2 took each room where RoomPlan reported it, and
 RoomPlan reports every room relative to where its scan started, so rooms piled up; builds 1–3
 didn't use the photos; build 4 blended several photos per spot (soft, sometimes doubled) and
-painted furniture as plain boxes. Install the latest build over the old one (your scans stay),
-open the scan and tap **Rebuild walkthrough** (*Fix overlapping rooms* / *Add your photos to the
-walkthrough* / *Sharpen the photo walkthrough*), then **Send to Atrium** again. No rescanning:
+painted furniture as plain boxes; builds before 6 had no "photos off" view. Install the latest
+build over the old one (your scans stay), open the scan and tap **Rebuild walkthrough** (*Fix
+overlapping rooms* / *Add your photos to the walkthrough* / *Sharpen the photo walkthrough* / *Add
+the photos-off view*), then **Send to Atrium** again. No rescanning:
 the rebuild uses the RoomPlan data and photos saved on the phone. The lines under the scan's
 numbers say how the rooms were placed and how much the photos cover. Scans made with build 5 or
 later also get the sharper full-resolution photos.
@@ -110,7 +111,8 @@ can try pairing and sending on any iPhone.
 
 | File | What it is |
 | --- | --- |
-| `scan.glb` | The 3D walkthrough (5–10 MB): walls, floors, ceilings and furniture painted with your photos (or, if the photos cover too little, a styled model with lights), plus the room/viewpoint/route data. Opens in the dashboard's *As captured* look. |
+| `scan.glb` | The 3D walkthrough (5–10 MB): walls, floors, ceilings and furniture painted with your photos (or, if the photos cover too little, a styled model with lights), plus the room/viewpoint/route data. |
+| `scan-clean.glb` | Photo scans only (build 6 on): the same rooms as a clean 3D model (1–3 MB), shown when a buyer or you turn the photos off. In **Rooms & viewpoints** you choose whether buyers start with the photos on or off. |
 | `package.zip` | Raw data for future reprocessing: RoomPlan's rooms and merged structure, the scan in Atrium's format, the walked path and the photos' positions. The photos themselves stay on the phone (they're already painted into `scan.glb`). Optional — if the server refuses it (Supabase's free plan limits files to 50 MB) the walkthrough is sent without it. |
 
 Everything also stays on the phone (**Files → On My iPhone → Atrium Capture → Scans**), and

@@ -52,6 +52,9 @@ public struct ProcessedScan: Sendable {
     public let stats: ScanStats
     /// The rigid transform applied to the scan's world coordinates (identity if not normalized).
     public let frame: Transform
+    /// Photo-textured scans only: the same rooms as the styled model, without the photos — the
+    /// viewer's "photos off" view. Same frame and manifest as `glb`.
+    public var cleanGLB: Data? = nil
 }
 
 public enum ScanProcessingError: Error, LocalizedError, Equatable {
@@ -92,13 +95,19 @@ public enum ScanProcessor {
         var walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: options.wallThickness)
         Layout.cutOpenings(scan.openings, into: &walls)
 
+        let styled = try styledModel(scan, rooms: rooms, walls: walls, frame: frame, options: options)
         if let photos, !scan.frames.isEmpty,
-            let textured = try photoTextured(
+            var textured = try photoTextured(
                 scan, rooms: rooms, walls: walls, frame: frame, options: options, photos: photos, encodeImage: encodeImage, photoOptions: photoOptions)
         {
+            textured.cleanGLB = styled.glb
             return textured
         }
+        return styled
+    }
 
+    /// The styled model: category-styled furniture, procedural floors, lights.
+    static func styledModel(_ scan: CaptureScan, rooms: [RoomInfo], walls: [WallInfo], frame: Transform, options: ScanProcessorOptions) throws -> ProcessedScan {
         var mesh = MeshBuilder()
         for w in walls { WallGeometry.build(w, into: &mesh) }
         for (i, r) in rooms.enumerated() {

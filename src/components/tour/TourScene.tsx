@@ -6,7 +6,7 @@ import { Bvh } from "@react-three/drei";
 import { EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { Canvas, useLoader, useThree } from "@react-three/fiber";
-import { Component, Suspense, useEffect, useLayoutEffect, useMemo, useRef, type MutableRefObject, type ReactNode } from "react";
+import { Component, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
@@ -18,6 +18,14 @@ import type { LivePose, ViewerApi, ViewerMode } from "./viewer-types";
 
 export interface TourSceneProps {
   assetUrl: string;
+  /** iPhone photo scans: the same rooms as a clean model, shown instead when `photos` is false. */
+  cleanAssetUrl?: string | null;
+  /** Photos on (the default) or off — off shows `cleanAssetUrl`, loaded the first time it's asked for. */
+  photos?: boolean;
+  /** Which model is on screen: true while the clean one shows. */
+  onShowingClean?: (clean: boolean) => void;
+  /** The model asked for by a switch couldn't be loaded; the starting one stays on screen. */
+  onSwitchError?: (message: string) => void;
   space: TourSpace;
   startWaypoint: Waypoint;
   apiRef: MutableRefObject<ViewerApi | null>;
@@ -62,8 +70,46 @@ export default function TourScene(props: TourSceneProps) {
   );
 }
 
+function configureLoader(loader: GLTFLoader) {
+  const draco = new DRACOLoader();
+  draco.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.7/");
+  loader.setDRACOLoader(draco);
+  loader.setMeshoptDecoder(MeshoptDecoder);
+}
+
+/** Transparent surfaces don't write depth; contact shadows sit just above the floor and can't be picked. */
+function prepareScene(scene: THREE.Object3D) {
+  scene.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const m of materials) {
+      if (!m.transparent) continue;
+      m.depthWrite = false;
+      mesh.userData.noPick = m.name !== "Contact_Shadow";
+      if (m.name === "Contact_Shadow") {
+        m.polygonOffset = true;
+        m.polygonOffsetFactor = -2;
+        mesh.renderOrder = 1;
+      }
+    }
+  });
+}
+
+function countLights(scene: THREE.Object3D | null) {
+  let lights = 0;
+  scene?.traverse((o) => {
+    if ((o as THREE.Light).isLight) lights++;
+  });
+  return lights;
+}
+
 function PropertyModel({
   assetUrl,
+  cleanAssetUrl = null,
+  photos = true,
+  onShowingClean,
+  onSwitchError,
   space,
   startWaypoint,
   apiRef,
@@ -80,64 +126,74 @@ function PropertyModel({
   autoPan = false,
   onUserInteract,
 }: TourSceneProps) {
-  const modelRef = useRef<THREE.Group>(null);
-  const gltf = useLoader(
-    GLTFLoader,
-    assetUrl,
-    (loader) => {
-      const draco = new DRACOLoader();
-      draco.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.7/");
-      loader.setDRACOLoader(draco);
-      loader.setMeshoptDecoder(MeshoptDecoder);
-    },
-    (event) => {
-      if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
-    },
-  );
-
-  // Captures may or may not ship their own lights (the demo does; RoomPlan
-  // exports don't). Balance image-based lighting accordingly.
-  const hasLights = useMemo(() => {
-    let lights = 0;
-    gltf.scene.traverse((o) => {
-      if ((o as THREE.Light).isLight) lights++;
-    });
-    return lights > 0;
-  }, [gltf]);
+  // The camera rig picks floors and checks sight lines against the model on screen.
+  const modelRef = useRef<THREE.Object3D | null>(null);
+  // The model asked for at the start loads with the scene (and drives the progress bar); the
+  // other one loads the first time the visitor switches, while this one stays on screen.
+  const wantClean = !!cleanAssetUrl && !photos;
+  const [primaryIsClean] = useState(wantClean);
+  const primaryUrl = primaryIsClean && cleanAssetUrl ? cleanAssetUrl : assetUrl;
+  const alternateUrl = primaryIsClean ? assetUrl : cleanAssetUrl;
+  const gltf = useLoader(GLTFLoader, primaryUrl, configureLoader, (event) => {
+    if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
+  });
+  const [alternate, setAlternate] = useState<THREE.Object3D | null>(null);
+  const [alternateAsked, setAlternateAsked] = useState(false);
+  const [alternateFailed, setAlternateFailed] = useState(false);
+  if (wantClean !== primaryIsClean && !alternateAsked && !alternateFailed) setAlternateAsked(true);
+  const showingClean = wantClean === primaryIsClean || !alternate ? primaryIsClean : wantClean;
+  const showingPrimary = showingClean === primaryIsClean;
+  const onScreen = showingPrimary ? gltf.scene : alternate;
 
   useLayoutEffect(() => {
-    gltf.scene.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (const m of materials) {
-        if (!m.transparent) continue;
-        m.depthWrite = false;
-        mesh.userData.noPick = m.name !== "Contact_Shadow";
-        if (m.name === "Contact_Shadow") {
-          m.polygonOffset = true;
-          m.polygonOffsetFactor = -2;
-          mesh.renderOrder = 1;
-        }
-      }
-    });
+    modelRef.current = onScreen;
+  }, [onScreen]);
+  useEffect(() => {
+    onShowingClean?.(showingClean);
+  }, [showingClean, onShowingClean]);
+
+  // Captures may or may not ship their own lights (the demo and clean models do; photo models
+  // don't). Balance image-based lighting accordingly.
+  const hasLights = useMemo(() => countLights(onScreen) > 0, [onScreen]);
+
+  useLayoutEffect(() => {
+    prepareScene(gltf.scene);
     onLoaded();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gltf]);
 
+  // With a clean model to switch to, the photo model always shows as captured (unlit); without
+  // one, `appearance` picks its lighting.
+  const photoScene = primaryIsClean ? alternate : gltf.scene;
+  const photoLook: TourAppearance = cleanAssetUrl ? "captured" : appearance;
   useLayoutEffect(() => {
-    if (appearance !== "captured") return;
-    return showUnlit(gltf.scene);
-  }, [gltf, appearance]);
+    if (!photoScene || photoLook !== "captured") return;
+    return showUnlit(photoScene);
+  }, [photoScene, photoLook]);
 
-  const captured = appearance === "captured";
+  const captured = (showingClean ? "studio" : photoLook) === "captured";
   return (
     <>
       {!captured && <EnvironmentLighting intensity={hasLights ? 0.9 : 1.15} />}
       {!captured && <hemisphereLight args={["#fff8ee", "#b9ab98", hasLights ? 0.5 : 0.75]} />}
-      <Bvh firstHitOnly>
-        <primitive object={gltf.scene} ref={modelRef} />
-      </Bvh>
+      <group visible={showingPrimary}>
+        <Bvh firstHitOnly>
+          <primitive object={gltf.scene} />
+        </Bvh>
+      </group>
+      {alternateAsked && alternateUrl && (
+        <SceneErrorBoundary
+          onError={(message) => {
+            setAlternateFailed(true);
+            setAlternateAsked(false);
+            onSwitchError?.(message);
+          }}
+        >
+          <Suspense fallback={null}>
+            <AlternateModel url={alternateUrl} visible={!showingPrimary} onReady={setAlternate} />
+          </Suspense>
+        </SceneErrorBoundary>
+      )}
       <CameraRig
         space={space}
         modelRef={modelRef}
@@ -159,6 +215,22 @@ function PropertyModel({
         </EffectComposer>
       )}
     </>
+  );
+}
+
+/** The model not shown at the start (photos or clean), loaded on first switch. */
+function AlternateModel({ url, visible, onReady }: { url: string; visible: boolean; onReady: (scene: THREE.Object3D) => void }) {
+  const gltf = useLoader(GLTFLoader, url, configureLoader);
+  useLayoutEffect(() => {
+    prepareScene(gltf.scene);
+    onReady(gltf.scene);
+  }, [gltf, onReady]);
+  return (
+    <group visible={visible}>
+      <Bvh firstHitOnly>
+        <primitive object={gltf.scene} />
+      </Bvh>
+    </group>
   );
 }
 

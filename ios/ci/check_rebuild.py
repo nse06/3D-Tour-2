@@ -70,6 +70,16 @@ def main():
         assert mimes and all(m == "image/jpeg" for m in mimes), f"atlas images: {mimes}"
         assert all("KHR_materials_unlit" in m.get("extensions", {}) for m in gltf["materials"]), "materials must be unlit"
         print(f"photos painted on: {info['photos']} photos cover {info['photoCoverage']:.0%}, {len(mimes)} JPEG atlas(es)")
+        # The "photos off" view: the clean styled model of the same rooms, lit.
+        clean_path = folder / "scan-clean.glb"
+        assert clean_path.exists(), "no clean model (scan-clean.glb) next to the photo model"
+        clean = clean_path.read_bytes()
+        clean_gltf = json.loads(clean[20:20 + int.from_bytes(clean[12:16], "little")])
+        assert "KHR_lights_punctual" in clean_gltf.get("extensions", {}), "the clean model should carry its lights"
+        assert not any("KHR_materials_unlit" in m.get("extensions", {}) for m in clean_gltf["materials"]), "the clean model is lit"
+        clean_rooms = clean_gltf["scenes"][0]["extras"]["atrium"]["rooms"]
+        assert len(clean_rooms) == len(manifest["rooms"]), "the clean model covers the same rooms"
+        print(f"clean model: {len(clean) / 1e6:.1f} MB, {len(clean_rooms)} rooms")
 
 
 if __name__ == "__main__":

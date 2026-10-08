@@ -252,10 +252,19 @@ final class PhotoTexturingTests: XCTestCase {
         // Photo atlases are clamped, not repeated.
         for t in textures { XCTAssertEqual(samplers[t["sampler"] as! Int]["wrapS"] as? Int, 33071) }
 
+        // The "photos off" view comes along: the styled model of the same rooms, lit and not unlit.
+        let clean = try glbJSON(try XCTUnwrap(processed.cleanGLB, "a clean model next to the photo model"))
+        XCTAssertNotNil((clean["extensions"] as? [String: Any])?["KHR_lights_punctual"])
+        XCTAssertFalse(((clean["materials"] as? [[String: Any]]) ?? []).contains { (($0["extensions"] as? [String: Any])?["KHR_materials_unlit"]) != nil })
+        let cleanAtrium = (((clean["scenes"] as? [[String: Any]])?.first?["extras"] as? [String: Any])?["atrium"] as? [String: Any])
+        XCTAssertEqual((cleanAtrium?["rooms"] as? [Any])?.count, processed.manifest.rooms.count)
+        XCTAssertNil(cleanAtrium?["appearance"])
+
         // Without photos, the same scan still builds the styled model.
         let styled = try ScanProcessor.process(Self.room(), options: ScanProcessorOptions(textureSize: 32))
         XCTAssertNil(styled.manifest.appearance)
         XCTAssertNil(styled.stats.photoCoverage)
+        XCTAssertNil(styled.cleanGLB, "the styled model is already clean")
     }
 
     func testPatchesMeetWithoutASeam() throws {

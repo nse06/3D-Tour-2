@@ -76,6 +76,7 @@ final class ApartmentPhotoQA: XCTestCase {
         let processed = try ScanProcessor.process(scan, photos: source)
         print(String(format: "QA frames %d · %.1f s · coverage %.2f", frames.count, Date().timeIntervalSince(start), processed.stats.photoCoverage ?? -1))
         try processed.glb.write(to: URL(fileURLWithPath: out).appendingPathComponent("apartment-photo.glb"))
+        try processed.cleanGLB?.write(to: URL(fileURLWithPath: out).appendingPathComponent("apartment-clean.glb"))
         try processed.manifest.jsonData(prettyPrinted: true).write(to: URL(fileURLWithPath: out).appendingPathComponent("apartment-photo.manifest.json"))
     }
 }

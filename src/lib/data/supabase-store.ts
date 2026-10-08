@@ -37,6 +37,8 @@ interface TourRow {
   id: string;
   property_id: string;
   asset_url: string;
+  /** Added by migration 20261009000000; absent on databases that haven't run it yet. */
+  clean_asset_url?: string | null;
   asset_format: "glb" | "gltf";
   source: Tour["source"];
   scan_package_url: string | null;
@@ -101,6 +103,7 @@ const toTour = (r: TourRow): Tour => ({
   id: r.id,
   propertyId: r.property_id,
   assetUrl: r.asset_url,
+  cleanAssetUrl: r.clean_asset_url ?? null,
   assetFormat: r.asset_format,
   source: r.source,
   scanPackageUrl: r.scan_package_url,
@@ -138,6 +141,9 @@ function check<T>(res: { data: T; error: { message: string } | null }): T {
   if (res.error) throw new Error(res.error.message);
   return res.data;
 }
+
+/** PostgREST's answer when a column the request names isn't in the database (yet). */
+const MISSING_COLUMN = /PGRST204|clean_asset_url/;
 
 export type SupabaseClientFactory = () => Promise<SupabaseClient>;
 
@@ -314,23 +320,38 @@ export class SupabaseRepository implements Repository {
     const property = await this.ownedProperty(db, userId, propertyId);
     check(await db.from("tours").delete().eq("property_id", propertyId));
     const space = capture.space ?? defaultSpace();
-    const tour = check(
-      await db
-        .from("tours")
-        .insert({
-          property_id: propertyId,
-          asset_url: capture.assetUrl,
-          asset_format: capture.assetFormat,
-          source: capture.source,
-          scan_package_url: capture.scanPackageUrl ?? null,
-          appearance: capture.appearance ?? "studio",
-          processing_status: "ready",
-          navigation: { links: [], eyeHeight: space.eyeHeight },
-          published: property.published,
-        })
-        .select("*")
-        .single(),
-    ) as TourRow;
+    const row: Record<string, unknown> = {
+      property_id: propertyId,
+      asset_url: capture.assetUrl,
+      asset_format: capture.assetFormat,
+      source: capture.source,
+      scan_package_url: capture.scanPackageUrl ?? null,
+      appearance: capture.appearance ?? "studio",
+      processing_status: "ready",
+      navigation: { links: [], eyeHeight: space.eyeHeight },
+      published: property.published,
+    };
+    if (capture.cleanAssetUrl) row.clean_asset_url = capture.cleanAssetUrl;
+    const insert = () => db.from("tours").insert(row).select("*").single();
+    let result = await insert();
+    if (result.error && row.clean_asset_url && MISSING_COLUMN.test(`${result.error.code} ${result.error.message}`)) {
+      // A database set up before the clean model existed: add the column (when this server
+      // reaches Postgres directly) and retry while the API reloads its schema; at worst the
+      // tour goes up without its "photos off" view rather than not at all.
+      const { applyMigrations, databaseUrl } = await import("@/lib/migrations");
+      if (databaseUrl()) {
+        await applyMigrations().catch((e) => console.error("could not add the clean model column:", (e as Error).message));
+        for (let attempt = 0; attempt < 8 && result.error; attempt++) {
+          await new Promise((r) => setTimeout(r, 750));
+          result = await insert();
+        }
+      }
+      if (result.error && MISSING_COLUMN.test(`${result.error.code} ${result.error.message}`)) {
+        delete row.clean_asset_url;
+        result = await insert();
+      }
+    }
+    const tour = check(result) as TourRow;
     await this.writeSpace(db, tour.id, space);
   }
 

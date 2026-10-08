@@ -91,6 +91,7 @@ export function bundleToTourData(bundle: PropertyBundle): TourData | null {
       coverImageUrl: property.coverImageUrl,
     },
     assetUrl: tour.assetUrl,
+    cleanAssetUrl: tour.cleanAssetUrl ?? null,
     source: tour.source,
     appearance: tour.appearance ?? "studio",
     space,

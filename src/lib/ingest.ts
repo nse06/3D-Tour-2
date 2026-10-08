@@ -11,6 +11,8 @@ import type { CaptureSource } from "@/lib/tour/types";
 
 export interface IngestRequest {
   assetUrl: unknown;
+  /** Photo scans: a clean model of the same rooms (the viewer's "photos off" view). */
+  cleanAssetUrl?: unknown;
   /** Raw iPhone scan package (.zip), kept for reprocessing. */
   packageUrl?: unknown;
   /** Scan manifest from the file (rooms, floors, waypoints, links), if any. */
@@ -32,9 +34,12 @@ export async function ingestCapture(
   request: IngestRequest,
   options: { admin?: boolean } = {},
 ): Promise<IngestResult> {
-  const { assetUrl, packageUrl = null, manifest = null } = request;
+  const { assetUrl, cleanAssetUrl = null, packageUrl = null, manifest = null } = request;
   if (typeof assetUrl !== "string" || !isOwnedAssetUrl(assetUrl, userId, propertyId, "capture")) {
     return { ok: false, status: 400, error: "Unknown upload." };
+  }
+  if (cleanAssetUrl !== null && (typeof cleanAssetUrl !== "string" || !isOwnedAssetUrl(cleanAssetUrl, userId, propertyId, "capture"))) {
+    return { ok: false, status: 400, error: "Unknown clean model upload." };
   }
   if (packageUrl !== null && (typeof packageUrl !== "string" || !isOwnedAssetUrl(packageUrl, userId, propertyId, "package"))) {
     return { ok: false, status: 400, error: "Unknown scan package." };
@@ -42,6 +47,8 @@ export async function ingestCapture(
   if (!(await assetExists(assetUrl, options))) {
     return { ok: false, status: 400, error: "The 3D model didn't finish uploading. Please try again." };
   }
+  // The clean model is optional: if it didn't arrive, the tour goes up with photos only.
+  const clean = cleanAssetUrl !== null && (await assetExists(cleanAssetUrl as string, options)) ? (cleanAssetUrl as string) : null;
 
   let space = null;
   let appearance: "studio" | "captured" = "studio";
@@ -65,6 +72,7 @@ export async function ingestCapture(
   try {
     await repo.attachCapture(userId, propertyId, {
       assetUrl,
+      cleanAssetUrl: clean,
       assetFormat: assetUrl.toLowerCase().endsWith(".gltf") ? "gltf" : "glb",
       source,
       scanPackageUrl: packageUrl as string | null,

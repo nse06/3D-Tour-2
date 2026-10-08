@@ -104,13 +104,17 @@ struct ScanDetailView: View {
 
     private func rebuildCard(_ scan: ScanRecord) -> some View {
         let pipeline = scan.pipeline ?? 1
-        let title = pipeline < 3 ? "Fix overlapping rooms" : pipeline < 4 ? "Add your photos to the walkthrough" : "Sharpen the photo walkthrough"
+        let title =
+            pipeline < 3
+            ? "Fix overlapping rooms" : pipeline < 4 ? "Add your photos to the walkthrough" : pipeline < 5 ? "Sharpen the photo walkthrough" : "Add the photos-off view"
         let text =
             pipeline < 3
             ? "This scan was built before Atrium Capture lined rooms up with each other or used your photos, so rooms may overlap. Rebuilding fixes that and paints the photos taken while scanning onto the walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
             : pipeline < 4
                 ? "This scan was built before Atrium Capture painted the photos taken while scanning onto the model. Rebuild to see your real walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
-                : "Atrium Capture now paints each surface from its sharpest photo instead of blending several, shapes furniture (mattress, headboard, seat, back) and closes gaps under ceilings. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
+                : pipeline < 5
+                    ? "Atrium Capture now paints each surface from its sharpest photo instead of blending several, shapes furniture (mattress, headboard, seat, back) and closes gaps under ceilings. Rebuild to apply it — this also adds a clean 3D view buyers can switch to. No rescanning needed. Afterwards, send it to Atrium again."
+                    : "Buyers and you can now switch the photos off in the walkthrough and see a clean 3D model of the home. Rebuild to add it. No rescanning needed. Afterwards, send it to Atrium again."
         return VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: "wand.and.stars")
                 .font(.headline)

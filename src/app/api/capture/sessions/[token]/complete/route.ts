@@ -6,7 +6,7 @@ import { ingestCapture } from "@/lib/ingest";
 
 /**
  * The phone finished uploading: make the scan the listing's walkthrough.
- * Body: { assetUrl, packageUrl | null, manifest } (docs/iphone-capture.md §3.2).
+ * Body: { assetUrl, cleanAssetUrl | null, packageUrl | null, manifest } (docs/iphone-capture.md §3.2).
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/capture/sessions/[token]/complete">) {
   const { token } = await ctx.params;
@@ -23,7 +23,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/capture/ses
       session.userId,
       property.id,
       "ios_scan",
-      { assetUrl: body.assetUrl, packageUrl: body.packageUrl ?? null, manifest: body.manifest ?? null },
+      { assetUrl: body.assetUrl, cleanAssetUrl: body.cleanAssetUrl ?? null, packageUrl: body.packageUrl ?? null, manifest: body.manifest ?? null },
       { admin: true },
     );
     if (!result.ok) return apiError(result.status, result.error);

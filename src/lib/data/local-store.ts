@@ -43,7 +43,12 @@ async function readDb(): Promise<Db> {
     const raw = await fs.readFile(dbFile(), "utf8");
     const db: Db = { ...empty(), ...JSON.parse(raw) };
     // Tours saved before these fields existed.
-    db.tours = db.tours.map((t) => ({ ...t, scanPackageUrl: t.scanPackageUrl ?? null, appearance: t.appearance ?? "studio" }));
+    db.tours = db.tours.map((t) => ({
+      ...t,
+      cleanAssetUrl: t.cleanAssetUrl ?? null,
+      scanPackageUrl: t.scanPackageUrl ?? null,
+      appearance: t.appearance ?? "studio",
+    }));
     return db;
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return empty();
@@ -197,6 +202,7 @@ export class LocalRepository implements Repository {
         id: randomUUID(),
         propertyId,
         assetUrl: capture.assetUrl,
+        cleanAssetUrl: capture.cleanAssetUrl ?? null,
         assetFormat: capture.assetFormat,
         source: capture.source,
         scanPackageUrl: capture.scanPackageUrl ?? null,

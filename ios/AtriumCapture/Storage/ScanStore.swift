@@ -49,6 +49,9 @@ final class ScanStore: @unchecked Sendable {
 
     func directory(for id: UUID) -> URL { root.appendingPathComponent(id.uuidString, isDirectory: true) }
     func modelURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("scan.glb") }
+    /// The clean model for the viewer's "photos off" view (photo-textured scans built by pipeline 6 on).
+    static let cleanModelFile = "scan-clean.glb"
+    func cleanModelURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent(Self.cleanModelFile) }
     func manifestURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("manifest.json") }
     func packageURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("package.zip") }
     func previewURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("roomplan/structure.usdz") }
@@ -114,7 +117,7 @@ final class ScanStore: @unchecked Sendable {
         let zip = packageURL(for: id)
         if FileManager.default.fileExists(atPath: zip.path) { return zip }
         let folder = directory(for: id)
-        let skip: Set<String> = ["package.zip", "package.zip.partial", "record.json", "scan.glb"]
+        let skip: Set<String> = ["package.zip", "package.zip.partial", "record.json", "scan.glb", Self.cleanModelFile]
         var files: [(path: String, url: URL)] = []
         if let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey]) {
             for case let url as URL in walker {

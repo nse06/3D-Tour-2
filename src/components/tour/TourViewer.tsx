@@ -1,6 +1,24 @@
 "use client";
 
-import { ArrowRight, Check, ChevronLeft, ChevronRight, Info, Layers, List, MapIcon, Maximize2, Minimize2, Pause, Play, Share2, X } from "lucide-react";
+import {
+  ArrowRight,
+  Box,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Image as ImageIcon,
+  Info,
+  Layers,
+  List,
+  Loader2,
+  MapIcon,
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
+  Share2,
+  X,
+} from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { cityLine, formatBaths, formatNumber, formatPrice } from "@/lib/format";
@@ -71,6 +89,13 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
   const [fullscreen, setFullscreen] = useState(false);
   const [titleCard, setTitleCard] = useState<{ room: TourRoom; key: number } | null>(null);
   const [playing, setPlaying] = useState(false);
+  // Photo scans with a clean model: photos on or off. The realtor's default view picks the start.
+  const [startWithPhotos] = useState(!(data.cleanAssetUrl && data.appearance === "studio"));
+  const [photos, setPhotos] = useState(startWithPhotos);
+  const [showingClean, setShowingClean] = useState(!startWithPhotos);
+  const [switchFailed, setSwitchFailed] = useState(false);
+  const hasClean = !!data.cleanAssetUrl && !switchFailed;
+  const switching = hasClean && showingClean === photos;
   const pendingTitle = useRef<TourRoom | null>(null);
   const webgl = useSyncExternalStore(noopSubscribe, hasWebGL, () => true);
 
@@ -222,6 +247,14 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
       {webgl && (
         <TourScene
           assetUrl={data.assetUrl}
+          cleanAssetUrl={data.cleanAssetUrl}
+          photos={photos}
+          onShowingClean={setShowingClean}
+          onSwitchError={() => {
+            setSwitchFailed(true);
+            setPhotos(startWithPhotos);
+            setToast(startWithPhotos ? "The clean model couldn't be loaded" : "The photos couldn't be loaded");
+          }}
           appearance={data.appearance}
           space={space}
           startWaypoint={startWaypoint}
@@ -359,6 +392,21 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
           <IconButton label={planOpen ? "Hide floor plan" : "Show floor plan"} onClick={() => setPlanOpen(!planOpen)} active={planOpen}>
             <MapIcon className="size-[18px]" />
           </IconButton>
+          {hasClean && (
+            <button
+              onClick={() => {
+                setPhotos(!photos);
+                setToast(photos ? "Photos off — the clean 3D model" : "Photos on");
+              }}
+              aria-pressed={photos}
+              aria-label={photos ? "Turn photos off" : "Turn photos on"}
+              title={photos ? "Turn photos off: see the clean 3D model" : "Turn photos on"}
+              className="glass flex h-11 items-center gap-2 rounded-full px-3.5 text-[13px] font-medium text-white/90 transition hover:bg-white/20 hover:text-white sm:pr-4"
+            >
+              {switching ? <Loader2 className="size-4 animate-spin" /> : photos ? <ImageIcon className="size-4" /> : <Box className="size-4" />}
+              <span className="hidden sm:inline">{photos ? "Photos on" : "Photos off"}</span>
+            </button>
+          )}
           <button
             onClick={togglePlay}
             aria-label={playing ? "Pause guided tour" : "Play guided tour"}

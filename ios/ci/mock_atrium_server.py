@@ -116,6 +116,7 @@ def make_handler(state: State):
                     "glbBytes": len(state.files[asset]),
                     "meshes": glb["meshes"],
                     "packageUrl": data.get("packageUrl"),
+                    "cleanAssetUrl": data.get("cleanAssetUrl"),
                 }
                 state.out.mkdir(parents=True, exist_ok=True)
                 (state.out / "results.json").write_text(json.dumps(result, indent=2))

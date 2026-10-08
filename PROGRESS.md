@@ -38,4 +38,6 @@ Branch: `claude/3d-real-estate-tour-mvp-pxgyqw`
 | Photos painted on the model (build 4): charts + atlases, two-pass baking with depth-tested best views, exposure matching, unlit model, captured look by default | done — the user's verdict: works and makes the space feel real, but soft; ghosting on appliances, stretched bed/armchair, bright band under the kitchen ceiling, white strips on wall edges |
 | Sharper photo painting (build 5): one photo per ~3 cm cell with neighbour smoothing and seam-only blending, blur-aware scores, furniture in parts, face-only sampling, per-channel exposure/white-balance gains, seam leveling, wall-colored edges, walls extended to the ceiling, 8 mm texels; app takes full-resolution photos when the phone is steady and shows a photo count / slow-down hint | done — 10 photo XCTests + turn-rate test; waiting on the user's rebuild and a new slow scan |
 
+| Photos on/off (build 6): photo scans also carry the clean styled model; buyers flip "Photos on/off" in the walkthrough, the realtor picks what buyers see first; the camera stays put; the DB column adds itself on first use | done — e2e in a browser (phone API → publish → buyer toggle → realtor default) |
+
 Next (agreed order): 360° photo spots at the waypoints; LiDAR furniture shapes; turn email confirmation back on before opening sign-ups.

@@ -103,12 +103,14 @@ struct AtriumAPI {
         progress(1)
     }
 
-    func complete(assetUrl: String, packageUrl: String?, manifest: Data) async throws -> Completion {
+    /// - Parameter cleanAssetUrl: the uploaded clean model ("photos off" view), if the scan has one.
+    func complete(assetUrl: String, cleanAssetUrl: String?, packageUrl: String?, manifest: Data) async throws -> Completion {
         var request = URLRequest(url: endpoint("/complete"), timeoutInterval: 120)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: Any] = [
             "assetUrl": assetUrl,
+            "cleanAssetUrl": cleanAssetUrl.map { $0 as Any } ?? NSNull(),
             "packageUrl": packageUrl.map { $0 as Any } ?? NSNull(),
             "manifest": try JSONSerialization.jsonObject(with: manifest),
         ]

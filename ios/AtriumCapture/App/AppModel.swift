@@ -230,6 +230,14 @@ final class AppModel: ObservableObject {
             try await api.put(model, to: modelTarget) { fraction in
                 Task { @MainActor [weak self] in self?.setProgress(id, modelShare * fraction) }
             }
+            // The clean model behind the viewer's "photos off" switch (small; photo-textured scans only).
+            var cleanUrl: String?
+            let clean = store.cleanModelURL(for: id)
+            if FileManager.default.fileExists(atPath: clean.path) {
+                let target = try await api.uploadTarget(kind: "capture", filename: ScanStore.cleanModelFile, size: store.fileSize(clean))
+                try await api.put(clean, to: target) { _ in }
+                cleanUrl = target.assetUrl
+            }
             var packageUrl: String?
             if let package {
                 do {
@@ -244,7 +252,7 @@ final class AppModel: ObservableObject {
                 }
             }
             uploads[id] = .finishing
-            let done = try await api.complete(assetUrl: modelTarget.assetUrl, packageUrl: packageUrl, manifest: manifest)
+            let done = try await api.complete(assetUrl: modelTarget.assetUrl, cleanAssetUrl: cleanUrl, packageUrl: packageUrl, manifest: manifest)
             uploads[id] = .done(done)
             var updated = record
             updated.delivery = ScanRecord.Delivery(propertyLabel: pairing.propertyLabel, propertyUrl: done.propertyUrl, previewUrl: done.previewUrl, sentAt: Date())

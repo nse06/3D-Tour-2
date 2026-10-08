@@ -118,7 +118,7 @@ export default async function SetupPage() {
                   </p>
                 )}
               </div>
-              <p className="mt-3 text-xs text-neutral-500">Missing tables: {status.missing.join(", ")}.</p>
+              <p className="mt-3 text-xs text-neutral-500">Missing: {status.missing.join(", ")}.</p>
             </Card>
           </>
         )}

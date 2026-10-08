@@ -29,6 +29,7 @@ export function sampleTour(): TourData {
       coverImageUrl: DEMO_COVER_URL,
     },
     assetUrl: DEMO_ASSET_URL,
+    cleanAssetUrl: null,
     source: "demo",
     appearance: "studio",
     space: manifestToSpace(demoManifest(), (kind, key) => `${kind}-${key}`),

@@ -13,7 +13,8 @@ enum ScanBuilder {
     /// Bumped whenever rebuilding gives a meaningfully better walkthrough.
     /// 1–2: rooms taken as RoomPlan reported them. 3: rooms aligned into one frame.
     /// 4: the scan's photos painted onto the model. 5: one sharp photo per patch, furniture in parts.
-    static let pipelineVersion = 5
+    /// 6: a clean model next to the photo model, for the viewer's "photos off" view.
+    static let pipelineVersion = 6
 
     enum Step: Int, CaseIterable {
         case combining, modeling, packaging
@@ -182,6 +183,9 @@ enum ScanBuilder {
         await progress(.packaging)
         try aligned.scan.jsonData(prettyPrinted: false).write(to: dir.appendingPathComponent("scan.json"))
         try processed.glb.write(to: dir.appendingPathComponent("scan.glb"))
+        // The "photos off" view: the same rooms as a clean model (photo-textured scans only).
+        let clean = dir.appendingPathComponent(ScanStore.cleanModelFile)
+        if let cleanGLB = processed.cleanGLB { try cleanGLB.write(to: clean) } else { try? FileManager.default.removeItem(at: clean) }
         try processed.manifest.jsonData(prettyPrinted: true).write(to: dir.appendingPathComponent("manifest.json"))
         let reportEncoder = JSONEncoder()
         reportEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -200,6 +204,7 @@ enum ScanBuilder {
             "structure": structureNote,
             "photos": frames.count,
             "photoCoverage": processed.stats.photoCoverage ?? 0,
+            "cleanModel": processed.cleanGLB != nil,
         ]
         try JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]).write(to: dir.appendingPathComponent("info.json"))
         // The package zips these files; an old one would be stale.
