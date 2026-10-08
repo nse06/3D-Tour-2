@@ -1,0 +1,52 @@
+"""Assembles the comparison page: python3 tools/build_site.py <splats.spz>
+
+site/index.html (three.js from jsDelivr, for publishing), site/local.html (local copy, for tests),
+site/models/*, site/img/ref-*.jpg, site/views.json (metrics filled in by tools/evaluate.py).
+"""
+import json
+import math
+import shutil
+import sys
+from pathlib import Path
+
+from PIL import Image
+
+root = Path(__file__).resolve().parent.parent
+site, data = root / "site", root / "data"
+spz = Path(sys.argv[1])
+(site / "models").mkdir(parents=True, exist_ok=True)
+(site / "img").mkdir(exist_ok=True)
+shutil.copy(root / "out/painted-today.jpg.glb", site / "models/today.glb")
+shutil.copy(root / "out/painted-lidar.jpg.glb", site / "models/lidar.glb")
+shutil.copy(spz, site / "models/splats.spz")
+tests = json.loads((data / "test.json").read_text())
+SHORT = ["Sofa", "Living from door", "TV wall", "From kitchen", "Kitchen table", "Counter", "Glossy floor", "Hall mirror", "Hallway", "Bedroom", "Bath mirror", "Primary"]
+old = {}
+if (site / "views.json").exists():
+    old = json.loads((site / "views.json").read_text())
+views = []
+for i, t in enumerate(tests):
+    Image.open(data / t["file"]).convert("RGB").save(site / f"img/ref-{i:02d}.jpg", quality=90)
+    prev = old.get("views", [{}] * len(tests))[i] if old else {}
+    views.append({"name": t["name"], "short": SHORT[i], "transform": t["transform"], "psnr": prev.get("psnr", {"today": 0, "lidar": 0, "splat": 0}),
+                  "ssim": prev.get("ssim", {"today": 0, "lidar": 0, "splat": 0})})
+fy, h = tests[0]["intrinsics"][4], tests[0]["height"]
+size = lambda p: f"{p.stat().st_size / 1e6:.1f} MB"
+summary = old.get("summary") or {}
+for k in ("today", "lidar", "splat"):
+    summary.setdefault(k, {"psnr": 0, "ssim": 0})
+summary["today"].update(size=size(site / "models/today.glb"), where="On the iPhone", time="About 10 seconds", cost="Free", clean="Yes")
+summary["lidar"].update(size=size(site / "models/lidar.glb"), where="On the iPhone", time="About 10 seconds", cost="Free", clean="Yes")
+summary["splat"].update(size=size(site / "models/splats.spz"), where="Cloud GPU", time=summary["splat"].get("time", "—"), cost="About $0.30–1 of GPU time", clean="No (needs the painted model)")
+doc = {
+    "fovY": 2 * math.degrees(math.atan(h / 2 / fy)),
+    "files": {"today": "models/today.glb", "lidar": "models/lidar.glb", "splat": "models/splats.spz"},
+    "views": views,
+    "summary": summary,
+    "notes": old.get("notes", []),
+}
+(site / "views.json").write_text(json.dumps(doc, indent=1))
+template = (site / "template.html").read_text()
+(site / "index.html").write_text(template.replace("__THREE__", "https://cdn.jsdelivr.net/npm/three@0.186.0"))
+(site / "local.html").write_text(template.replace("__THREE__", "/vendor/three@0.186.0"))
+print("site assembled:", ", ".join(f"{p.name} {size(p)}" for p in sorted((site / "models").iterdir())))

@@ -1,0 +1,365 @@
+<title>Photoreal vs. Painted</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap">
+<style>
+  /* Layout: one reading column; the viewer and the comparison grid are the two working surfaces. */
+  :root {
+    --ink: #161514; --paper: #f7f4ef; --linen: #efe9df; --sand: #e4dccf; --stone: #8b8479; --gold: #b8955a;
+    --bg: var(--paper); --fg: var(--ink); --muted: #6f685e; --line: #ded5c6; --panel: #fffdf9; --chip: var(--linen); --chip-on: var(--ink); --chip-on-fg: var(--paper);
+    --good: #4f7a4a; --warn: #a8642d;
+    --display: "Cormorant Garamond", "Cormorant", ui-serif, Georgia, serif;
+    --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #141312; --fg: #f1ece4; --muted: #a59d90; --line: #34302b; --panel: #1c1a18; --chip: #26231f; --chip-on: #f1ece4; --chip-on-fg: #141312; --gold: #cfae74; --good: #8db886; --warn: #d9995f; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #141312; --fg: #f1ece4; --muted: #a59d90; --line: #34302b; --panel: #1c1a18; --chip: #26231f; --chip-on: #f1ece4; --chip-on-fg: #141312; --gold: #cfae74; --good: #8db886; --warn: #d9995f; color-scheme: dark; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 980px; margin: 0 auto; padding-inline: 18px; padding-block: 28px 64px; display: grid; gap: 34px; }
+  header { display: grid; gap: 10px; }
+  .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); font-weight: 600; }
+  h1 { font-family: var(--display); font-weight: 600; font-size: clamp(34px, 6vw, 52px); line-height: 1.02; margin: 0; text-wrap: balance; }
+  h2 { font-family: var(--display); font-weight: 600; font-size: 28px; line-height: 1.1; margin: 0; text-wrap: balance; }
+  p { margin: 0; max-width: 66ch; }
+  .lede { font-size: 17px; color: var(--fg); }
+  .muted { color: var(--muted); }
+  section { display: grid; gap: 14px; }
+  .viewer { display: grid; gap: 10px; }
+  .stage { position: relative; width: 100%; max-width: 100%; aspect-ratio: 4 / 3; background: #e7e2da; border-radius: 6px; overflow: hidden; touch-action: none; user-select: none; }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  .stage canvas:active { cursor: grabbing; }
+  .stage img.ref { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+  .badge { position: absolute; left: 10px; top: 10px; background: rgba(22, 21, 20, 0.72); color: #f7f4ef; font-size: 12px; padding: 4px 9px; border-radius: 999px; letter-spacing: 0.02em; pointer-events: none; }
+  .status { position: absolute; right: 10px; bottom: 10px; background: rgba(22, 21, 20, 0.72); color: #f7f4ef; font-size: 12px; padding: 4px 9px; border-radius: 999px; pointer-events: none; }
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+  .seg button, .chips button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--chip); color: var(--fg); padding: 7px 12px; border-radius: 999px; cursor: pointer; }
+  .seg button[aria-pressed="true"], .chips button[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-fg); border-color: var(--chip-on); }
+  .seg button:disabled { opacity: 0.45; cursor: default; }
+  .seg button:focus-visible, .chips button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+  .chips button { white-space: nowrap; }
+  .hint { font-size: 12.5px; color: var(--muted); }
+  .methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .method { border-top: 2px solid var(--line); padding-top: 10px; display: grid; gap: 6px; min-width: 0; }
+  .method h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .method .k { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .method.splat { border-top-color: var(--gold); }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; min-width: 560px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  td.num { text-align: right; white-space: nowrap; }
+  .best { color: var(--good); font-weight: 600; }
+  .grid { display: grid; gap: 18px; }
+  .row { display: grid; gap: 6px; }
+  .row h3 { margin: 0; font-size: 14px; font-weight: 600; }
+  .cells { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .cell { display: grid; gap: 3px; min-width: 0; }
+  .cell img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 3px; background: var(--linen); display: block; }
+  .cell span { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .cell span b { color: var(--fg); font-weight: 600; }
+  @media (max-width: 560px) { .cells { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .notes { display: grid; gap: 10px; }
+  .notes ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 70ch; }
+  footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<script type="importmap">{"imports": {"three": "__THREE__/build/three.webgpu.js", "three/webgpu": "__THREE__/build/three.webgpu.js", "three/tsl": "__THREE__/build/three.tsl.js", "three/addons/": "__THREE__/examples/jsm/"}}</script>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Atrium · photoreal prototype</div>
+    <h1>Painted model or Gaussian splats?</h1>
+    <p class="lede">The same 665 phone-style photos of Atrium's demo apartment, turned into a walkthrough three ways. Switch between them at the same spot, or jump to one of 12 viewpoints that none of the methods saw and compare against the real photo.</p>
+  </header>
+
+  <section class="viewer" aria-label="Walkthrough viewer">
+    <div class="stage" id="stage">
+      <canvas id="canvas" aria-label="3D view of the apartment"></canvas>
+      <img class="ref" id="ref" alt="" hidden>
+      <div class="badge" id="badge">Loading…</div>
+      <div class="status" id="status" hidden></div>
+    </div>
+    <div class="seg" role="group" aria-label="Method">
+      <button type="button" id="m-today" data-method="today">Today · painted boxes</button>
+      <button type="button" id="m-lidar" data-method="lidar">Build 7 · LiDAR shapes</button>
+      <button type="button" id="m-splat" data-method="splat">Photoreal · splats</button>
+      <button type="button" id="m-ref" data-method="ref" disabled>Real photo</button>
+    </div>
+    <div class="chips" id="views" role="group" aria-label="Viewpoints"></div>
+    <p class="hint">Drag to look around. Scroll or pinch to step forward and back; arrow keys or W A S D walk. "Real photo" works at a viewpoint, before you move.</p>
+  </section>
+
+  <section aria-labelledby="h-methods">
+    <h2 id="h-methods">The three options</h2>
+    <div class="methods">
+      <div class="method">
+        <div class="k">Today (build 6)</div>
+        <h3>Photos painted on RoomPlan's boxes</h3>
+        <p class="muted">Runs on the phone in seconds. Walls and floors look right; furniture is a box, so a sofa's cushions and a chair's legs smear across flat faces.</p>
+      </div>
+      <div class="method">
+        <div class="k">Build 7 (shipping now)</div>
+        <h3>Photos painted on the LiDAR mesh</h3>
+        <p class="muted">Still on the phone, still seconds. Furniture and clutter keep their real shape from the iPhone's LiDAR; edges of thin parts (chair legs, lamp poles) are rough.</p>
+      </div>
+      <div class="method splat">
+        <div class="k">Photoreal (cloud GPU)</div>
+        <h3>Gaussian splats trained on the photos</h3>
+        <p class="muted">Hundreds of thousands of soft, colored blobs fitted to the photos. Reflections, window views and clutter come out the way the camera saw them. Needs a GPU in the cloud.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-score">
+    <h2 id="h-score">Scorecard</h2>
+    <p class="muted" id="score-intro">How close each result is to the real photo at the 12 held-out viewpoints (higher is better), and what each costs to make and to view.</p>
+    <div class="tablewrap"><table id="score"></table></div>
+  </section>
+
+  <section aria-labelledby="h-grid">
+    <h2 id="h-grid">All 12 viewpoints</h2>
+    <p class="muted">Real photo, then the three results from exactly the same camera. The number is PSNR in dB against the real photo.</p>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section class="notes" aria-labelledby="h-notes">
+    <h2 id="h-notes">What this prototype shows, and what it doesn't</h2>
+    <ul id="notes"></ul>
+  </section>
+
+  <footer id="footer">Built overnight for the Atrium walkthrough decision. The apartment is synthetic: a rendered version of the demo scan with real furniture shapes, so every method can be checked against the exact photo it should reproduce.</footer>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { SPZLoader } from "three/addons/loaders/SPZLoader.js";
+import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
+import { sRGBTransferEOTF, vec4 } from "three/tsl";
+
+const $ = (id) => document.getElementById(id);
+const data = await (await fetch("views.json")).json();
+const views = data.views;
+const LABEL = { today: "Today · painted boxes", lidar: "Build 7 · LiDAR shapes", splat: "Photoreal · Gaussian splats", ref: "Real photo" };
+
+// ----- static content: scorecard, grid, notes -----
+{
+  const s = data.summary;
+  const cols = ["today", "lidar", "splat"];
+  const best = (key, higher = true) => cols.reduce((b, c) => (s[c][key] === undefined ? b : b === null || (higher ? s[c][key] > s[b][key] : s[c][key] < s[b][key]) ? c : b), null);
+  const bp = best("psnr"), bs = best("ssim");
+  const rows = [
+    ["Average PSNR vs. the real photo", (c) => `<span class="${c === bp ? "best" : ""}">${s[c].psnr.toFixed(2)} dB</span>`, "num"],
+    ["Average SSIM (structure, 0–1)", (c) => `<span class="${c === bs ? "best" : ""}">${s[c].ssim.toFixed(3)}</span>`, "num"],
+    ["Download for buyers", (c) => s[c].size, "num"],
+    ["Where it's made", (c) => s[c].where, ""],
+    ["Time to make", (c) => s[c].time, ""],
+    ["Cost per listing", (c) => s[c].cost, ""],
+    ["Photos-off clean model", (c) => s[c].clean, ""],
+  ];
+  $("score").innerHTML = `<thead><tr><th></th>${cols.map((c) => `<th>${LABEL[c]}</th>`).join("")}</tr></thead><tbody>${rows
+    .map(([name, f, cls]) => `<tr><td>${name}</td>${cols.map((c) => `<td class="${cls}">${f(c)}</td>`).join("")}</tr>`)
+    .join("")}</tbody>`;
+  $("grid").innerHTML = views
+    .map((v, i) => {
+      const cell = (key, label) =>
+        `<div class="cell"><img loading="lazy" src="img/${key}-${String(i).padStart(2, "0")}.jpg" alt="${label}, ${v.name}" width="480" height="360"><span>${label}${key === "ref" ? "" : ` <b>${v.psnr[key].toFixed(1)}</b>`}</span></div>`;
+      return `<div class="row"><h3>${v.name}</h3><div class="cells">${cell("ref", "Real photo")}${cell("today", "Today")}${cell("lidar", "Build 7")}${cell("splat", "Photoreal")}</div></div>`;
+    })
+    .join("");
+  $("notes").innerHTML = data.notes.map((n) => `<li>${n}</li>`).join("");
+}
+
+// ----- viewer -----
+const canvas = $("canvas"), stage = $("stage");
+// three's splat renderer works on WebGPU and WebGL 2; WebGL 2 runs the same everywhere (some WebGPU
+// implementations lack features three r186 uses).
+const renderer = new THREE.WebGPURenderer({ canvas, antialias: true, forceWebGL: true });
+await renderer.init();
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#e7e2da");
+const camera = new THREE.PerspectiveCamera(data.fovY, 4 / 3, 0.05, 80);
+camera.rotation.order = "YXZ";
+
+const models = { today: null, lidar: null, splat: null };
+const loading = {};
+let method = "lidar", viewIndex = 0, atView = true, dirty = true;
+
+function setStatus(text) {
+  $("status").hidden = !text;
+  $("status").textContent = text || "";
+}
+
+function load(key) {
+  if (loading[key]) return loading[key];
+  const file = data.files[key];
+  const progress = (e) => {
+    if (method === key && e.total) setStatus(`Loading ${Math.round((e.loaded / e.total) * 100)}% of ${(e.total / 1e6).toFixed(1)} MB`);
+  };
+  loading[key] = (key === "splat"
+    ? new SPZLoader().loadAsync(file, progress).then((geometry) => {
+        // The splats were fitted to the photos' sRGB values; the renderer encodes its output as sRGB.
+        const splat = new GaussianSplat(geometry);
+        const c = splat.material.colorNode;
+        splat.material.colorNode = vec4(sRGBTransferEOTF(c.rgb), c.a);
+        return splat;
+      })
+    : new GLTFLoader().loadAsync(file, progress).then((gltf) => {
+        gltf.scene.traverse((o) => {
+          if (!o.isMesh) return;
+          const m = o.material;
+          o.material = new THREE.MeshBasicMaterial({ map: m.map ?? null, color: 0xffffff, toneMapped: false });
+        });
+        return gltf.scene;
+      })
+  ).then((object) => {
+    object.visible = false;
+    scene.add(object);
+    models[key] = object;
+    if (method === key) show(key);
+    return object;
+  }).catch((e) => {
+    console.error(e);
+    if (method === key) setStatus("This model didn't load. Try another, or reload the page.");
+  });
+  return loading[key];
+}
+
+function show(key) {
+  method = key;
+  for (const b of document.querySelectorAll(".seg button")) b.setAttribute("aria-pressed", String(b.dataset.method === key));
+  const isRef = key === "ref";
+  $("ref").hidden = !isRef;
+  if (isRef) $("ref").src = `img/ref-${String(viewIndex).padStart(2, "0")}.jpg`;
+  $("badge").textContent = LABEL[key];
+  for (const [k, obj] of Object.entries(models)) if (obj) obj.visible = k === key;
+  if (!isRef && !models[key]) {
+    setStatus("Loading…");
+    load(key);
+  } else {
+    setStatus("");
+  }
+  dirty = true;
+}
+
+function goTo(i) {
+  viewIndex = i;
+  const v = views[i];
+  const m = new THREE.Matrix4().fromArray(v.transform);
+  const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scale = new THREE.Vector3();
+  m.decompose(pos, quat, scale);
+  camera.position.copy(pos);
+  camera.quaternion.copy(quat);
+  camera.rotation.setFromQuaternion(quat, "YXZ");
+  atView = true;
+  $("m-ref").disabled = false;
+  for (const b of $("views").querySelectorAll("button")) b.setAttribute("aria-pressed", String(Number(b.dataset.i) === i));
+  if (method === "ref") show("ref");
+  dirty = true;
+}
+
+function moved() {
+  if (atView) {
+    atView = false;
+    $("m-ref").disabled = true;
+    for (const b of $("views").querySelectorAll("button")) b.setAttribute("aria-pressed", "false");
+    if (method === "ref") show(models.splat ? "splat" : "lidar");
+  }
+  dirty = true;
+}
+
+$("views").innerHTML = views.map((v, i) => `<button type="button" data-i="${i}" id="view-${i}">${v.short}</button>`).join("");
+$("views").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) goTo(Number(b.dataset.i));
+});
+for (const b of document.querySelectorAll(".seg button")) b.addEventListener("click", () => show(b.dataset.method));
+
+// Look around (drag), step (wheel, pinch), walk (keys).
+const pointers = new Map();
+let pinch = 0;
+canvas.addEventListener("pointerdown", (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+});
+canvas.addEventListener("pointermove", (e) => {
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  if (pointers.size === 1) {
+    const k = 1.4 / stage.clientHeight;
+    camera.rotation.y += (e.clientX - p.x) * k;
+    camera.rotation.x = THREE.MathUtils.clamp(camera.rotation.x + (e.clientY - p.y) * k, -1.3, 1.3);
+    moved();
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    p.x = e.clientX;
+    p.y = e.clientY;
+    const [a2, b2] = [...pointers.values()];
+    const d2 = Math.hypot(a2.x - b2.x, a2.y - b2.y);
+    step((d2 - d) * 0.01);
+    return;
+  }
+  p.x = e.clientX;
+  p.y = e.clientY;
+});
+const release = (e) => pointers.delete(e.pointerId);
+canvas.addEventListener("pointerup", release);
+canvas.addEventListener("pointercancel", release);
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  step(-Math.sign(e.deltaY) * 0.25);
+}, { passive: false });
+function step(forward, side = 0) {
+  const yaw = camera.rotation.y;
+  camera.position.x += -Math.sin(yaw) * forward + Math.cos(yaw) * side;
+  camera.position.z += -Math.cos(yaw) * forward - Math.sin(yaw) * side;
+  moved();
+}
+const keys = new Set();
+window.addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("button")) return;
+  const k = e.key.toLowerCase();
+  if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"].includes(k)) {
+    keys.add(k);
+    e.preventDefault();
+  }
+});
+window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  dirty = true;
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+let last = performance.now();
+renderer.setAnimationLoop(() => {
+  const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (keys.size) {
+    const f = (keys.has("w") || keys.has("arrowup") ? 1 : 0) - (keys.has("s") || keys.has("arrowdown") ? 1 : 0);
+    const turn = (keys.has("arrowleft") ? 1 : 0) - (keys.has("arrowright") ? 1 : 0);
+    const side = (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0);
+    if (turn) camera.rotation.y += turn * dt * 1.4;
+    step(f * dt * 1.3, side * dt * 1.3);
+  }
+  if (!dirty) return;
+  dirty = false;
+  renderer.render(scene, camera);
+});
+
+goTo(0);
+show("lidar");
+load("lidar").then(() => load("splat")).then(() => load("today"));
+window.__viewer = { show, goTo, models, ready: () => Object.values(models).every(Boolean), renderer };
+</script>

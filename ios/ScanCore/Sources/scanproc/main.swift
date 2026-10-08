@@ -2,7 +2,11 @@
 //
 //   scanproc process <scan.json> <out.glb> [--manifest <manifest.json>] [--texture-size <px>]
 //   scanproc <scan.json> <out.glb> [--manifest <manifest.json>]
-//   scanproc demo-scan <scan.json>        write the synthetic two-bedroom apartment scan
+//   scanproc demo-scan <scan.json> [--local]   write the synthetic two-bedroom apartment scan
+//        (--local: in the apartment's own frame, floor at 0, not an ARKit-like one)
+//   scanproc paint <scan.json> <out.glb> --images <dir> [--meshes <dir>] [--clean <clean.glb>] [--keep-frame]
+//        paints the scan's photos onto it, as the phone does: each frame's image is <dir>/<name>.rgb
+//        (raw 8-bit RGB at the frame's imageWidth × imageHeight); LiDAR meshes are <dir>/mesh-<room id>.bin
 //   scanproc align <room.json|structure.json>... --out <scan.json> [--glb <out.glb>] [--report <alignment.json>]
 //            [--structure <structure.json> [--top-level-only]] [--path <scan.json>] [--scramble [--walk] [--no-structure]]
 //        RoomPlan JSON → one aligned scan (RoomAlignment). --scramble re-creates RoomPlan's
@@ -18,7 +22,8 @@ func fail(_ message: String) -> Never {
 
 let usage = """
     usage: scanproc process <scan.json> <out.glb> [--manifest <manifest.json>] [--texture-size <px>]
-           scanproc demo-scan <scan.json>
+           scanproc demo-scan <scan.json> [--local]
+           scanproc paint <scan.json> <out.glb> --images <dir> [--meshes <dir>] [--clean <clean.glb>] [--keep-frame]
            scanproc align <room.json|structure.json>... --out <scan.json> [--glb <out.glb>] [--report <alignment.json>]
                 [--structure <structure.json> [--top-level-only]] [--path <scan.json>] [--scramble [--walk] [--no-structure]]
     """
@@ -116,12 +121,44 @@ case "align":
     }
 
 case "demo-scan":
+    let local = flag("--local")
     guard args.count == 2 else { fail(usage) }
     do {
-        try SyntheticApartment.make().jsonData(prettyPrinted: true).write(to: URL(fileURLWithPath: args[1]))
+        let scan = local ? SyntheticApartment.make(rotation: 0, offset: Vec3(0, 0, 0)) : SyntheticApartment.make()
+        try scan.jsonData(prettyPrinted: true).write(to: URL(fileURLWithPath: args[1]))
         print("wrote \(args[1])")
     } catch {
         fail("demo-scan failed: \(error)")
+    }
+
+case "paint":
+    args.removeFirst()
+    guard let imagesDir = option("--images") else { fail(usage) }
+    let meshDir = option("--meshes"), cleanPath = option("--clean")
+    let keepFrame = flag("--keep-frame")
+    guard args.count == 2 else { fail(usage) }
+    do {
+        var scan = try CaptureScan.decode(from: Data(contentsOf: URL(fileURLWithPath: args[0])))
+        if let meshDir {
+            for room in scan.rooms {
+                let url = URL(fileURLWithPath: meshDir).appendingPathComponent("mesh-\(room.id).bin")
+                guard let data = try? Data(contentsOf: url) else { continue }
+                scan.meshes.append(try ScanMesh(decoding: data, roomId: room.id))
+            }
+        }
+        let started = Date()
+        let result = try ScanProcessor.process(
+            scan, options: ScanProcessorOptions(normalizeFrame: !keepFrame), photos: RawPhotos(directory: URL(fileURLWithPath: imagesDir)))
+        try result.glb.write(to: URL(fileURLWithPath: args[1]))
+        if let cleanPath, let clean = result.cleanGLB { try clean.write(to: URL(fileURLWithPath: cleanPath)) }
+        let s = result.stats
+        print(
+            String(
+                format: "%d photos, %d used, coverage %.3f · %d LiDAR meshes, %d mesh triangles, %d boxes replaced · %d triangles · %.2f MB · %.1f s",
+                scan.frames.count, s.photosUsed ?? 0, s.photoCoverage ?? 0, scan.meshes.count, s.meshTriangles ?? 0, s.meshObjects ?? 0, s.triangles,
+                Double(s.glbBytes) / 1_048_576, Date().timeIntervalSince(started)))
+    } catch {
+        fail("scanproc paint: \((error as? LocalizedError)?.errorDescription ?? "\(error)")")
     }
 
 default:
@@ -163,4 +200,18 @@ func shifted(_ part: RoomPart, by d: Vec3) -> RoomPart {
 func frameOffset(_ scan: CaptureScan, _ truth: [RoomPlanJSON.Room]) -> Vec3 {
     guard let first = truth.first?.part.walls.first, let mine = scan.walls.first(where: { $0.id == first.id }) else { return Vec3(0, 0, 0) }
     return mine.transform.translation - first.transform.translation
+}
+
+
+/// Photos as raw RGB files next to each other: frames/000012.jpg → <directory>/000012.rgb.
+struct RawPhotos: PhotoSource {
+    let directory: URL
+
+    func image(for frame: CameraFrame) -> RGBImage? {
+        let name = URL(fileURLWithPath: frame.file).deletingPathExtension().lastPathComponent
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent("\(name).rgb")),
+            data.count == frame.imageWidth * frame.imageHeight * 3
+        else { return nil }
+        return RGBImage(width: frame.imageWidth, height: frame.imageHeight, pixels: [UInt8](data))
+    }
 }

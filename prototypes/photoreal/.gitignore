@@ -1,0 +1,14 @@
+node_modules/
+vendor/
+data/
+out/
+runs/
+eval/
+probe/
+splat/build*/
+site/models/
+site/img/
+site/views.json
+site/index.html
+site/local.html
+__pycache__/

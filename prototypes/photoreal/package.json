@@ -1,0 +1,9 @@
+{
+  "name": "atrium-photoreal-prototype",
+  "private": true,
+  "type": "module",
+  "description": "Painted model vs. Gaussian splats on a synthetic apartment (see README.md)",
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
+  }
+}

@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>model</title>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/three/build/three.module.js","three/addons/":"/three/examples/jsm/"}}</script>
+</head><body><script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+// Renders a painted .glb the way Atrium's viewer shows photo scans: unlit, not tone mapped.
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setSize(480, 360);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#e7e2da");
+const camera = new THREE.PerspectiveCamera(50, 4 / 3, 0.05, 160);
+camera.matrixAutoUpdate = false;
+window.model = {
+  async load(url) {
+    const gltf = await new GLTFLoader().loadAsync(url);
+    gltf.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = o.material;
+      o.material = new THREE.MeshBasicMaterial({ map: m.map ?? null, color: m.color ?? new THREE.Color("#fff"), toneMapped: false, side: m.side });
+    });
+    scene.add(gltf.scene);
+    return true;
+  },
+  render(m, fy, w = 480, h = 360) {
+    if (renderer.domElement.width !== w) renderer.setSize(w, h);
+    camera.fov = (2 * Math.atan(h / 2 / fy) * 180) / Math.PI;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    camera.matrixWorld.fromArray(m);
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+    renderer.render(scene, camera);
+    return renderer.domElement.toDataURL("image/png");
+  },
+};
+window.modelReady = true;
+</script></body></html>
