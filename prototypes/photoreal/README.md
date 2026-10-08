@@ -37,13 +37,14 @@ python splat/train.py data runs/main --iters 12000 --max-gaussians 650000 --dens
 
 mkdir -p vendor && curl -sL https://registry.npmjs.org/three/-/three-0.186.0.tgz | tar -xz -C vendor && mv vendor/package vendor/three@0.186.0
 PY=python tools/final.sh runs/main          # export → page → screenshots → scores → notes
+python splat/viewer_check.py runs/main/ckpt.pt data eval/page-final   # page vs. trainer, step by step
 ```
 
 `tools/final.sh` runs the last steps one by one: `splat/export.py` (`.spz`), `tools/build_site.py`
 (`site/index.html` with CDN three.js and `site/local.html` with the vendored copy), `tools/capture.mjs`
 (a screenshot of every held-out viewpoint per method, taken from the page itself), `tools/evaluate.py`
 (PSNR / SSIM against the real photos → `site/views.json`) and `tools/finalize.py` (the page's notes).
-`site/` is then a static page: publish `index.html` with `views.json`, `models/*.txt` (the models as
+`site/` is then a static page: publish `index.html` with `views.json`, `js/`, `models/*.txt` (the models as
 base64 text, for hosts that only serve text and images) and `img/`. `tools/shot.mjs` takes a full-page
 screenshot for a quick look.
 
@@ -63,3 +64,17 @@ cost 3 dB of test PSNR. `splat/export.py` writes `.spz` (version 2, gzip) for th
 
 On a cloud GPU the same method (gsplat or the reference CUDA rasterizer) trains on full-resolution
 photos with millions of Gaussians in 10–20 minutes; the CPU run here is a lower bound on quality.
+
+## Drawing the splats in the page
+
+three.js r186's `GaussianSplat` is tuned for splats trained with anti-aliasing (Mip-Splatting), not
+for standard 3DGS models like these. It cuts each Gaussian off at 2σ, fades small splats (Mip-Splatting's
+opacity compensation) and, through three's color management, blends them in linear light, while the
+trainer blends the photos' sRGB values. `splat/viewer_check.py` imitates each difference with the
+trainer's rasterizer and scores it on the held-out views. On the step-2000 model the 2σ cutoff costs
+0.83 dB, the fading 0.05 dB and linear blending 0.51 dB: 1.4 dB in all, the gap first seen between the
+page and the trainer. So `tools/build_site.py` writes `site/js/GaussianSplat.js`, a copy of three's file
+with the reference kernel (3σ, no fading), and the page blends the splats' colors as they are: no output
+color conversion, plus an identity tone map that keeps three's half-float framebuffer. The page's
+splats then match the trainer's renders to 45 dB. A production viewer should do the same, or the
+trainer should learn with the viewer's kernel.

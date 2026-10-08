@@ -1,7 +1,8 @@
 """Assembles the comparison page: python3 tools/build_site.py <splats.spz>
 
 site/index.html (three.js from jsDelivr, for publishing), site/local.html (local copy, for tests),
-site/models/*, site/img/ref-*.jpg, site/views.json (metrics filled in by tools/evaluate.py).
+site/models/*, site/img/ref-*.jpg, site/views.json (metrics filled in by tools/evaluate.py) and
+site/js/GaussianSplat.js (three's splat renderer, drawing splats the way the trainer does).
 """
 import base64
 import json
@@ -23,6 +24,23 @@ shutil.copy(spz, site / "models/splats.spz")
 # Artifacts serve text, not .glb/.spz: each model also ships as base64 text.
 for name in ("today.glb", "lidar.glb", "splats.spz"):
     (site / "models" / f"{name}.txt").write_bytes(base64.b64encode((site / "models" / name).read_bytes()))
+# three's GaussianSplat cuts splats off at 2σ and fades small ones (Mip-Splatting's opacity
+# compensation). The splats here were trained like the reference 3DGS rasterizer: Gaussians reach
+# out to 3σ and keep their opacity. Rendering them three's way costs about 0.6 dB, so the page uses a
+# copy with the reference kernel. The relative imports point back at three's own modules.
+gs_js = (root / "vendor/three@0.186.0/examples/jsm/objects/GaussianSplat.js").read_text()
+for old, new in (
+    ("from '../gpgpu/CountingSort.js'", "from 'three/addons/gpgpu/CountingSort.js'"),
+    ("from '../utils/GaussianSplatUtils.js'", "from 'three/addons/utils/GaussianSplatUtils.js'"),
+    ("const SPLAT_KERNEL_CUTOFF = 2;", "const SPLAT_KERNEL_CUTOFF = 3;"),
+    ("\t\t- 2, - 2, 0,\n\t\t2, - 2, 0,\n\t\t2, 2, 0,\n\t\t- 2, 2, 0", "\t\t- 3, - 3, 0,\n\t\t3, - 3, 0,\n\t\t3, 3, 0,\n\t\t- 3, 3, 0"),
+    ("If( r2.greaterThan( 4 ), () => {", "If( r2.greaterThan( SPLAT_KERNEL_CUTOFF * SPLAT_KERNEL_CUTOFF ), () => {"),
+    ("color.a.mul( alphaScale )", "color.a"),
+):
+    assert gs_js.count(old) == 1, f"GaussianSplat.js changed upstream: {old!r}"
+    gs_js = gs_js.replace(old, new)
+(site / "js").mkdir(exist_ok=True)
+(site / "js/GaussianSplat.js").write_text(gs_js)
 tests = json.loads((data / "test.json").read_text())
 SHORT = ["Sofa", "Living from door", "TV wall", "From kitchen", "Kitchen table", "Counter", "Glossy floor", "Hall mirror", "Hallway", "Bedroom", "Bath mirror", "Primary"]
 old = {}

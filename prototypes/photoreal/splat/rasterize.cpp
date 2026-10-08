@@ -14,8 +14,15 @@ constexpr int TILE = 16;
 #define GS_ALPHA_MIN (1.0f / 255.0f)
 #endif
 constexpr float ALPHA_MIN = GS_ALPHA_MIN;
-constexpr float ALPHA_MAX = 0.99f;
-constexpr float T_MIN = 1e-4f;
+// Overridable for splat/viewer_check.py, which imitates other renderers.
+#ifndef GS_ALPHA_MAX
+#define GS_ALPHA_MAX 0.99f
+#endif
+#ifndef GS_T_MIN
+#define GS_T_MIN 1e-4f
+#endif
+constexpr float ALPHA_MAX = GS_ALPHA_MAX;
+constexpr float T_MIN = GS_T_MIN;
 
 struct Binning {
   std::vector<int32_t> list;   // Gaussian ids, sorted by tile then depth
@@ -92,6 +99,9 @@ std::vector<torch::Tensor> forward(torch::Tensor means2d, torch::Tensor conics, 
           const float dx = m2d[2 * g] - fx, dy = m2d[2 * g + 1] - fy;
           const float power = -0.5f * (con[3 * g] * dx * dx + con[3 * g + 2] * dy * dy) - con[3 * g + 1] * dx * dy;
           if (power > 0.0f) continue;
+#ifdef GS_POWER_MIN
+          if (power < GS_POWER_MIN) continue;  // a hard cutoff, in units of -r²/2
+#endif
           const float alpha = std::min(ALPHA_MAX, op[g] * std::exp(power));
           if (alpha < ALPHA_MIN) continue;
           const float testT = T * (1.0f - alpha);
@@ -166,6 +176,9 @@ std::vector<torch::Tensor> backward(torch::Tensor means2d, torch::Tensor conics,
             const float ca = con[3 * g], cb = con[3 * g + 1], cc = con[3 * g + 2];
             const float power = -0.5f * (ca * dx * dx + cc * dy * dy) - cb * dx * dy;
             if (power > 0.0f) continue;
+#ifdef GS_POWER_MIN
+          if (power < GS_POWER_MIN) continue;  // a hard cutoff, in units of -r²/2
+#endif
             const float G = std::exp(power);
             const float alpha = std::min(ALPHA_MAX, op[g] * G);
             if (alpha < ALPHA_MIN) continue;

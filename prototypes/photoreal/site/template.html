@@ -65,7 +65,7 @@
   footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
   @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 </style>
-<script type="importmap">{"imports": {"three": "__THREE__/build/three.webgpu.js", "three/webgpu": "__THREE__/build/three.webgpu.js", "three/tsl": "__THREE__/build/three.tsl.js", "three/addons/": "__THREE__/examples/jsm/"}}</script>
+<script type="importmap">{"imports": {"three": "__THREE__/build/three.webgpu.js", "three/webgpu": "__THREE__/build/three.webgpu.js", "three/tsl": "__THREE__/build/three.tsl.js", "three/addons/": "__THREE__/examples/jsm/", "three/addons/objects/GaussianSplat.js": "./js/GaussianSplat.js"}}</script>
 
 <div class="wrap">
   <header>
@@ -137,7 +137,6 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { SPZLoader } from "three/addons/loaders/SPZLoader.js";
 import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
-import { sRGBTransferEOTF, vec4 } from "three/tsl";
 
 const $ = (id) => document.getElementById(id);
 const data = await (await fetch("views.json")).json();
@@ -179,10 +178,22 @@ const canvas = $("canvas"), stage = $("stage");
 const renderer = new THREE.WebGPURenderer({ canvas, antialias: true, forceWebGL: true });
 await renderer.init();
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-renderer.toneMapping = THREE.NoToneMapping;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#e7e2da");
+const SKY = [0.812, 0.886, 0.953]; // the real scene's sky (#cfe2f3), which the splats were also trained against
+
+/**
+ * Painted models: sRGB textures, output encoded as sRGB. Splats: the trainer composites their sRGB
+ * colors directly, so the page does too: no color conversion, and an identity tone map, which keeps
+ * the renderer's half-float framebuffer. (Blending in linear light instead costs about 0.4 dB.)
+ */
+function setLook(key) {
+  const raw = key === "splat";
+  renderer.outputColorSpace = raw ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace;
+  renderer.toneMapping = raw ? THREE.LinearToneMapping : THREE.NoToneMapping;
+  renderer.toneMappingExposure = 1;
+  scene.background = new THREE.Color().setRGB(...SKY, raw ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace);
+}
+setLook("lidar");
 const camera = new THREE.PerspectiveCamera(data.fovY, 4 / 3, 0.05, 80);
 camera.rotation.order = "YXZ";
 
@@ -228,13 +239,8 @@ function load(key) {
     if (method === key) setStatus(`Loading ${Math.round(f * 100)}% of ${(file.bytes / 1e6).toFixed(1)} MB`);
   };
   loading[key] = fetchBytes(file, progress).then(async (buffer) => {
-    if (key === "splat") {
-      // The splats were fitted to the photos' sRGB values; the renderer encodes its output as sRGB.
-      const splat = new GaussianSplat(new SPZLoader().parse(buffer));
-      const c = splat.material.colorNode;
-      splat.material.colorNode = vec4(sRGBTransferEOTF(c.rgb), c.a);
-      return splat;
-    }
+    // js/GaussianSplat.js is three's, drawing splats as the trainer does (see tools/build_site.py).
+    if (key === "splat") return new GaussianSplat(new SPZLoader().parse(buffer));
     const gltf = await new GLTFLoader().parseAsync(buffer, "");
     gltf.scene.traverse((o) => {
       if (!o.isMesh) return;
@@ -263,6 +269,7 @@ function show(key) {
   if (isRef) $("ref").src = `img/ref-${String(viewIndex).padStart(2, "0")}.jpg`;
   $("badge").textContent = LABEL[key];
   for (const [k, obj] of Object.entries(models)) if (obj) obj.visible = k === key;
+  if (!isRef) setLook(key);
   if (!isRef && !models[key]) {
     setStatus("Loading…");
     load(key);
