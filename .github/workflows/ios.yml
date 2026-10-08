@@ -72,6 +72,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build for the simulator (Debug)
+        # Debug keeps the automation hooks; optimized Swift keeps photo texturing as fast as on a phone.
         run: |
           set +e
           xcodebuild \
@@ -81,6 +82,7 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
+            SWIFT_OPTIMIZATION_LEVEL=-O \
             build > build.log 2>&1
           status=$?
           grep -E -B2 -A6 "error: " build.log | grep -v "^--$" | head -200
@@ -144,7 +146,7 @@ jobs:
           rm -f "$STATUS"
           xcrun simctl launch "$UDID" com.atrium.capture -atrium-automation "rebuild|wait=1"
           stage=none
-          for i in $(seq 1 300); do
+          for i in $(seq 1 600); do
             stage=$(python3 -c "import json; print(json.load(open('$STATUS'))['stage'])" 2>/dev/null || echo none)
             case "$stage" in done|failed) break ;; esac
             sleep 1
