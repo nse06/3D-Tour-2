@@ -43,6 +43,12 @@ public struct ScanStats: Codable, Sendable, Equatable {
     /// Photo-textured models: share of the surfaces the photos covered (0–1), and photos used.
     public var photoCoverage: Double? = nil
     public var photosUsed: Int? = nil
+    /// Photo-textured models: photos that showed people, painted around them.
+    public var photosWithPeople: Int? = nil
+    /// Photo-textured models: triangles of furniture and clutter shaped from the LiDAR mesh, and the
+    /// RoomPlan objects they replaced.
+    public var meshTriangles: Int? = nil
+    public var meshObjects: Int? = nil
 }
 
 public struct ProcessedScan: Sendable {
@@ -172,7 +178,7 @@ public enum ScanProcessor {
         let manifestObject = try JSONSerialization.jsonObject(with: try manifest.jsonData())
         var capture: [String: Any] = [
             "format": CaptureScan.formatIdentifier, "generator": generator, "frame": frame.m.map(Double.init), "textured": true,
-            "photoCoverage": rounded(baked.coverage, 3),
+            "photoCoverage": rounded(baked.coverage, 3), "meshTriangles": model.meshTriangles,
         ]
         if let capturedAt = scan.capturedAt { capture["capturedAt"] = capturedAt }
         let glb = try GLBWriter.write(
@@ -184,7 +190,8 @@ public enum ScanProcessor {
             doors: scan.openings.filter { $0.kind == .door }.count, windows: scan.openings.filter { $0.kind == .window }.count,
             openings: scan.openings.filter { $0.kind == .opening }.count, objects: scan.objects.count, links: manifest.links.count,
             triangles: mesh.triangleCount, floorArea: rounded(rooms.reduce(0) { $0 + $1.area }, 2), glbBytes: glb.count,
-            photoCoverage: rounded(baked.coverage, 3), photosUsed: baked.photosUsed)
+            photoCoverage: rounded(baked.coverage, 3), photosUsed: baked.photosUsed, photosWithPeople: baked.photosWithPeople,
+            meshTriangles: model.meshTriangles, meshObjects: model.meshObjects)
         return ProcessedScan(glb: glb, manifest: manifest, stats: stats, frame: frame)
     }
 

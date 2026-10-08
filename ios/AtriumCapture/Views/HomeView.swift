@@ -4,6 +4,7 @@ struct HomeView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showingPairing = false
     @State private var path: [UUID] = []
+    @AppStorage(MeshRecorder.enabledKey) private var lidarShapes = true
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -70,6 +71,16 @@ struct HomeView: View {
                     tip("arrow.triangle.turn.up.right.diamond", "Walk between rooms with the phone up — that path becomes the tour route.")
                 }
                 .padding(.top, 4)
+                Toggle(isOn: $lidarShapes) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Real furniture shapes").font(.footnote.weight(.semibold))
+                        Text("Also records the LiDAR mesh, so furniture and clutter keep their shape. Turn off if scanning misbehaves.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(Theme.gold)
+                .padding(.top, 2)
             } else {
                 Label("Scanning needs an iPhone with LiDAR — iPhone 12 Pro or a newer Pro model.", systemImage: "exclamationmark.triangle")
                     .font(.subheadline)

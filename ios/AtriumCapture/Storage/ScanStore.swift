@@ -111,8 +111,8 @@ final class ScanStore: @unchecked Sendable {
         try FileManager.default.removeItem(at: directory(for: id))
     }
 
-    /// The scan package (docs/iphone-capture.md §3.3), zipped on first use. The photos stay on
-    /// the phone (hundreds of MB at full resolution; the walkthrough already carries them).
+    /// The scan package (docs/iphone-capture.md §3.3), zipped on first use. The photos and LiDAR
+    /// meshes stay on the phone (hundreds of MB; the walkthrough already carries them).
     func ensurePackage(for id: UUID) throws -> URL {
         let zip = packageURL(for: id)
         if FileManager.default.fileExists(atPath: zip.path) { return zip }
@@ -123,7 +123,11 @@ final class ScanStore: @unchecked Sendable {
             for case let url as URL in walker {
                 guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
                 let relative = String(url.standardizedFileURL.path.dropFirst(folder.standardizedFileURL.path.count + 1))
-                if skip.contains(relative) || (relative.hasPrefix("frames/") && relative.hasSuffix(".jpg")) { continue }
+                if skip.contains(relative) || (relative.hasPrefix("frames/") && relative.hasSuffix(".jpg"))
+                    || (relative.hasPrefix("roomplan/mesh-") && relative.hasSuffix(".bin"))
+                {
+                    continue
+                }
                 files.append((relative, url))
             }
         }

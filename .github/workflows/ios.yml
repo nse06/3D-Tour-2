@@ -133,15 +133,17 @@ jobs:
           tail -20 mock.log
           test "$stage" = done
           python3 -c "import json; r = json.load(open('results/results.json')); print(r); assert r['ok'] and r['rooms'] == 6 and r['links'] >= 5, r"
-      - name: Rebuild old multi-room scans (Apple's RoomPlan sample, each room in its own frame)
+      - name: Rebuild multi-room scans (Apple's RoomPlan sample, each room in its own frame)
         run: |
           curl -fsSL --retry 3 -o merging.zip https://docs-assets.developer.apple.com/published/3e2b731b0ef7/MergingMultipleScansIntoASingleStructure.zip
           mkdir -p sample && unzip -q merging.zip -d sample
           xcrun simctl terminate "$UDID" com.atrium.capture || true
           DATA="$(xcrun simctl get_app_container "$UDID" com.atrium.capture data)"
-          # One scan with the merged structure a real capture saves, one with only the walked path.
+          # One scan with the merged structure a real capture saves, one with only the walked path,
+          # and one saved the way build 7 saves a capture, with a LiDAR mesh per room.
           WITH_STRUCTURE=$(python3 ios/ci/make_legacy_scan.py sample "$DATA/Documents/Scans" --with structure)
           WITH_PATH=$(python3 ios/ci/make_legacy_scan.py sample "$DATA/Documents/Scans" --with path)
+          WITH_MESH=$(python3 ios/ci/make_legacy_scan.py sample "$DATA/Documents/Scans" --with mesh)
           STATUS="$DATA/Documents/automation-status.json"
           rm -f "$STATUS"
           xcrun simctl launch "$UDID" com.atrium.capture -atrium-automation "rebuild|wait=1"
@@ -153,13 +155,14 @@ jobs:
           done
           cat "$STATUS"; echo
           xcrun simctl io "$UDID" screenshot shots/3-rebuilt.png > /dev/null 2>&1 || true
-          for ID in "$WITH_STRUCTURE" "$WITH_PATH"; do
+          for ID in "$WITH_STRUCTURE" "$WITH_PATH" "$WITH_MESH"; do
             mkdir -p "results/rebuild/$ID" && cp "$DATA/Documents/Scans/$ID"/{alignment.json,info.json,manifest.json,scan.glb} "results/rebuild/$ID/" 2>/dev/null || true
             cp "$DATA/Documents/Scans/$ID/roomplan/structure.json" "results/rebuild/$ID/" 2>/dev/null || true
           done
           test "$stage" = done
           python3 ios/ci/check_rebuild.py "$DATA/Documents/Scans/$WITH_STRUCTURE" sample --method structure --tolerance 0.05
           python3 ios/ci/check_rebuild.py "$DATA/Documents/Scans/$WITH_PATH" sample --method path --tolerance 0.15 --photos
+          python3 ios/ci/check_rebuild.py "$DATA/Documents/Scans/$WITH_MESH" sample --method path --tolerance 0.15 --photos --mesh
 
       - name: Upload screenshots and results
         if: always()

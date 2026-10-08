@@ -58,13 +58,18 @@ public struct RoomPart: Sendable {
     /// The RoomPlan run (0, 1, …) that scanned the room; nil if unknown (scans
     /// from app builds that didn't record it).
     public var segment: Int?
+    /// The LiDAR mesh recorded with the room, in the same frame.
+    public var mesh: ScanMesh?
 
-    public init(room: ScanRoom, walls: [ScanWall] = [], openings: [ScanOpening] = [], objects: [ScanObject] = [], segment: Int? = nil) {
+    public init(
+        room: ScanRoom, walls: [ScanWall] = [], openings: [ScanOpening] = [], objects: [ScanObject] = [], segment: Int? = nil, mesh: ScanMesh? = nil
+    ) {
         self.room = room
         self.walls = walls
         self.openings = openings
         self.objects = objects
         self.segment = segment
+        self.mesh = mesh
     }
 
     func moved(by m: Motion) -> RoomPart {
@@ -76,6 +81,7 @@ public struct RoomPart: Sendable {
         copy.walls = walls.map { var w = $0; w.transform = t * $0.transform; return w }
         copy.openings = openings.map { var o = $0; o.transform = t * $0.transform; return o }
         copy.objects = objects.map { var o = $0; o.transform = t * $0.transform; return o }
+        copy.mesh = mesh?.transformed(by: t)
         return copy
     }
 }
@@ -240,6 +246,10 @@ public enum RoomAlignment {
             scan.walls += moved.walls
             scan.openings += moved.openings
             scan.objects += moved.objects
+            if var mesh = moved.mesh {
+                mesh.roomId = part.room.id
+                scan.meshes.append(mesh)
+            }
         }
         var dropped = 0
         for (i, sample) in cleanPath.enumerated() {

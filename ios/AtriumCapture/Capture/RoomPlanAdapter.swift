@@ -9,6 +9,8 @@ struct NamedRoom {
     var room: CapturedRoom
     /// nil for scans from builds that didn't record runs.
     var segment: Int?
+    /// The LiDAR mesh saved with the room (a file in roomplan/), if any.
+    var mesh: String? = nil
 }
 
 /// Converts RoomPlan's rooms into ScanCore's portable types (docs/iphone-capture.md §1).

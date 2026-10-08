@@ -17,8 +17,12 @@ would have it. What lets the rebuild put them back together:
                      room starts), plus a photo every 1.5 s along it
                      (frames/frames.json; small gradient images) so the rebuild
                      paints photos onto the model.
+  --with mesh        the same walk and photos saved the way build 7 saves a
+                     capture (roomplan/capture.json with each room's run), plus
+                     a LiDAR mesh per room (roomplan/mesh-run-N.bin, in the
+                     room's frame): an ottoman in the middle of the room.
 
-    make_legacy_scan.py <sample-dir> <Documents/Scans> --with structure|path → prints the scan id
+    make_legacy_scan.py <sample-dir> <Documents/Scans> --with structure|path|mesh → prints the scan id
 """
 
 import argparse
@@ -61,7 +65,7 @@ def structure(rooms: list) -> dict:
     return merged
 
 
-def walk(origins: list) -> list:
+def walk(origins: list, segments: bool = False) -> list:
     samples, t = [], 0.0
     for k, a in enumerate(origins):
         b = origins[k + 1] if k + 1 < len(origins) else [a[0] + 0.5, a[1], a[2]]
@@ -69,6 +73,8 @@ def walk(origins: list) -> list:
         for i in range(steps):
             p = [a[c] + (b[c] - a[c]) * i / steps - a[c] for c in range(3)]
             samples.append({"t": round(t, 3), "p": p, "f": [0, 0, -1]})
+            if segments:
+                samples[-1]["segment"] = k
             t += 0.25
     return samples
 
@@ -84,6 +90,44 @@ def png(width: int, height: int, k: int) -> bytes:
 
     header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+
+def ottoman(room: dict, o: list) -> bytes:
+    """A 0.8 × 0.45 × 0.6 m box mesh (6 × 6 quads a side, normals out) in the middle of the room's
+    floor, in the room's frame (shifted by `o`), as an Atrium mesh file."""
+    floor = max(room["floors"], key=lambda s: s["dimensions"][0] * s["dimensions"][1])
+    t = floor["transform"]
+    xs, zs = [], []
+    for x, y, z in floor["polygonCorners"]:
+        xs.append(t[0] * x + t[4] * y + t[8] * z + t[12])
+        zs.append(t[2] * x + t[6] * y + t[10] * z + t[14])
+    size = (0.8, 0.45, 0.6)
+    center = ((min(xs) + max(xs)) / 2 - o[0], t[13] + 0.1 + size[1] / 2 - o[1], (min(zs) + max(zs)) / 2 - o[2])
+    h = [s / 2 for s in size]
+    # (corner, u, v) with u × v pointing out of the box.
+    faces = [
+        ((h[0], -h[1], -h[2]), (0, 1, 0), (0, 0, 1)), ((-h[0], -h[1], -h[2]), (0, 0, 1), (0, 1, 0)),
+        ((-h[0], h[1], -h[2]), (0, 0, 1), (1, 0, 0)), ((-h[0], -h[1], -h[2]), (1, 0, 0), (0, 0, 1)),
+        ((-h[0], -h[1], h[2]), (1, 0, 0), (0, 1, 0)), ((-h[0], -h[1], -h[2]), (0, 1, 0), (1, 0, 0)),
+    ]
+    steps, vertices, normals, indices = 6, [], [], []
+    for corner, u, v in faces:
+        n = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+        lu = sum(abs(u[k]) * size[k] for k in range(3)), sum(abs(v[k]) * size[k] for k in range(3))
+        base = len(vertices)
+        for j in range(steps + 1):
+            for i in range(steps + 1):
+                vertices.append([center[k] + corner[k] + u[k] * lu[0] * i / steps + v[k] * lu[1] * j / steps for k in range(3)])
+                normals.append(n)
+        for j in range(steps):
+            for i in range(steps):
+                a = base + j * (steps + 1) + i
+                b, c, d = a + 1, a + steps + 1, a + steps + 2
+                indices += [a, b, d, a, d, c]
+    data = b"ATMESH01" + struct.pack("<III", len(vertices), len(indices) // 3, 1)
+    data += struct.pack(f"<{3 * len(vertices)}f", *[x for p in vertices for x in p])
+    data += struct.pack(f"<{3 * len(normals)}f", *[x for p in normals for x in p])
+    return data + struct.pack(f"<{len(indices)}I", *indices)
 
 
 def frames(samples: list, folder: Path) -> None:
@@ -105,6 +149,8 @@ def frames(samples: list, folder: Path) -> None:
             "transform": right + [0, 0, 1, 0, 0, -f[0], 0, -f[2], 0, p[0], p[1], p[2], 1],
             "intrinsics": [260, 0, 0, 0, 260, 0, 160, 120, 1], "width": 320, "height": 240, "imageWidth": 320, "imageHeight": 240,
         })
+        if "segment" in samples[i]:
+            out[-1]["segment"] = samples[i]["segment"]
     (folder / "frames" / "frames.json").write_text(json.dumps(out))
 
 
@@ -112,7 +158,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("sample", type=Path)
     parser.add_argument("scans", type=Path)
-    parser.add_argument("--with", dest="mode", choices=["structure", "path"], required=True)
+    parser.add_argument("--with", dest="mode", choices=["structure", "path", "mesh"], required=True)
     args = parser.parse_args()
     paths = sorted(args.sample.glob("**/MyHome/*/capturedRoom.json"))
     assert paths, f"no capturedRoom.json under {args.sample}"
@@ -123,14 +169,24 @@ def main():
     (folder / "roomplan").mkdir(parents=True)
     for k, room in enumerate(rooms):
         (folder / "roomplan" / f"room-{k + 1}.json").write_text(json.dumps(shift(room, origins[k])))
+    names = [p.parent.name for p in paths]
     if args.mode == "structure":
         (folder / "roomplan" / "structure.json").write_text(json.dumps(structure(rooms)))
-    else:
+    elif args.mode == "path":
         path = walk(origins)
         scan = {"format": "atrium.capture-scan/v1", "rooms": [], "trajectory": path}
         (folder / "scan.json").write_text(json.dumps(scan))
         frames(path, folder)
-    names = [p.parent.name for p in paths]
+    else:
+        path = walk(origins, segments=True)
+        frames(path, folder)
+        for k, room in enumerate(rooms):
+            (folder / "roomplan" / f"mesh-run-{k}.bin").write_bytes(ottoman(room, origins[k]))
+        capture = {
+            "startedAt": "2026-10-07T12:00:00Z", "path": path, "meshMode": "mesh+classes",
+            "rooms": [{"name": n, "file": f"room-{k + 1}.json", "segment": k, "mesh": f"mesh-run-{k}.bin"} for k, n in enumerate(names)],
+        }
+        (folder / "roomplan" / "capture.json").write_text(json.dumps(capture))
     stats = dict(rooms=len(names), floors=1, walls=0, doors=0, windows=0, openings=0, objects=0, links=0, triangles=0, floorArea=0.0, glbBytes=0)
     record = dict(id=scan_id, createdAt="2026-10-07T12:00:00Z", roomNames=names, stats=stats, isDemo=False)
     (folder / "record.json").write_text(json.dumps(record))

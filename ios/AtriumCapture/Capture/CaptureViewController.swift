@@ -6,6 +6,10 @@ import UIKit
 /// single AR session (`stop(pauseARSession: false)` between rooms). RoomPlan
 /// still moves the world origin to the phone when each room starts, so the
 /// recorder tags everything with its run and samples densely around each start.
+///
+/// The AR session is the app's own, set to reconstruct the LiDAR mesh as well
+/// (RoomPlan keeps a session's settings); the mesh around each room is saved
+/// when the room ends.
 final class CaptureViewController: UIViewController, RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
     private let model: CaptureModel
     private var captureView: RoomCaptureView!
@@ -26,7 +30,11 @@ final class CaptureViewController: UIViewController, RoomCaptureViewDelegate, Ro
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        captureView = RoomCaptureView(frame: view.bounds)
+        if MeshRecorder.isEnabled, let session = Self.meshSession() {
+            captureView = RoomCaptureView(frame: view.bounds, arSession: session)
+        } else {
+            captureView = RoomCaptureView(frame: view.bounds)
+        }
         captureView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         captureView.delegate = self
         captureView.captureSession.delegate = self
@@ -55,6 +63,22 @@ final class CaptureViewController: UIViewController, RoomCaptureViewDelegate, Ro
         stopTracking()
     }
 
+    /// A running world-tracking session that also reconstructs the LiDAR mesh (with ARKit's
+    /// classes where supported), for RoomPlan to scan with; nil if the device can't.
+    private static func meshSession() -> ARSession? {
+        let configuration = ARWorldTrackingConfiguration()
+        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification) {
+            configuration.sceneReconstruction = .meshWithClassification
+        } else if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+            configuration.sceneReconstruction = .mesh
+        } else {
+            return nil
+        }
+        let session = ARSession()
+        session.run(configuration)
+        return session
+    }
+
     // MARK: Control
 
     func startRoom() {
@@ -68,6 +92,8 @@ final class CaptureViewController: UIViewController, RoomCaptureViewDelegate, Ro
     func endRoom() {
         guard roomActive else { return }
         roomActive = false
+        // The mesh is in this room's frame until the next room starts.
+        model.meshes.snapshot(captureView.captureSession.arSession, segment: model.recorder.segment)
         captureView.captureSession.stop(pauseARSession: false)
     }
 
@@ -102,7 +128,11 @@ final class CaptureViewController: UIViewController, RoomCaptureViewDelegate, Ro
     }
 
     nonisolated func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: Error?) {
-        Task { @MainActor in self.model.roomEnded(data, error: error) }
+        Task { @MainActor in
+            // RoomPlan stopped on its own: keep the mesh too (no-op if the room was ended by hand).
+            self.model.meshes.snapshot(self.captureView.captureSession.arSession, segment: self.model.recorder.segment)
+            self.model.roomEnded(data, error: error)
+        }
     }
 
     // MARK: RoomCaptureViewDelegate

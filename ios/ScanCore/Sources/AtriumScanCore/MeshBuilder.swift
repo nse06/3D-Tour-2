@@ -120,6 +120,28 @@ struct MeshBuilder {
         }
     }
 
+    /// Triangles that share their vertices (`points[i]`), already wound counter-clockwise seen from
+    /// the front; every vertex gets `normal`.
+    mutating func addTriangles(_ points: [Vec3], _ triangles: [SIMD3<Int32>], normal: Vec3, material: String, uv: UVMode) {
+        guard !triangles.isEmpty else { return }
+        let n = vnormalize(normal)
+        withBuffer(material) { buf in
+            var local: [Int32: UInt32] = [:]
+            for t in triangles {
+                for v in [t.x, t.y, t.z] {
+                    if let i = local[v] {
+                        buf.indices.append(i)
+                    } else {
+                        let p = points[Int(v)]
+                        let i = buf.addVertex(p, n, uv.uv(p))
+                        local[v] = i
+                        buf.indices.append(i)
+                    }
+                }
+            }
+        }
+    }
+
     /// Appends another buffer's triangles under `material`, mapping its UVs.
     mutating func append(_ other: MeshBuffer, material: String, uv map: (SIMD2<Float>) -> SIMD2<Float>) {
         guard !other.isEmpty else { return }

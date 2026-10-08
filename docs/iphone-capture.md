@@ -69,6 +69,10 @@ and glTF `matrix`).
 }
 ```
 
+**LiDAR meshes** (build 7 on) are not part of scan.json: they are megabytes of triangles, so the app keeps each room's
+mesh as its own file (`roomplan/mesh-run-N.bin`, §3.3) and attaches it before processing (`RoomPart.mesh` →
+`RoomAlignment` moves it with its room → `CaptureScan.meshes`, each tagged with its room's id).
+
 Surface conventions (RoomPlan): the transform origin is the **center** of the surface rectangle / object box; for
 walls and openings column 0 (X) runs **along the width**, column 1 (Y) is **up**, column 2 (Z) is the surface normal;
 `width`/`height` are the full extents. Objects: `size` is the full bounding-box extent along the transform's X/Y/Z.
@@ -110,7 +114,10 @@ every room returns exactly with the merged structure, and within 0.12 m from a 4
 public struct ScanProcessorOptions { eyeHeight = 1.6, wallThickness = 0.12, includeCeilings = true, includeLights = true }
 public struct ProcessedScan { public let glb: Data; public let manifest: ScanManifest; public let stats: ScanStats
                               public var cleanGLB: Data? }   // photo scans: the styled model too ("photos off")
-public protocol PhotoSource { func image(for frame: CameraFrame) -> RGBImage? }   // decoded photo, sensor orientation
+public protocol PhotoSource {
+  func image(for frame: CameraFrame) -> RGBImage?   // decoded photo, sensor orientation
+  func mask(for frame: CameraFrame) -> PhotoMask?   // where it shows people (default: nowhere)
+}
 public enum ScanProcessor {
   public static func process(_ scan: CaptureScan, options: ScanProcessorOptions = .init(),
                              photos: PhotoSource? = nil, encodeImage: ImageEncoder? = nil,
@@ -183,6 +190,18 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   mattress. Only doorways with a scanned room on both sides are cut; other doors and windows stay on the wall, where
   the photos show them (and the view through the window). A wall's back, top, ends and doorway sides form one
   *solid* chart painted the median color of its inside face, so they don't stand out as bright strips.
+* **LiDAR shapes** (`MeshShapes.swift`, scans with a mesh): each room's mesh is cropped to the room's outline
+  (triangles in an overlapping room scanned earlier stay with that room) and stripped of the room's own surfaces —
+  triangles within 6 cm of a wall (facing along its normal), 4 cm of the floor or 6 cm of the ceiling, or within
+  15 cm if ARKit classified them as wall, window, door, floor or ceiling. What's left — furniture, appliances,
+  plants, lamps, clutter — is welded on a 3.5 cm grid (coarsened until it fits 60,000 triangles), loose bits under
+  10 cm are dropped, and every triangle keeps facing the side it was seen from (ARKit's normals; both sides of a
+  thin top that collapses are kept). A RoomPlan object whose box the mesh covers with at least half its footprint
+  in area loses its box; the others keep their box (a TV flat on a wall, which the cleanup removed) and the mesh
+  scraps inside it go. The mesh is cut into *patches* by region growing over shared edges (faces within ~44° of
+  the patch's normal; patches under 0.01 m² join the neighbour they face most like), each its own chart; since a
+  patch is only roughly flat, every texel is painted at its own point on the patch's faces (and judged by its
+  face's normal), not on the chart's plane. Rooms without a mesh (older scans, or the setting off) keep the boxes.
 * **Atlases**: charts are packed (shelf packing, 4-texel padding; solid charts are a 16-texel square) into up to
   `maxAtlases` atlases of `atlasSize`² (defaults 4 × 2048²) at `texelSize` (8 mm), coarsened until everything fits.
   Only texels on a chart's faces take photo colors; padding and holes are filled from them.
@@ -197,6 +216,13 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   large patches, each from a single photo — sharp, with no double images. A texel blends the photos of the four
   cells around it by distance, which mixes photos only in a band about a cell wide along the seams; photos that
   can't see the texel drop out, and a texel no chosen photo sees takes its cell's next best that does.
+* **People**: `PhotoSource.mask(for:)` says where a photo shows people (the app runs Vision's person segmentation,
+  §4); masks are widened by 1.5% of the photo's width, and a photo doesn't count as seeing a spot where its mask
+  covers it, so the realtor reflected in a mirror or someone walking through is painted from the other photos of
+  that spot. Where every photo of a spot shows a person, it is painted from them only if two of them saw it at least
+  20° apart — then it stays put as the phone moves, so it is on the surface (a poster or a painting of a person);
+  otherwise (one view of someone standing in front of it) it is filled in from around it.
+  `ScanStats.photosWithPeople` counts the photos with people.
 * **Baking**, two passes so only one photo is decoded at a time: (1) geometry only, as above; (2) photo by photo —
   each photo's pixels are sampled into the texels that chose it and into every cell that listed it. **Exposure
   and white-balance matching**: the phone's auto-exposure and white balance make one photo darker or warmer than the
@@ -219,7 +245,9 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   position: seen texels reproduce the pattern, a cabinet never leaks onto the wall behind it, under 20% of texels mix
   photos, exposure differences are evened out, glare that differs per photo leaves no steps between patches (2.9% of
   neighbouring floor texels step without leveling, none with it), steady photos win over blurry ones from the same
-  spot, and a wall's edges take its color.
+  spot, and a wall's edges take its color. A person standing in front of the camera in every photo lands on 68,000
+  texels of walls and floor without masks and on none with them, while a poster flagged in every photo is still
+  painted; a round pouf from a LiDAR mesh is painted within 1.3 levels (median) of the pattern at its own surface.
 * **Lights**: one warm point light per room (`KHR_lights_punctual`), 0.6 m below the ceiling at the room's visual
   center, intensity scaled by floor area.
 
@@ -261,7 +289,14 @@ roomplan/room-N.json      each CapturedRoom (RoomBuilder output)
 roomplan/room-N-data.json each CapturedRoomData (raw capture, can be rebuilt with RoomBuilder)
 roomplan/structure.usdz   RoomPlan's own USDZ export
 roomplan/capture.json     what a rebuild needs besides RoomPlan's files: startedAt, device, rooms
-                          [{ name, file: "room-N.json", segment }], path (raw: each sample in its run's frame)
+                          [{ name, file: "room-N.json", segment, mesh: "mesh-run-N.bin" }], path (raw: each
+                          sample in its run's frame), meshMode (what the AR session reconstructed: "mesh+classes",
+                          "mesh", "off")
+roomplan/mesh-run-N.bin   build 7 on: ARKit's LiDAR mesh when RoomPlan run N ended, world space in that run's frame.
+                          "ATMESH01", little-endian UInt32 vertex count, triangle count, flags (1 normals, 2 classes),
+                          Float32 xyz per vertex, Float32 xyz per normal, 3 × UInt32 per triangle, UInt8 per triangle
+                          (ARMeshClassification: 0 none, 1 wall, 2 floor, 3 ceiling, 4 table, 5 seat, 6 window,
+                          7 door). Kept on the phone: package.zip leaves the meshes out
 frames/frames.json   [{ file, t, transform[16], intrinsics[9], width, height, imageWidth, imageHeight, segment }]
                      (raw: each pose in its run's frame; images in sensor orientation; intrinsics refer to
                      width × height; scan.json has the same photos in the shared frame; build 5 on also records
@@ -271,7 +306,9 @@ frames/000123.jpg    RGB keyframes for photo texturing: full resolution (≤1920
                      most every 0.8 s, up to 600. Kept on the phone: package.zip leaves the JPEGs out (the
                      walkthrough carries the painted photos); older builds took one every 1.5 s at ≤1280 px
 alignment.json       AlignmentReport: how each room was placed (§1.1)
-info.json            app / device / capture metadata, pipeline version, alignment summary
+info.json            app / device / capture metadata, pipeline version, alignment summary, photosWithPeople,
+                     lidarMesh / lidarMeshRooms (the session's mesh setting, rooms with a mesh file),
+                     meshTriangles / meshObjects (mesh triangles in the model, RoomPlan boxes they replaced)
 ```
 
 ### 3.4 Object categories → styles
@@ -298,14 +335,24 @@ info.json            app / device / capture metadata, pipeline version, alignmen
    Office, Hallway, Entry, Laundry), then **Scan next room** or **Finish**. Between rooms: "Walk to the next room —
    keep the phone pointed ahead. Your path becomes the tour route." The ARKit session (and the trajectory
    recording) keeps running between rooms; RoomPlan still starts each room in a new frame, which §1.1 undoes.
-3. **Processing** — steps with checkmarks: Combining rooms → Building 3D model → Packaging scan.
+   The session is the app's own (`RoomCaptureView(frame:arSession:)`), set to reconstruct the LiDAR mesh with
+   ARKit's classes (RoomPlan keeps a session's settings); when a room ends, the mesh is saved as
+   `roomplan/mesh-run-N.bin`. Home's **Real furniture shapes** switch turns this off (RoomPlan's own session) in
+   case scanning misbehaves with it.
+3. **Processing** — steps with checkmarks: Combining rooms → Building 3D model → Packaging scan. The photos are
+   decoded one at a time (`ScanPhotos`); for the people masks each is read as a 512-pixel thumbnail, turned upright
+   from its pose (`PhotoMask.uprightTurns`: one quarter turn for a phone held in portrait), segmented with Vision's
+   `VNGeneratePersonSegmentationRequest` (balanced quality, confidence ≥ 50%), and the mask shrunk to at most 192
+   cells across and turned back to the photo's orientation.
 4. **Scan detail** — summary (rooms, floors, floor area), then:
    * **Send to Atrium** (when paired) with upload progress → success with **Open listing in Atrium**;
    * **Share 3D model (.glb)** (AirDrop / Files — can be uploaded in the dashboard by hand);
    * **Preview** (AR Quick Look of RoomPlan's USDZ);
    * **Rebuild walkthrough** — re-processes the saved RoomPlan data with the current pipeline (no rescanning);
-     scans built by an older pipeline (`record.pipeline` < `ScanBuilder.pipelineVersion`) show it as a
-     "Fix overlapping rooms" card. A rebuilt scan has to be sent again;
+     scans built by an older pipeline (`record.pipeline` < `ScanBuilder.pipelineVersion`) show it as a card
+     ("Fix overlapping rooms" … "Paint people out of the photos"). A rebuilt scan has to be sent again;
+   * the summary says how much the photos cover, how many photos had people painted out, and whether furniture
+     was shaped from the LiDAR mesh;
    * **Delete**.
 
 ### 4.2 Deep link
@@ -315,8 +362,9 @@ stores the pairing (server, token, property label, expiry) and shows it on Home.
 
 ### 4.3 Storage on device
 
-`Documents/Scans/<scan-id>/`: `scan.json`, `scan.glb`, `manifest.json`, `alignment.json`, `roomplan/…`
-(including `capture.json`), `frames/…`, `info.json`, `package.zip` (built on demand, deleted on rebuild), and
+`Documents/Scans/<scan-id>/`: `scan.json`, `scan.glb`, `scan-clean.glb`, `manifest.json`, `alignment.json`,
+`roomplan/…` (including `capture.json` and the meshes), `frames/…`, `info.json`, `package.zip` (built on demand,
+deleted on rebuild), and
 `record.json` (app metadata: name, created, stats, upload state, pipeline version, alignment summary).
 
 ### 4.4 Requirements

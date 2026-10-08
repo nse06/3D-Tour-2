@@ -93,6 +93,18 @@ struct ScanDetailView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if let people = scan.stats.photosWithPeople, people > 0 {
+                Label("People painted out of \(people) photo\(people == 1 ? "" : "s")", systemImage: "person.crop.circle.badge.xmark")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let triangles = scan.stats.meshTriangles, triangles > 0 {
+                Label("Furniture shaped from the LiDAR mesh", systemImage: "cube.transparent")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .card()
     }
@@ -103,18 +115,24 @@ struct ScanDetailView: View {
     }
 
     private func rebuildCard(_ scan: ScanRecord) -> some View {
-        let pipeline = scan.pipeline ?? 1
-        let title =
-            pipeline < 3
-            ? "Fix overlapping rooms" : pipeline < 4 ? "Add your photos to the walkthrough" : pipeline < 5 ? "Sharpen the photo walkthrough" : "Add the photos-off view"
-        let text =
-            pipeline < 3
-            ? "This scan was built before Atrium Capture lined rooms up with each other or used your photos, so rooms may overlap. Rebuilding fixes that and paints the photos taken while scanning onto the walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
-            : pipeline < 4
-                ? "This scan was built before Atrium Capture painted the photos taken while scanning onto the model. Rebuild to see your real walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
-                : pipeline < 5
-                    ? "Atrium Capture now paints each surface from its sharpest photo instead of blending several, shapes furniture (mattress, headboard, seat, back) and closes gaps under ceilings. Rebuild to apply it — this also adds a clean 3D view buyers can switch to. No rescanning needed. Afterwards, send it to Atrium again."
-                    : "Buyers and you can now switch the photos off in the walkthrough and see a clean 3D model of the home. Rebuild to add it. No rescanning needed. Afterwards, send it to Atrium again."
+        let title: String, text: String
+        switch scan.pipeline ?? 1 {
+        case ..<3:
+            title = "Fix overlapping rooms"
+            text = "This scan was built before Atrium Capture lined rooms up with each other or used your photos, so rooms may overlap. Rebuilding fixes that and paints the photos taken while scanning onto the walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
+        case 3:
+            title = "Add your photos to the walkthrough"
+            text = "This scan was built before Atrium Capture painted the photos taken while scanning onto the model. Rebuild to see your real walls, floors and furniture. No rescanning needed. Afterwards, send it to Atrium again."
+        case 4:
+            title = "Sharpen the photo walkthrough"
+            text = "Atrium Capture now paints each surface from its sharpest photo instead of blending several, shapes furniture (mattress, headboard, seat, back), paints people out of the photos and closes gaps under ceilings. Rebuild to apply it — this also adds a clean 3D view buyers can switch to. No rescanning needed. Afterwards, send it to Atrium again."
+        case 5:
+            title = "Add the photos-off view"
+            text = "Buyers and you can now switch the photos off in the walkthrough and see a clean 3D model of the home, and people in your photos are painted out. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
+        default:
+            title = "Paint people out of the photos"
+            text = "Atrium Capture now paints people out of the walkthrough — someone walking through, or you reflected in a mirror — using the other photos of the same spot. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
+        }
         return VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: "wand.and.stars")
                 .font(.headline)

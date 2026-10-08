@@ -65,7 +65,9 @@ which the phone can't pass.
 
 * **Before you start:** turn on the lights, open interior doors and blinds. Begin in the entry or
   the living room. The photos the phone takes while you scan are painted onto the walls, floors,
-  ceilings and furniture of the walkthrough, so tidy up what buyers shouldn't see.
+  ceilings and furniture of the walkthrough, so tidy up what buyers shouldn't see. People are
+  painted out — you in a mirror, someone walking through — as long as the phone also saw those
+  spots without them; someone who stays put in one place for the whole scan stays in it.
 * Tap **Start a scan**. Move slowly along the walls, pointing at the edges where walls meet the
   floor and ceiling, at windows, doors and large furniture. RoomPlan shows what it has measured
   and coaches you ("Move closer to the wall", "Slow down").
@@ -85,6 +87,12 @@ which the phone can't pass.
 Tips: one RoomPlan "room" can be up to about 9 × 9 m — scan a large open space as two rooms.
 Scanning is demanding: a full apartment is fine, but if the phone gets hot it pauses; let it cool.
 
+Furniture and clutter keep their real shape: while you scan, the phone also records the LiDAR
+mesh of everything it sees (Home → **Real furniture shapes**, on by default), and the walkthrough
+uses it instead of RoomPlan's boxes — sofas, plants, lamps, open shelves. Walk around furniture
+you want to look good and look at it from a couple of sides. If scanning ever misbehaves with it
+(the camera view freezing, the phone overheating quickly), turn the switch off and scan again.
+
 For good photos, take your time — a slow scan looks much better than a quick one. The app takes
 a full-resolution photo whenever the phone is still (at most about one a second), so pause for
 a moment on each stretch of wall, then on the floor and ceiling, rather than sweeping
@@ -96,13 +104,16 @@ page says how much your photos covered.
 **A scan from an earlier version?** Builds 1–2 took each room where RoomPlan reported it, and
 RoomPlan reports every room relative to where its scan started, so rooms piled up; builds 1–3
 didn't use the photos; build 4 blended several photos per spot (soft, sometimes doubled) and
-painted furniture as plain boxes; builds before 6 had no "photos off" view. Install the latest
-build over the old one (your scans stay), open the scan and tap **Rebuild walkthrough** (*Fix
-overlapping rooms* / *Add your photos to the walkthrough* / *Sharpen the photo walkthrough* / *Add
-the photos-off view*), then **Send to Atrium** again. No rescanning:
-the rebuild uses the RoomPlan data and photos saved on the phone. The lines under the scan's
-numbers say how the rooms were placed and how much the photos cover. Scans made with build 5 or
-later also get the sharper full-resolution photos.
+painted furniture as plain boxes; builds before 6 had no "photos off" view; builds before 7
+painted people in the photos onto the model. Install the latest build over the old one (your
+scans stay), open the scan and tap **Rebuild walkthrough** (*Fix overlapping rooms* / *Add your
+photos to the walkthrough* / *Sharpen the photo walkthrough* / *Add the photos-off view* / *Paint
+people out of the photos*), then **Send to Atrium** again. No rescanning: the rebuild uses the
+RoomPlan data and photos saved on the phone. The lines under the scan's numbers say how the rooms
+were placed, how much the photos cover, how many photos had people painted out and whether the
+furniture was shaped from the LiDAR mesh. Scans made with build 5 or later also get the sharper
+full-resolution photos; only scans made with build 7 or later have the LiDAR mesh, so real
+furniture shapes need a new scan.
 
 **No LiDAR?** **Create a demo scan** builds a sample two-bedroom apartment on the phone so you
 can try pairing and sending on any iPhone.
@@ -111,9 +122,9 @@ can try pairing and sending on any iPhone.
 
 | File | What it is |
 | --- | --- |
-| `scan.glb` | The 3D walkthrough (5–10 MB): walls, floors, ceilings and furniture painted with your photos (or, if the photos cover too little, a styled model with lights), plus the room/viewpoint/route data. |
+| `scan.glb` | The 3D walkthrough (5–12 MB): walls, floors, ceilings and furniture (in its real shape from the LiDAR mesh, build 7 on) painted with your photos, people painted out (or, if the photos cover too little, a styled model with lights), plus the room/viewpoint/route data. |
 | `scan-clean.glb` | Photo scans only (build 6 on): the same rooms as a clean 3D model (1–3 MB), shown when a buyer or you turn the photos off. In **Rooms & viewpoints** you choose whether buyers start with the photos on or off. |
-| `package.zip` | Raw data for future reprocessing: RoomPlan's rooms and merged structure, the scan in Atrium's format, the walked path and the photos' positions. The photos themselves stay on the phone (they're already painted into `scan.glb`). Optional — if the server refuses it (Supabase's free plan limits files to 50 MB) the walkthrough is sent without it. |
+| `package.zip` | Raw data for future reprocessing: RoomPlan's rooms and merged structure, the scan in Atrium's format, the walked path and the photos' positions. The photos and LiDAR meshes themselves stay on the phone (they're already in `scan.glb`). Optional — if the server refuses it (Supabase's free plan limits files to 50 MB) the walkthrough is sent without it. |
 
 Everything also stays on the phone (**Files → On My iPhone → Atrium Capture → Scans**), and
 **Share 3D model** exports the `.glb` (e.g. to upload it to a listing by hand).
@@ -128,6 +139,7 @@ Everything also stays on the phone (**Files → On My iPhone → Atrium Capture 
 | *Atrium's database isn't set up for iPhone scans yet* | Open `/setup` on your site and run the SQL it shows (safe to run again). |
 | *Scanning stopped* (tracking lost / too hot) | Choose **Keep what was scanned** or **Scan this room again**. |
 | Rooms overlap in the walkthrough | Open the scan on the phone, tap **Rebuild walkthrough**, then send it again. |
+| The camera view freezes or the phone overheats right away | Turn off **Real furniture shapes** on the Home screen and scan again (furniture is then built from RoomPlan's boxes). |
 
 ---
 

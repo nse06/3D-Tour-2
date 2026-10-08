@@ -18,10 +18,13 @@ def main():
     parser.add_argument("--method", required=True)
     parser.add_argument("--tolerance", type=float, required=True)
     parser.add_argument("--photos", action="store_true", help="the rebuild must have painted the scan's photos onto the model")
+    parser.add_argument("--mesh", action="store_true", help="the rebuild must have shaped furniture from the rooms' LiDAR meshes")
     args = parser.parse_args()
     folder, sample = args.folder, args.sample
     info = json.loads((folder / "info.json").read_text())
-    print("info:", json.dumps({k: info.get(k) for k in ("pipeline", "alignment", "structure", "photos", "photoCoverage")}))
+    keys = ("pipeline", "alignment", "structure", "photos", "photoCoverage", "photosWithPeople", "lidarMesh", "lidarMeshRooms", "meshTriangles", "meshObjects")
+    print("info:", json.dumps({k: info.get(k) for k in keys}))
+    assert info.get("pipeline", 0) >= 7 and "photosWithPeople" in info and "meshTriangles" in info, "rebuilt with an old pipeline"
     report = json.loads((folder / "alignment.json").read_text())
     print("alignment:", json.dumps({k: v for k, v in report.items() if k != "rooms"}))
     for r in report["rooms"]:
@@ -80,6 +83,14 @@ def main():
         clean_rooms = clean_gltf["scenes"][0]["extras"]["atrium"]["rooms"]
         assert len(clean_rooms) == len(manifest["rooms"]), "the clean model covers the same rooms"
         print(f"clean model: {len(clean) / 1e6:.1f} MB, {len(clean_rooms)} rooms")
+
+    if args.mesh:
+        rooms = len(json.loads((folder / "manifest.json").read_text())["rooms"])
+        assert info.get("lidarMeshRooms") == rooms, f"meshes loaded for {info.get('lidarMeshRooms')} of {rooms} rooms"
+        assert info.get("lidarMesh") == "mesh+classes", f"mesh mode: {info.get('lidarMesh')}"
+        # Each room's ottoman: 432 triangles before simplification, a few dozen or more after.
+        assert info.get("meshTriangles", 0) >= 20 * rooms, f"mesh triangles in the model: {info.get('meshTriangles')}"
+        print(f"LiDAR shapes: {info['meshTriangles']} triangles in {rooms} rooms, {info.get('meshObjects')} RoomPlan boxes replaced")
 
 
 if __name__ == "__main__":

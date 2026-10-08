@@ -16,6 +16,8 @@ import Foundation
 //   2. photo by photo — each photo's pixels are sampled into the texels that
 //      chose it. The photos' auto-exposure is evened out where they overlap,
 //      and texels no photo saw are filled from their neighbours.
+// People in a photo (its mask) don't count as seeing the surface behind them,
+// so other photos paint it.
 
 /// Decoded photos for texturing. The iPhone app decodes the scan's JPEGs; tests synthesize images.
 public protocol PhotoSource: Sendable {
@@ -23,6 +25,14 @@ public protocol PhotoSource: Sendable {
     /// orientation (the one its intrinsics refer to). Any size; it is matched
     /// to the frame's intrinsics by scaling.
     func image(for frame: CameraFrame) -> RGBImage?
+
+    /// Where the photo shows people, in the same orientation as `image(for:)`; nil if none (the
+    /// default). Masks are widened a little before use. Called for every photo, concurrently.
+    func mask(for frame: CameraFrame) -> PhotoMask?
+}
+
+extension PhotoSource {
+    public func mask(for frame: CameraFrame) -> PhotoMask? { nil }
 }
 
 /// Encodes an atlas for the .glb: the bytes and their MIME type (PNG by default; the app uses JPEG).
@@ -65,6 +75,9 @@ struct PhotoChart {
     // Placement in the atlas (texels), including padding.
     var atlas = 0, x = 0, y = 0, w = 0, h = 0
     var texel = 0.01
+    /// A patch of the LiDAR mesh: its faces only roughly follow the plane, so each texel is
+    /// painted at its own point on them (see `ChartSurface`).
+    var curved = false
 
     static let pad = 4
     /// A solid chart's square in the atlas, texels (big enough to stay one color in the mipmaps).
@@ -94,12 +107,21 @@ struct PhotoChart {
     }
 }
 
+/// Where each texel of a curved chart lies, and which way its face looks (zero outside the faces).
+struct ChartSurface {
+    var points: [Vec3]
+    var normals: [Vec3]
+}
+
 /// The photo-mode model: every face lies on a chart (material "chart:<index>", UVs in chart meters until baked).
 struct PhotoModel {
     var mesh = MeshBuilder()
     var charts: [PhotoChart] = []
     /// Each room's floor chart, by room index (thresholds extend it).
     var floorChart: [Int: Int] = [:]
+    /// Furniture and clutter from the LiDAR mesh: its triangles, and the RoomPlan boxes it replaced.
+    var meshTriangles = 0
+    var meshObjects = 0
 
     static let wallColor: (UInt8, UInt8, UInt8) = (233, 229, 222)
     static let floorColor: (UInt8, UInt8, UInt8) = (176, 150, 118)
@@ -183,10 +205,26 @@ struct PhotoModel {
             }
         }
         model.addThresholds(passages, walls: walls, rooms: rooms)
-        // Furniture in parts (a bed's mattress and headboard, a sofa's seat and back), so each
-        // photo lands on the surface it shows rather than on the top of one big box.
-        for o in scan.objects { Furniture.build(o, walls: walls, into: &model, decor: false) }
+        // Furniture and clutter in their real shapes where the LiDAR mesh has them; elsewhere in
+        // parts (a bed's mattress and headboard, a sofa's seat and back), so each photo lands on the
+        // surface it shows rather than on the top of one big box.
+        let shapes = MeshShapes.build(scan.meshes, rooms: rooms, walls: walls, objects: scan.objects)
+        for o in scan.objects where !shapes.replaced.contains(o.id) { Furniture.build(o, walls: walls, into: &model, decor: false) }
+        model.addShapes(shapes)
         return model
+    }
+
+    /// Each patch of the mesh is a chart.
+    mutating func addShapes(_ shapes: MeshShapes) {
+        for patch in shapes.patches {
+            let chart = addChart(origin: patch.origin, u: patch.u, v: patch.v, normal: patch.normal, kind: .object)
+            charts[chart].curved = true
+            mesh.addTriangles(
+                shapes.vertices, patch.faces.map { shapes.triangles[$0] }, normal: patch.normal, material: Self.chartMaterial(chart),
+                uv: .chart(origin: patch.origin, u: patch.u, v: patch.v))
+        }
+        meshTriangles = shapes.triangles.count
+        meshObjects = shapes.replaced.count
     }
 
     static func isPassage(_ o: ScanOpening, rooms: [RoomInfo]) -> Bool {
@@ -312,6 +350,8 @@ struct PhotoCamera {
     // Depth image (camera distance along the view axis; +∞ where nothing was drawn).
     let depthWidth: Int, depthHeight: Int
     var depth: [Float]
+    /// Where the photo shows people (widened), if anywhere.
+    var mask: PhotoMask?
 
     init?(_ frame: CameraFrame, depthWidth: Int) {
         let k = frame.intrinsics
@@ -410,6 +450,21 @@ struct PhotoCamera {
         let nearest = min(depth[y0 * depthWidth + x0], depth[y0 * depthWidth + x1], depth[y1 * depthWidth + x0], depth[y1 * depthWidth + x1])
         return z <= nearest * 1.03 + 0.04
     }
+
+    /// Whether the photo shows a person at pixel (u, v).
+    @inline(__always) func isMasked(u: Float, v: Float) -> Bool {
+        guard let mask else { return false }
+        return mask.covers(u: u, v: v, width: width, height: height)
+    }
+
+    /// Sets the photo's people mask, widened by about 1.5% of the photo's width.
+    mutating func setMask(_ raw: PhotoMask?) {
+        guard let raw, !raw.isEmpty else {
+            mask = nil
+            return
+        }
+        mask = raw.dilated(by: max(1, Int((Double(raw.width) * 0.015).rounded())))
+    }
 }
 
 /// A fixed-size buffer that concurrent loops fill in disjoint parts.
@@ -472,6 +527,8 @@ struct PhotoBaker {
         var texelsPerPhoto: [Int]
         /// Share of the seen texels that mix more than one photo (the seams).
         var blended: Double
+        /// Photos that showed people (painted around them).
+        var photosWithPeople: Int
     }
 
     /// Photos are chosen per cell of this many texels across (about 3 cm).
@@ -484,6 +541,9 @@ struct PhotoBaker {
     static let smoothing: Float = 0.5
     /// Motion smear across a surface (meters) at which a photo counts half.
     static let smearScale: Float = 0.012
+    /// Photos that all show a person on a spot paint it only if two of them saw it at least 20°
+    /// apart (cosine).
+    static let maskedSpread: Float = 0.94
 
     /// Sizes and places every chart; nil if they can't fit.
     static func pack(_ charts: inout [PhotoChart], options: PhotoTexturingOptions) -> Int? {
@@ -541,9 +601,9 @@ struct PhotoBaker {
     }
 
     /// How well a photo shows point `p` of a chart: facing it, close, near the image center and
-    /// not smeared by the phone's motion. 0 if the photo doesn't see the point, or if it does no
-    /// better than `threshold`.
-    @inline(__always) static func score(_ cam: PhotoCamera, at p: Vec3, normal: Vec3, rule: Rule, above threshold: Float) -> Float {
+    /// not smeared by the phone's motion. 0 if the photo doesn't see the point (or shows a person
+    /// there, unless `masked` photos are allowed), or if it does no better than `threshold`.
+    @inline(__always) static func score(_ cam: PhotoCamera, at p: Vec3, normal: Vec3, rule: Rule, above threshold: Float, masked: Bool = false) -> Float {
         let toCam = cam.position - p
         let dist = vlength(toCam)
         guard dist > 0.15 else { return 0 }
@@ -556,6 +616,7 @@ struct PhotoBaker {
         let smear = cam.smear * dist / smearScale
         score /= 1 + smear * smear
         guard score > threshold, cam.isVisible(z: q.depth, u: q.u, v: q.v) else { return 0 }
+        if !masked && cam.isMasked(u: q.u, v: q.v) { return 0 }
         return score
     }
 
@@ -567,12 +628,13 @@ struct PhotoBaker {
         let size = options.atlasSize
         var cameras = inputCameras
 
-        // Depth images, one per photo, from every triangle of the model.
+        // Depth images, one per photo, from every triangle of the model; and where each photo shows people.
         let buffers = model.mesh.order.compactMap { model.mesh.buffers[$0] }
         cameras.withUnsafeMutableBufferPointer { cams in
             guard let base = cams.baseAddress else { return }
             DispatchQueue.concurrentPerform(iterations: cams.count) { i in
                 for b in buffers { base[i].rasterize(b.positions, b.indices) }
+                base[i].setMask(photos.mask(for: base[i].frame))
             }
         }
         let cams = cameras
@@ -591,11 +653,19 @@ struct PhotoBaker {
         // Only texels on the chart's faces take photos; padding and holes are filled from them
         // (sampled, they would show whatever lies beyond the face's edge).
         let inside = SharedArray<Bool>(repeating: false, count: total)
+        let surfaces = SharedArray<ChartSurface?>(repeating: nil, count: charts.count)
         DispatchQueue.concurrentPerform(iterations: charts.count) { ci in
             guard !charts[ci].isSolid else { return }
-            let mask = coverage(of: charts[ci], faces: model.mesh.buffers[PhotoModel.chartMaterial(ci)])
+            let (mask, surface) = coverage(of: charts[ci], faces: model.mesh.buffers[PhotoModel.chartMaterial(ci)])
             for t in mask.indices where mask[t] { inside.buffer[offsets[ci] + t] = true }
+            surfaces.buffer[ci] = surface
         }
+        /// Texel `t` of chart `ci`: its point and the way its surface faces.
+        @inline(__always) func point(_ ci: Int, _ t: Int) -> Vec3 {
+            if let s = surfaces.buffer[ci] { return s.points[t] }
+            return charts[ci].point(t % charts[ci].w, t / charts[ci].w)
+        }
+        @inline(__always) func normal(_ ci: Int, _ t: Int) -> Vec3 { surfaces.buffer[ci]?.normals[t] ?? charts[ci].normal }
         let insideTotal = inside.buffer.prefix(total).filter { $0 }.count
         // Each cell is judged at its face texel nearest the cell's center (texel index in the chart; −1: none).
         let cellSpot = SharedArray<Int32>(repeating: -1, count: cellTotal)
@@ -604,6 +674,8 @@ struct PhotoBaker {
         let cellCam = SharedArray<UInt16>(repeating: .max, count: cellTotal * perCell)
         let cellScore = SharedArray<Float>(repeating: 0, count: cellTotal * perCell)
         let cellLabel = SharedArray<UInt16>(repeating: .max, count: cellTotal)
+        // Cells that every photo seeing them shows a person on: their candidates are those photos.
+        let cellMasked = SharedArray<Bool>(repeating: false, count: cellTotal)
         let texelCam = SharedArray<UInt16>(repeating: .max, count: total * slots)
         let texelWeight = SharedArray<Float>(repeating: 0, count: total * slots)
         let candidates: [[Int]] = charts.map { $0.isSolid ? [] : candidateCameras(for: $0, cameras: cams) }
@@ -630,22 +702,45 @@ struct PhotoBaker {
                         }
                     }
                     guard spot >= 0 else { continue }
-                    cellSpot.buffer[cellBase + cy * gw + cx] = Int32(spot)
-                    let p = chart.point(spot % chart.w, spot / chart.w)
-                    let base = (cellBase + cy * gw + cx) * perCell
+                    let cellIndex = cellBase + cy * gw + cx
+                    cellSpot.buffer[cellIndex] = Int32(spot)
+                    let p = point(ci, spot), n = normal(ci, spot)
+                    let base = cellIndex * perCell
                     var kept = 0
-                    for k in cands {
-                        let s = score(cams[k], at: p, normal: chart.normal, rule: rule, above: kept < perCell ? 0 : cs[base + perCell - 1])
-                        guard s > 0 else { continue }
-                        var pos = min(kept, perCell - 1)
-                        while pos > 0 && cs[base + pos - 1] < s {
-                            cs[base + pos] = cs[base + pos - 1]
-                            cc[base + pos] = cc[base + pos - 1]
-                            pos -= 1
+                    func collect(masked: Bool) {
+                        for k in cands {
+                            let s = score(cams[k], at: p, normal: n, rule: rule, above: kept < perCell ? 0 : cs[base + perCell - 1], masked: masked)
+                            guard s > 0 else { continue }
+                            var pos = min(kept, perCell - 1)
+                            while pos > 0 && cs[base + pos - 1] < s {
+                                cs[base + pos] = cs[base + pos - 1]
+                                cc[base + pos] = cc[base + pos - 1]
+                                pos -= 1
+                            }
+                            cs[base + pos] = s
+                            cc[base + pos] = UInt16(k)
+                            kept = min(kept + 1, perCell)
                         }
-                        cs[base + pos] = s
-                        cc[base + pos] = UInt16(k)
-                        kept = min(kept + 1, perCell)
+                    }
+                    collect(masked: false)
+                    if kept == 0 {
+                        // Every photo of this spot shows a person on it. If they saw it from different
+                        // sides, it is something on the surface (a poster of a person): a person in front
+                        // of it would have moved across it as the phone moved. Else it stays unpainted.
+                        collect(masked: true)
+                        var apart = false
+                        for a in 0..<kept where !apart {
+                            let da = vnormalize(cams[Int(cc[base + a])].position - p)
+                            for b in (a + 1)..<kept where vdot(da, vnormalize(cams[Int(cc[base + b])].position - p)) < maskedSpread { apart = true }
+                        }
+                        if apart {
+                            cellMasked.buffer[cellIndex] = true
+                        } else {
+                            for s in 0..<perCell {
+                                cs[base + s] = 0
+                                cc[base + s] = .max
+                            }
+                        }
                     }
                 }
             }
@@ -656,24 +751,27 @@ struct PhotoBaker {
             for c in labels.indices { cellLabel.buffer[cellBase + c] = labels[c] }
 
             // Texels blend the photos of the four cells around them by distance: a single photo
-            // inside a patch, a short ramp across a seam. Photos that can't see the texel drop out.
+            // inside a patch, a short ramp across a seam. Photos that can't see the texel (or show a
+            // person on it) drop out.
             for j in 0..<chart.h {
                 for i in 0..<chart.w where inside.buffer[offsets[ci] + j * chart.w + i] {
                     let near = around(i, j, gw: gw, gh: gh)
+                    let nearest = clamp(Int(near.y.rounded()), 0, gh - 1) * gw + clamp(Int(near.x.rounded()), 0, gw - 1)
+                    // In a cell only masked photos see, they may paint.
+                    let masked = cellMasked.buffer[cellBase + nearest]
                     var from = PhotoBlend()
                     for n in 0..<4 { from.add(labels[Int(near.cells[n])], near.weights[n]) }
-                    let p = chart.point(i, j)
+                    let p = point(ci, j * chart.w + i), facing = normal(ci, j * chart.w + i)
                     var blend = PhotoBlend()
-                    for n in 0..<from.count where score(cams[Int(from.cams[n])], at: p, normal: chart.normal, rule: rule, above: 0) > 0 {
+                    for n in 0..<from.count where score(cams[Int(from.cams[n])], at: p, normal: facing, rule: rule, above: 0, masked: masked) > 0 {
                         blend.add(from.cams[n], from.weights[n])
                     }
                     if blend.count == 0 {
                         // Hidden from the patch's photo (behind furniture, say): the nearest cell's
                         // next best photo that sees it, so neighbouring texels agree; else any photo.
-                        let nearest = clamp(Int(near.y.rounded()), 0, gh - 1) * gw + clamp(Int(near.x.rounded()), 0, gw - 1)
                         let base = (cellBase + nearest) * perCell
                         for s in 0..<perCell where cs[base + s] > 0 {
-                            if score(cams[Int(cc[base + s])], at: p, normal: chart.normal, rule: rule, above: 0) > 0 {
+                            if score(cams[Int(cc[base + s])], at: p, normal: facing, rule: rule, above: 0, masked: masked) > 0 {
                                 blend.add(cc[base + s], 1)
                                 break
                             }
@@ -682,7 +780,7 @@ struct PhotoBaker {
                     if blend.count == 0 {
                         var best: Float = 0, bestCam = -1
                         for k in cands {
-                            let s = score(cams[k], at: p, normal: chart.normal, rule: rule, above: best)
+                            let s = score(cams[k], at: p, normal: facing, rule: rule, above: best)
                             if s > 0 {
                                 best = s
                                 bestCam = k
@@ -744,14 +842,14 @@ struct PhotoBaker {
                     for j in 0..<chart.h {
                         for i in 0..<chart.w {
                             let texel = offsets[ci] + j * chart.w + i
-                            for s in 0..<slots where tc[texel * slots + s] == id { sample(chart.point(i, j), into: texel * slots + s, trgb, ts) }
+                            for s in 0..<slots where tc[texel * slots + s] == id { sample(point(ci, j * chart.w + i), into: texel * slots + s, trgb, ts) }
                         }
                     }
                     let (gw, gh) = grids[ci]
                     for c in cellOffsets[ci]..<(cellOffsets[ci] + gw * gh) {
                         let spot = Int(cellSpot.buffer[c])
                         guard spot >= 0 else { continue }
-                        for s in 0..<perCell where cc[c * perCell + s] == id { sample(chart.point(spot % chart.w, spot / chart.w), into: c * perCell + s, crgb, cs) }
+                        for s in 0..<perCell where cc[c * perCell + s] == id { sample(point(ci, spot), into: c * perCell + s, crgb, cs) }
                     }
                 }
             }
@@ -891,7 +989,8 @@ struct PhotoBaker {
         let masks = charts.indices.map { ci in charts[ci].isSolid ? [] : seen.array(offsets[ci]..<(offsets[ci] + charts[ci].w * charts[ci].h)) }
         return Result(
             atlases: atlases, coverage: insideTotal > 0 ? Double(seenTotal) / Double(insideTotal) : 0, photosUsed: photosUsed, seen: masks,
-            texelsPerPhoto: texelsPerPhoto, blended: seenTotal > 0 ? Double(blendedTotal) / Double(seenTotal) : 0)
+            texelsPerPhoto: texelsPerPhoto, blended: seenTotal > 0 ? Double(blendedTotal) / Double(seenTotal) : 0,
+            photosWithPeople: cams.filter { $0.mask != nil }.count)
     }
 
     /// The four cells around texel (i, j) in a gw × gh grid of cells, with bilinear weights;
@@ -999,10 +1098,20 @@ struct PhotoBaker {
     }
 
     /// Texels of a chart whose centers lie on one of its faces (`faces`: the chart's triangles, UVs in
-    /// chart meters). A chart narrower than a texel gets its faces' whole footprint instead.
-    static func coverage(of chart: PhotoChart, faces buffer: MeshBuffer?) -> [Bool] {
+    /// chart meters). A chart narrower than a texel gets its faces' whole footprint instead. For a
+    /// curved chart, also each such texel's point on its face and the face's normal.
+    static func coverage(of chart: PhotoChart, faces buffer: MeshBuffer?) -> (mask: [Bool], surface: ChartSurface?) {
         var mask = [Bool](repeating: false, count: chart.w * chart.h)
-        guard let buffer, chart.w > 0, chart.h > 0 else { return mask }
+        guard let buffer, chart.w > 0, chart.h > 0 else { return (mask, nil) }
+        var points: [Vec3] = [], normals: [Vec3] = []
+        if chart.curved {
+            points = [Vec3](repeating: .zero, count: chart.w * chart.h)
+            normals = [Vec3](repeating: .zero, count: chart.w * chart.h)
+        }
+        func position(_ v: UInt32) -> Vec3 {
+            let i = Int(v) * 3
+            return Vec3(buffer.positions[i], buffer.positions[i + 1], buffer.positions[i + 2])
+        }
         let pad = Double(PhotoChart.pad)
         func texelCoords(_ v: UInt32) -> (Double, Double) {
             let i = Int(v) * 2
@@ -1012,6 +1121,14 @@ struct PhotoBaker {
             let a = texelCoords(buffer.indices[t]), b = texelCoords(buffer.indices[t + 1]), c = texelCoords(buffer.indices[t + 2])
             let area = (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
             guard abs(area) > 1e-12 else { continue }
+            var pa = Vec3.zero, pb = Vec3.zero, pc = Vec3.zero, faceNormal = chart.normal
+            if chart.curved {
+                pa = position(buffer.indices[t])
+                pb = position(buffer.indices[t + 1])
+                pc = position(buffer.indices[t + 2])
+                faceNormal = vnormalize(vcross(pb - pa, pc - pa))
+                if vdot(faceNormal, chart.normal) < 0 { faceNormal = -faceNormal }
+            }
             let x0 = max(0, Int(floor(min(a.0, b.0, c.0)))), x1 = min(chart.w - 1, Int(floor(max(a.0, b.0, c.0))))
             let y0 = max(0, Int(floor(min(a.1, b.1, c.1)))), y1 = min(chart.h - 1, Int(floor(max(a.1, b.1, c.1))))
             guard x0 <= x1, y0 <= y1 else { continue }
@@ -1021,17 +1138,29 @@ struct PhotoBaker {
                     let px = Double(i) + 0.5
                     let w0 = ((b.0 - px) * (c.1 - py) - (b.1 - py) * (c.0 - px)) / area
                     let w1 = ((c.0 - px) * (a.1 - py) - (c.1 - py) * (a.0 - px)) / area
-                    if w0 >= -1e-9, w1 >= -1e-9, 1 - w0 - w1 >= -1e-9 { mask[j * chart.w + i] = true }
+                    if w0 >= -1e-9, w1 >= -1e-9, 1 - w0 - w1 >= -1e-9 {
+                        mask[j * chart.w + i] = true
+                        if chart.curved {
+                            points[j * chart.w + i] = pa * Float(w0) + pb * Float(w1) + pc * Float(1 - w0 - w1)
+                            normals[j * chart.w + i] = faceNormal
+                        }
+                    }
                 }
             }
         }
         if !mask.contains(true) {
             let p = PhotoChart.pad
             for j in p..<max(p, chart.h - p) {
-                for i in p..<max(p, chart.w - p) { mask[j * chart.w + i] = true }
+                for i in p..<max(p, chart.w - p) {
+                    mask[j * chart.w + i] = true
+                    if chart.curved {
+                        points[j * chart.w + i] = chart.point(i, j)
+                        normals[j * chart.w + i] = chart.normal
+                    }
+                }
             }
         }
-        return mask
+        return (mask, chart.curved ? ChartSurface(points: points, normals: normals) : nil)
     }
 
     /// One photo per cell of a w×h grid (`.max` where none sees it): each cell's best-scoring

@@ -117,8 +117,8 @@ final class PhotoTexturingTests: XCTestCase {
         return CaptureScan(rooms: [room], walls: walls, objects: [object])
     }
 
-    /// Photos from the middle of the room, all the way round, slightly down and slightly up.
-    static func frames() -> [CameraFrame] {
+    /// Photos from the middle of the room (or `position`), all the way round, slightly down and slightly up.
+    static func frames(at position: Vec3 = Vec3(1.7, 1.45, 1.6), prefix: String = "") -> [CameraFrame] {
         var out: [CameraFrame] = []
         for (n, pitch) in [Float(-0.45), 0.25].enumerated() {
             for k in 0..<12 {
@@ -127,10 +127,10 @@ final class PhotoTexturingTests: XCTestCase {
                 let turn = Transform.rotationY(yaw)
                 let c = cos(pitch), s = sin(pitch)
                 let tilt = Transform(columnMajor: [1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1])
-                let pose = Transform.translating(Vec3(1.7, 1.45, 1.6)) * turn * tilt
+                let pose = Transform.translating(position) * turn * tilt
                 out.append(
                     CameraFrame(
-                        file: "frames/\(n)-\(k).jpg", t: Double(out.count), transform: pose, intrinsics: [230, 0, 0, 0, 230, 0, 160, 120, 1], width: 320,
+                        file: "frames/\(prefix)\(n)-\(k).jpg", t: Double(out.count), transform: pose, intrinsics: [230, 0, 0, 0, 230, 0, 160, 120, 1], width: 320,
                         height: 240, imageWidth: 320, imageHeight: 240))
             }
         }

@@ -127,11 +127,14 @@ final class AppModel: ObservableObject {
     private func buildScan(from capture: CaptureModel) {
         let input = ScanBuilder.Input(
             scanId: capture.scanId, directory: capture.directory, rooms: capture.rooms.map { (name: $0.name, data: $0.data, segment: $0.segment) },
-            path: capture.recorder.samples, frames: capture.recorder.keyframes, startedAt: capture.startedAt, device: ScanBuilder.deviceInfo())
+            path: capture.recorder.samples, frames: capture.recorder.keyframes, startedAt: capture.startedAt, device: ScanBuilder.deviceInfo(),
+            meshMode: capture.meshes.mode)
         try? capture.recorder.writeIndex()
         building = (capture.scanId, .combining)
         Task {
             do {
+                // The last room's mesh may still be on its way to disk.
+                await capture.meshes.finish()
                 let record = try await ScanBuilder.build(input) { [weak self] step in self?.building = (input.scanId, step) }
                 try store.save(record)
                 reloadScans()

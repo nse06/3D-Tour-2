@@ -186,6 +186,13 @@ public struct CaptureScan: Codable, Sendable, Equatable {
     public var trajectory: [PoseSample]
     /// Photos taken while scanning, in the same frame as everything else.
     public var frames: [CameraFrame]
+    /// The LiDAR meshes around the rooms, in the same frame. Not part of scan.json: the app keeps
+    /// them as separate files and attaches them before processing.
+    public var meshes: [ScanMesh] = []
+
+    enum CodingKeys: String, CodingKey {
+        case format, capturedAt, device, rooms, walls, openings, objects, trajectory, frames
+    }
 
     public init(
         rooms: [ScanRoom],
@@ -252,6 +259,7 @@ public struct CaptureScan: Codable, Sendable, Equatable {
         copy.objects = objects.filter { $0.transform.isFinite && isFinite($0.size) }
         copy.trajectory = trajectory.filter { $0.t.isFinite && isFinite($0.p) && isFinite($0.f) }
         copy.frames = frames.filter { $0.t.isFinite && $0.transform.isFinite && $0.intrinsics.count == 9 && $0.intrinsics.allSatisfy(\.isFinite) }
+        copy.meshes = meshes.map { $0.sanitized() }.filter { $0.triangleCount > 0 }
         return copy
     }
 
@@ -271,6 +279,7 @@ public struct CaptureScan: Codable, Sendable, Equatable {
         copy.objects = objects.map { var o = $0; o.transform = transform * $0.transform; return o }
         copy.trajectory = trajectory.map { PoseSample(t: $0.t, p: transform.apply($0.p), f: transform.applyDirection($0.f), segment: $0.segment) }
         copy.frames = frames.map { var f = $0; f.transform = transform * $0.transform; return f }
+        copy.meshes = meshes.map { $0.transformed(by: transform) }
         return copy
     }
 }

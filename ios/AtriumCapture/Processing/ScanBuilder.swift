@@ -14,7 +14,8 @@ enum ScanBuilder {
     /// 1–2: rooms taken as RoomPlan reported them. 3: rooms aligned into one frame.
     /// 4: the scan's photos painted onto the model. 5: one sharp photo per patch, furniture in parts.
     /// 6: a clean model next to the photo model, for the viewer's "photos off" view.
-    static let pipelineVersion = 6
+    /// 7: people painted out of the photos; furniture shaped from the LiDAR mesh (scans that have one).
+    static let pipelineVersion = 7
 
     enum Step: Int, CaseIterable {
         case combining, modeling, packaging
@@ -47,6 +48,8 @@ enum ScanBuilder {
         var frames: [CameraFrame]
         var startedAt: Date
         var device: DeviceInfo
+        /// What the AR session reconstructed besides RoomPlan's rooms (MeshRecorder.mode).
+        var meshMode: String
     }
 
     /// roomplan/capture.json: what a rebuild needs besides RoomPlan's own files.
@@ -57,6 +60,8 @@ enum ScanBuilder {
             var file: String
             /// The RoomPlan run that scanned it; nil for scans from builds before 3.
             var segment: Int?
+            /// roomplan/mesh-run-N.bin: the LiDAR mesh around the room (build 7 on).
+            var mesh: String? = nil
         }
 
         var startedAt: Date
@@ -64,6 +69,8 @@ enum ScanBuilder {
         var rooms: [Room]
         /// The path as recorded: each sample in its run's frame.
         var path: [PoseSample]
+        /// What the AR session reconstructed besides RoomPlan's rooms: "mesh", "mesh+classes", "off"…
+        var meshMode: String? = nil
     }
 
     static func build(_ input: Input, progress: @escaping @MainActor (Step) -> Void) async throws -> ScanRecord {
@@ -82,17 +89,25 @@ enum ScanBuilder {
             guard let room = try? await roomBuilder.capturedRoom(from: capture.data) else { continue }
             let file = "room-\(index + 1).json"
             try? encoder.encode(room).write(to: raw.appendingPathComponent(file))
-            rooms.append(NamedRoom(name: capture.name, room: room, segment: capture.segment))
-            entries.append(CaptureRecord.Room(name: capture.name, file: file, segment: capture.segment))
+            let meshFile = MeshRecorder.fileName(segment: capture.segment)
+            let mesh = fm.fileExists(atPath: raw.appendingPathComponent(meshFile).path) ? meshFile : nil
+            rooms.append(NamedRoom(name: capture.name, room: room, segment: capture.segment, mesh: mesh))
+            entries.append(CaptureRecord.Room(name: capture.name, file: file, segment: capture.segment, mesh: mesh))
         }
         guard !rooms.isEmpty else { throw Failure.noRooms }
-        let record = CaptureRecord(startedAt: input.startedAt, device: input.device, rooms: entries, path: input.path)
+        // Meshes of rooms scanned again (or dropped) aren't needed.
+        let kept = Set(entries.compactMap(\.mesh))
+        for name in (try? fm.contentsOfDirectory(atPath: raw.path)) ?? [] where name.hasPrefix("mesh-run-") && !kept.contains(name) {
+            try? fm.removeItem(at: raw.appendingPathComponent(name))
+        }
+        let record = CaptureRecord(startedAt: input.startedAt, device: input.device, rooms: entries, path: input.path, meshMode: input.meshMode)
         try save(record, in: dir)
 
         let merged = await mergedStructure(rooms.map(\.room), into: raw)
         return try await assemble(
             scanId: input.scanId, directory: dir, rooms: rooms, structure: merged.structure, structureNote: merged.note, path: input.path,
-            frames: input.frames, startedAt: input.startedAt, device: input.device, roomsDropped: input.rooms.count - rooms.count, progress: progress)
+            frames: input.frames, startedAt: input.startedAt, device: input.device, meshMode: input.meshMode, roomsDropped: input.rooms.count - rooms.count,
+            progress: progress)
     }
 
     /// Re-processes a saved scan with the current pipeline: same rooms and path, no rescanning.
@@ -106,7 +121,7 @@ enum ScanBuilder {
             guard let data = try? Data(contentsOf: raw.appendingPathComponent(entry.file)),
                   let room = try? decoder.decode(CapturedRoom.self, from: data)
             else { continue }
-            rooms.append(NamedRoom(name: entry.name, room: room, segment: entry.segment))
+            rooms.append(NamedRoom(name: entry.name, room: room, segment: entry.segment, mesh: entry.mesh))
         }
         guard !rooms.isEmpty else { throw Failure.nothingToRebuild }
 
@@ -130,7 +145,8 @@ enum ScanBuilder {
         let frames = (try? Data(contentsOf: framesURL)).flatMap { try? decoder.decode([CameraFrame].self, from: $0) } ?? []
         var rebuilt = try await assemble(
             scanId: record.id, directory: dir, rooms: rooms, structure: structure, structureNote: note, path: capture.path, frames: frames,
-            startedAt: capture.startedAt, device: capture.device ?? DeviceInfo(), roomsDropped: capture.rooms.count - rooms.count, progress: progress)
+            startedAt: capture.startedAt, device: capture.device ?? DeviceInfo(), meshMode: capture.meshMode ?? "not recorded",
+            roomsDropped: capture.rooms.count - rooms.count, progress: progress)
         rebuilt.createdAt = record.createdAt
         rebuilt.roomNames = rooms.map(\.name)
         return rebuilt
@@ -164,20 +180,29 @@ enum ScanBuilder {
     /// Rooms into one frame, then the walkthrough model, manifest and info files.
     private static func assemble(
         scanId: UUID, directory dir: URL, rooms: [NamedRoom], structure: CapturedStructure?, structureNote: String, path: [PoseSample],
-        frames: [CameraFrame], startedAt: Date, device: DeviceInfo, roomsDropped: Int, progress: @escaping @MainActor (Step) -> Void
+        frames: [CameraFrame], startedAt: Date, device: DeviceInfo, meshMode: String, roomsDropped: Int, progress: @escaping @MainActor (Step) -> Void
     ) async throws -> ScanRecord {
         await progress(.modeling)
-        let parts = rooms.enumerated().compactMap { index, entry in
-            RoomPlanAdapter.part(from: entry.room, name: entry.name, index: index, segment: entry.segment)
+        let raw = dir.appendingPathComponent("roomplan", isDirectory: true)
+        let found = rooms.enumerated().compactMap { index, entry -> (RoomPart, URL?)? in
+            guard let part = RoomPlanAdapter.part(from: entry.room, name: entry.name, index: index, segment: entry.segment) else { return nil }
+            return (part, entry.mesh.map { raw.appendingPathComponent($0) })
         }
-        guard !parts.isEmpty else { throw Failure.noRooms }
+        guard !found.isEmpty else { throw Failure.noRooms }
         let poses = structure.map(RoomPlanAdapter.structurePoses)
         let capturedAt = ISO8601DateFormatter().string(from: startedAt)
         let photos = ScanPhotos(directory: dir)
-        let (aligned, processed) = try await Task.detached(priority: .userInitiated) {
+        let (aligned, processed, meshRooms) = try await Task.detached(priority: .userInitiated) {
+            // Each room's LiDAR mesh rides along with it into the scan's frame.
+            var parts = found.map { $0.0 }, meshRooms = 0
+            for (k, (_, url)) in found.enumerated() {
+                guard let url, let data = try? Data(contentsOf: url), let mesh = try? ScanMesh(decoding: data), mesh.triangleCount > 0 else { continue }
+                parts[k].mesh = mesh
+                meshRooms += 1
+            }
             let aligned = RoomAlignment.align(parts: parts, structure: poses, path: path, frames: frames, capturedAt: capturedAt, device: device)
             // The photos are painted onto the model; with too few of them it falls back to the styled model.
-            return (aligned, try ScanProcessor.process(aligned.scan, photos: photos, encodeImage: ScanPhotos.encodeJPEG))
+            return (aligned, try ScanProcessor.process(aligned.scan, photos: photos, encodeImage: ScanPhotos.encodeJPEG), meshRooms)
         }.value
 
         await progress(.packaging)
@@ -204,7 +229,12 @@ enum ScanBuilder {
             "structure": structureNote,
             "photos": frames.count,
             "photoCoverage": processed.stats.photoCoverage ?? 0,
+            "photosWithPeople": processed.stats.photosWithPeople ?? 0,
             "cleanModel": processed.cleanGLB != nil,
+            "lidarMesh": meshMode,
+            "lidarMeshRooms": meshRooms,
+            "meshTriangles": processed.stats.meshTriangles ?? 0,
+            "meshObjects": processed.stats.meshObjects ?? 0,
         ]
         try JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]).write(to: dir.appendingPathComponent("info.json"))
         // The package zips these files; an old one would be stale.

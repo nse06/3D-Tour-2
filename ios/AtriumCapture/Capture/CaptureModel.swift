@@ -41,6 +41,7 @@ final class CaptureModel: ObservableObject {
     let scanId: UUID
     let directory: URL
     let recorder: MotionRecorder
+    let meshes: MeshRecorder
     let startedAt = Date()
     weak var controller: CaptureViewController?
 
@@ -59,6 +60,7 @@ final class CaptureModel: ObservableObject {
         self.scanId = scanId
         self.directory = directory
         recorder = MotionRecorder(framesDirectory: directory.appendingPathComponent("frames", isDirectory: true))
+        meshes = MeshRecorder(directory: directory.appendingPathComponent("roomplan", isDirectory: true))
     }
 
     var roomNumber: Int { rooms.count + 1 }

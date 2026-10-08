@@ -23,6 +23,7 @@
 		D4A376C01A925412D87A013F /* CaptureViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F7668958D2B29EA30541A7D /* CaptureViewController.swift */; };
 		DE7833FABD0470AE0DA7FCE0 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F93BBC1793430415D527F39 /* Theme.swift */; };
 		DF1A95BDCF38BCCFEB01A6DA /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F670F478F99DC65E5116018 /* HomeView.swift */; };
+		E249916CEFBCD394B320539F /* MeshRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A73D528BB3E897B832B3AFF /* MeshRecorder.swift */; };
 		ECB09D58FC16EE294B318597 /* ScanStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E483D89A8ED1BD77985EA5C4 /* ScanStore.swift */; };
 		F73A37FCA445BD9C750E240E /* ZipWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63B3AB195F6307727C6E214 /* ZipWriter.swift */; };
 		FB2499D28A7A080E5A812018 /* Automation.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE42C3F8C91EB98EF5740774 /* Automation.swift */; };
@@ -39,6 +40,7 @@
 		44259BCD1E9C12867870E07C /* CaptureModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureModel.swift; sourceTree = "<group>"; };
 		5A01CABDBEE21531813C3BF6 /* AtriumCaptureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtriumCaptureApp.swift; sourceTree = "<group>"; };
 		5F947C75117F62511C63B23D /* ScanCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ScanCore; path = ScanCore; sourceTree = SOURCE_ROOT; };
+		6A73D528BB3E897B832B3AFF /* MeshRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshRecorder.swift; sourceTree = "<group>"; };
 		6CC814AE0570AA4059F53508 /* ScanPhotos.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanPhotos.swift; sourceTree = "<group>"; };
 		717E948C59B3606CE25CA54F /* MotionRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionRecorder.swift; sourceTree = "<group>"; };
 		784E316122445AF7CFC3FD27 /* AtriumCapture.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AtriumCapture.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -155,6 +157,7 @@
 				44259BCD1E9C12867870E07C /* CaptureModel.swift */,
 				7B911C94325B3CE971DCEA87 /* CaptureScreen.swift */,
 				2F7668958D2B29EA30541A7D /* CaptureViewController.swift */,
+				6A73D528BB3E897B832B3AFF /* MeshRecorder.swift */,
 				717E948C59B3606CE25CA54F /* MotionRecorder.swift */,
 				3A297B9D67013EF721E92BEB /* RoomPlanAdapter.swift */,
 			);
@@ -254,6 +257,7 @@
 				600FA14EBAC14CF6C7177629 /* CaptureScreen.swift in Sources */,
 				D4A376C01A925412D87A013F /* CaptureViewController.swift in Sources */,
 				DF1A95BDCF38BCCFEB01A6DA /* HomeView.swift in Sources */,
+				E249916CEFBCD394B320539F /* MeshRecorder.swift in Sources */,
 				7955FA69097F598EE44083BF /* MotionRecorder.swift in Sources */,
 				8D414731C6B8EAE9F450822B /* PairingSheet.swift in Sources */,
 				81F15CE72B68BE9051069022 /* RoomPlanAdapter.swift in Sources */,
@@ -324,7 +328,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -410,7 +414,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
