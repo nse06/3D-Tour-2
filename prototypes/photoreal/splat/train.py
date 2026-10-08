@@ -30,6 +30,9 @@ p.add_argument("--max-gaussians", type=int, default=800_000)
 p.add_argument("--degree", type=int, default=1)
 p.add_argument("--coarse", type=float, default=0.3, help="share of iterations at half resolution")
 p.add_argument("--resume", default=None)
+p.add_argument("--densify-until", type=float, default=0.5, help="share of iterations with densification")
+p.add_argument("--reset-until", type=int, default=None, help="last iteration with an opacity reset (default: while densifying)")
+p.add_argument("--screen-prune", action="store_true", help="also prune splats larger than 40 px on screen (outdoor-scene rule; hurts close-up rooms)")
 args = p.parse_args()
 torch.manual_seed(0)
 np.random.seed(0)
@@ -221,7 +224,8 @@ n = opt.p["means"].shape[0]
 grad_acc = torch.zeros(n)
 grad_cnt = torch.zeros(n)
 max_radius = torch.zeros(n)
-densify_until = int(args.iters * 0.5)
+densify_until = int(args.iters * args.densify_until)
+reset_until = args.reset_until if args.reset_until is not None else densify_until
 order = []
 t0 = time.time()
 
@@ -274,7 +278,7 @@ def densify(it):
         keep &= op > 0.005
         sc_all = opt.p["log_scales"].exp().max(dim=1).values
         keep &= sc_all < 0.15 * extent
-        if it > 3000:
+        if args.screen_prune and it > 3000:
             mr = torch.cat([max_radius, torch.zeros(n_new)])
             keep &= mr < 40
         opt.keep(keep)
@@ -310,7 +314,7 @@ for it in range(start, args.iters):
     if it >= 500 and it < densify_until and it % 100 == 0:
         c, s, pr, n_now = densify(it)
         say(f"  densify @{it}: +{c} clones, {s} splits, -{pr} pruned → {n_now}")
-    if it > 0 and it % 3000 == 0 and it < densify_until:
+    if it > 0 and it % 3000 == 0 and it < densify_until and it <= reset_until:
         with torch.no_grad():
             opt.p["opacity_logits"].copy_(torch.logit(torch.sigmoid(opt.p["opacity_logits"]).clamp(max=0.01)))
             opt.m["opacity_logits"].zero_()

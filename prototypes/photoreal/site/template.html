@@ -195,29 +195,54 @@ function setStatus(text) {
   $("status").textContent = text || "";
 }
 
+/** A model file's bytes (models ship as base64 text, which the page decodes). */
+async function fetchBytes(file, onProgress) {
+  const res = await fetch(file.url);
+  if (!res.ok) throw new Error(`${file.url}: HTTP ${res.status}`);
+  const reader = res.body.getReader();
+  const chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    got += value.length;
+    onProgress(Math.min(1, got / file.textBytes));
+  }
+  const text = new Uint8Array(got);
+  let o = 0;
+  for (const c of chunks) {
+    text.set(c, o);
+    o += c.length;
+  }
+  const binary = atob(new TextDecoder().decode(text).replace(/\s+/g, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
 function load(key) {
   if (loading[key]) return loading[key];
   const file = data.files[key];
-  const progress = (e) => {
-    if (method === key && e.total) setStatus(`Loading ${Math.round((e.loaded / e.total) * 100)}% of ${(e.total / 1e6).toFixed(1)} MB`);
+  const progress = (f) => {
+    if (method === key) setStatus(`Loading ${Math.round(f * 100)}% of ${(file.bytes / 1e6).toFixed(1)} MB`);
   };
-  loading[key] = (key === "splat"
-    ? new SPZLoader().loadAsync(file, progress).then((geometry) => {
-        // The splats were fitted to the photos' sRGB values; the renderer encodes its output as sRGB.
-        const splat = new GaussianSplat(geometry);
-        const c = splat.material.colorNode;
-        splat.material.colorNode = vec4(sRGBTransferEOTF(c.rgb), c.a);
-        return splat;
-      })
-    : new GLTFLoader().loadAsync(file, progress).then((gltf) => {
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh) return;
-          const m = o.material;
-          o.material = new THREE.MeshBasicMaterial({ map: m.map ?? null, color: 0xffffff, toneMapped: false });
-        });
-        return gltf.scene;
-      })
-  ).then((object) => {
+  loading[key] = fetchBytes(file, progress).then(async (buffer) => {
+    if (key === "splat") {
+      // The splats were fitted to the photos' sRGB values; the renderer encodes its output as sRGB.
+      const splat = new GaussianSplat(new SPZLoader().parse(buffer));
+      const c = splat.material.colorNode;
+      splat.material.colorNode = vec4(sRGBTransferEOTF(c.rgb), c.a);
+      return splat;
+    }
+    const gltf = await new GLTFLoader().parseAsync(buffer, "");
+    gltf.scene.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = o.material;
+      o.material = new THREE.MeshBasicMaterial({ map: m.map ?? null, color: 0xffffff, toneMapped: false });
+    });
+    return gltf.scene;
+  }).then((object) => {
     object.visible = false;
     scene.add(object);
     models[key] = object;

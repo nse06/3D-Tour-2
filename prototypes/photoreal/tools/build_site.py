@@ -3,6 +3,7 @@
 site/index.html (three.js from jsDelivr, for publishing), site/local.html (local copy, for tests),
 site/models/*, site/img/ref-*.jpg, site/views.json (metrics filled in by tools/evaluate.py).
 """
+import base64
 import json
 import math
 import shutil
@@ -19,6 +20,9 @@ spz = Path(sys.argv[1])
 shutil.copy(root / "out/painted-today.jpg.glb", site / "models/today.glb")
 shutil.copy(root / "out/painted-lidar.jpg.glb", site / "models/lidar.glb")
 shutil.copy(spz, site / "models/splats.spz")
+# Artifacts serve text, not .glb/.spz: each model also ships as base64 text.
+for name in ("today.glb", "lidar.glb", "splats.spz"):
+    (site / "models" / f"{name}.txt").write_bytes(base64.b64encode((site / "models" / name).read_bytes()))
 tests = json.loads((data / "test.json").read_text())
 SHORT = ["Sofa", "Living from door", "TV wall", "From kitchen", "Kitchen table", "Counter", "Glossy floor", "Hall mirror", "Hallway", "Bedroom", "Bath mirror", "Primary"]
 old = {}
@@ -37,10 +41,11 @@ for k in ("today", "lidar", "splat"):
     summary.setdefault(k, {"psnr": 0, "ssim": 0})
 summary["today"].update(size=size(site / "models/today.glb"), where="On the iPhone", time="About 10 seconds", cost="Free", clean="Yes")
 summary["lidar"].update(size=size(site / "models/lidar.glb"), where="On the iPhone", time="About 10 seconds", cost="Free", clean="Yes")
-summary["splat"].update(size=size(site / "models/splats.spz"), where="Cloud GPU", time=summary["splat"].get("time", "—"), cost="About $0.30–1 of GPU time", clean="No (needs the painted model)")
+summary["splat"].update(size=size(site / "models/splats.spz"), where="Cloud GPU", time=summary["splat"].get("time", "—"), cost="About $0.10–0.50 of GPU time", clean="No (needs the painted model)")
 doc = {
     "fovY": 2 * math.degrees(math.atan(h / 2 / fy)),
-    "files": {"today": "models/today.glb", "lidar": "models/lidar.glb", "splat": "models/splats.spz"},
+    "files": {k: {"url": f"models/{name}.txt", "bytes": (site / "models" / name).stat().st_size, "textBytes": (site / "models" / f"{name}.txt").stat().st_size}
+              for k, name in (("today", "today.glb"), ("lidar", "lidar.glb"), ("splat", "splats.spz"))},
     "views": views,
     "summary": summary,
     "notes": old.get("notes", []),

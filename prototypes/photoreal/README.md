@@ -33,16 +33,19 @@ python3 tools/glb_jpeg.py out/painted-today.glb out/painted-today.jpg.glb
 python3 tools/glb_jpeg.py out/painted-lidar.glb out/painted-lidar.jpg.glb
 
 python splat/gradcheck.py                    # the rasterizer's gradients vs. finite differences
-python splat/train.py data runs/main --iters 12000 --max-gaussians 650000   # ~3 h on 4 CPU cores
-python splat/export.py runs/main/ckpt.pt out/splats.spz
+python splat/train.py data runs/main --iters 12000 --max-gaussians 650000 --densify-until 0.6   # ~2 h on 4 CPU cores
 
 mkdir -p vendor && curl -sL https://registry.npmjs.org/three/-/three-0.186.0.tgz | tar -xz -C vendor && mv vendor/package vendor/three@0.186.0
-python3 tools/build_site.py out/splats.spz   # site/index.html (CDN three.js) and site/local.html
-node tools/capture.mjs 8931 eval/page        # screenshots of every viewpoint, per method
-python tools/evaluate.py eval/page           # PSNR / SSIM against the real photos → site/views.json
+PY=python tools/final.sh runs/main          # export → page → screenshots → scores → notes
 ```
 
-`site/` is then a static page (publish `index.html` with `views.json`, `models/` and `img/`).
+`tools/final.sh` runs the last steps one by one: `splat/export.py` (`.spz`), `tools/build_site.py`
+(`site/index.html` with CDN three.js and `site/local.html` with the vendored copy), `tools/capture.mjs`
+(a screenshot of every held-out viewpoint per method, taken from the page itself), `tools/evaluate.py`
+(PSNR / SSIM against the real photos → `site/views.json`) and `tools/finalize.py` (the page's notes).
+`site/` is then a static page: publish `index.html` with `views.json`, `models/*.txt` (the models as
+base64 text, for hosts that only serve text and images) and `img/`. `tools/shot.mjs` takes a full-page
+screenshot for a quick look.
 
 ## How the splats are trained
 
@@ -51,8 +54,11 @@ a hand-written backward pass; `splat/gs.py` projects the Gaussians (EWA, 0.3 px 
 them with spherical harmonics in PyTorch, so autograd covers everything but the rasterizer.
 `splat/train.py` seeds Gaussians on LiDAR-like surface points (discs along the surface normal, colored
 from the photos), then optimizes L1 + 0.2 D-SSIM with Adam, clones and splits under-fitted Gaussians
-and prunes transparent ones until halfway, resets opacity every 3000 steps, and trains at half
-resolution for the first 30%. `splat/export.py` writes `.spz` (version 2, gzip) for three.js's
+and prunes transparent ones for the first 60% of the steps, resets opacity every 3000 steps, and trains at
+half resolution for the first 30%. The paper's other pruning rule, dropping Gaussians that cover more than
+40 px on screen, is off (`--screen-prune` turns it on): it is meant for large outdoor scenes, and in rooms,
+where the camera stands close to walls and furniture, it deleted 45% of the Gaussians in one step and
+cost 3 dB of test PSNR. `splat/export.py` writes `.spz` (version 2, gzip) for three.js's
 `SPZLoader` / `GaussianSplat`; the page converts the splats' sRGB colors for three's linear pipeline.
 
 On a cloud GPU the same method (gsplat or the reference CUDA rasterizer) trains on full-resolution

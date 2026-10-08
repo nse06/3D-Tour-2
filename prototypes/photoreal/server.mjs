@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 const root = path.dirname(new URL(import.meta.url).pathname);
 const three = path.resolve(root, "../../node_modules/three");
-const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json", ".png": "image/png",
+const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png",
   ".jpg": "image/jpeg", ".glb": "model/gltf-binary", ".ply": "application/octet-stream", ".splat": "application/octet-stream", ".bin": "application/octet-stream", ".wasm": "application/wasm" };
 const port = Number(process.argv[2] || 8931);
 http.createServer((req, res) => {
