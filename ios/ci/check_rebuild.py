@@ -22,9 +22,9 @@ def main():
     args = parser.parse_args()
     folder, sample = args.folder, args.sample
     info = json.loads((folder / "info.json").read_text())
-    keys = ("pipeline", "alignment", "structure", "photos", "photoCoverage", "photosWithPeople", "lidarMesh", "lidarMeshRooms", "meshTriangles", "meshObjects")
+    keys = ("pipeline", "alignment", "structure", "photos", "photoCoverage", "photosWithPeople", "lidarMesh", "lidarMeshRooms", "meshTriangles", "meshObjects", "photosAligned")
     print("info:", json.dumps({k: info.get(k) for k in keys}))
-    assert info.get("pipeline", 0) >= 7 and "photosWithPeople" in info and "meshTriangles" in info, "rebuilt with an old pipeline"
+    assert info.get("pipeline", 0) >= 8 and "photosWithPeople" in info and "meshTriangles" in info and "photosAligned" in info, "rebuilt with an old pipeline"
     report = json.loads((folder / "alignment.json").read_text())
     print("alignment:", json.dumps({k: v for k, v in report.items() if k != "rooms"}))
     for r in report["rooms"]:

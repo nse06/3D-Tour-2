@@ -152,7 +152,8 @@ only one side is cut through both faces.
 ### 2.2 glTF output
 
 glTF 2.0 binary: JSON chunk padded with spaces, BIN chunk padded with zeros, 4-byte aligned buffer views,
-`POSITION` accessors with `min`/`max`, `NORMAL`, `TEXCOORD_0`, `UNSIGNED_INT` indices, PBR metallic-roughness
+`POSITION` accessors with `min`/`max`, `NORMAL` (not in unlit photo models, build 8 on: viewers derive flat normals
+if they need them), `TEXCOORD_0`, `UNSIGNED_INT` indices, PBR metallic-roughness
 materials, PNG textures (stored-deflate encoder, no zlib dependency), `KHR_lights_punctual`,
 `KHR_materials_emissive_strength`. The manifest is embedded at **`scenes[0].extras.atrium`** (the web reads it
 from there without parsing geometry).
@@ -168,7 +169,9 @@ Identical to the web's `ScanManifest` (`src/lib/tour/scan-manifest.ts`):
   `captureIndex`), `footprint` = floor polygon in plan (`[x, z]`), `waypoint` (below).
 * **waypoints**: candidates = trajectory samples inside the room footprint and on the room's floor, plus the
   footprint's centroid. Score = distance to the farthest footprint vertex (a deep view across the room) with a
-  penalty for being within 0.6 m of a wall or inside a furniture footprint. Position = best candidate at
+  penalty for being within 0.6 m of a wall or inside a furniture footprint. In a photo scan (build 8 on) the photos'
+  positions are candidates too, and a candidate scores up to 2 m more with ten or more photos taken within 80 cm of
+  it: painted surfaces look their best near where they were photographed. Position = best candidate at
   `floorY + eyeHeight`; yaw looks toward the midpoint between the footprint centroid and the farthest vertex;
   pitch = −0.08.
 * **links**: (1) every door/opening whose two sides (0.6 m along the wall normal) fall in two different rooms
@@ -194,23 +197,49 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   (triangles in an overlapping room scanned earlier stay with that room) and stripped of the room's own surfaces —
   triangles within 6 cm of a wall (facing along its normal), 4 cm of the floor or 6 cm of the ceiling, or within
   15 cm if ARKit classified them as wall, window, door, floor or ceiling. What's left — furniture, appliances,
-  plants, lamps, clutter — is welded on a 3.5 cm grid (coarsened until it fits 60,000 triangles), loose bits under
-  10 cm are dropped, and every triangle keeps facing the side it was seen from (ARKit's normals; both sides of a
-  thin top that collapses are kept). A RoomPlan object whose box the mesh covers with at least half its footprint
+  plants, lamps, clutter — is welded on a 2.5 cm grid (coarsened until it fits 150,000 triangles, which only a big
+  home reaches; build 7: 3.5 cm and 60,000), loose bits under 10 cm are dropped, and every triangle keeps facing the
+  side it was seen from (ARKit's normals; both sides of a thin top that collapses are kept). Four rounds of Taubin
+  smoothing (λ 0.5, μ −0.53; open edges stay put) flatten the scanner's bumps without shrinking the shape, so tops
+  and fronts become a few large patches instead of a patchwork of facets; a sliver the smoothing turns over is
+  dropped. A RoomPlan object whose box the mesh covers with at least half its footprint
   in area loses its box; the others keep their box (a TV flat on a wall, which the cleanup removed) and the mesh
   scraps inside it go. The mesh is cut into *patches* by region growing over shared edges (faces within ~44° of
-  the patch's normal; patches under 0.01 m² join the neighbour they face most like), each its own chart; since a
+  the patch's normal and ~53° of its first face, so a patch can't creep around a rounded shape; patches under
+  0.01 m² join the neighbour they face most like if every face is within ~70° of it), each its own chart; since a
   patch is only roughly flat, every texel is painted at its own point on the patch's faces (and judged by its
   face's normal), not on the chart's plane. Rooms without a mesh (older scans, or the setting off) keep the boxes.
 * **Atlases**: charts are packed (shelf packing, 4-texel padding; solid charts are a 16-texel square) into up to
   `maxAtlases` atlases of `atlasSize`² (defaults 4 × 2048²) at `texelSize` (8 mm), coarsened until everything fits.
   Only texels on a chart's faces take photo colors; padding and holes are filled from them.
+* **Lining the photos up** (`PoseRefinement.swift`, build 8 on): ARKit's tracking drifts a centimeter or two and a
+  fraction of a degree between its corrections, and each photo keeps the pose it was taken with, so photos land a
+  little off the model and off each other (doubled edges, seams that don't meet, a chair's color on the wall behind
+  it). Before choosing photos they are aligned with each other, as in Zhou & Koltun's color map optimization (its
+  rigid form): points 10 cm apart on every surface, each with the up to six photos that see it best away from
+  outlines; on 320-pixel gray copies of the photos (`PhotoSource.thumbnail`), coarse then fine (5 + 5 rounds), the
+  points' brightness is the photos' consensus (median, then the mean of those within 20 levels) and each photo's
+  pose correction, gain and offset are fitted to it by one damped Gauss–Newton step per round (Huber loss, priors of
+  3 cm and 0.6°, steps of at most 1 cm and 0.23°, corrections of at most 8 cm and 1.4°). A step is kept only if the
+  photo then agrees better (else half of it, else none); photos the fit didn't improve by 3% keep their pose, and if
+  the photos don't agree at least 2% better overall none moves — glare that differs from view to view on a glossy
+  floor must not move them. Moved photos get their depth images redrawn. `ScanStats.photosAligned`,
+  `photoShiftCm`, `photoTurnDegrees`; `scanproc paint --poses` writes the poses as painted.
 * **Choosing photos**: a photo's *score* at a point is high when it faces the surface, is close, has the point near
-  the image center, is not hidden by other surfaces (a 192-pixel depth image per photo, rasterized from the model; a
-  point counts as hidden if the nearest of the four depth pixels around it is clearly nearer) and was taken with the
-  phone steady: the score is divided by 1 + (smear / 1.2 cm)², where smear = turn rate × exposure time × distance
-  (exposure 1/50 s if unknown; older scans get the turn rate from the recorded path). Furniture asks for photos
-  taken square on (score × facing², at least 0.2), since its shape is only approximate. Each chart is split into
+  the image center, is not hidden by other surfaces (a 320-pixel depth image per photo in millimeters, rasterized
+  from the model; a point counts as hidden if the nearest of the four depth pixels around it is nearer by more than
+  1.5 cm + 1% of the distance + what the surface's own slant explains: tight head-on, loose only on slanted
+  surfaces), was taken with the phone steady (the score is divided by 1 + (smear / 1.2 cm)², where smear = turn rate
+  × exposure time × distance; exposure 1/50 s if unknown; older scans get the turn rate from the recorded path) and
+  doesn't have the point next to an *outline* in the photo: each photo's depth image marks its depth jumps (more than
+  6 cm and 6% between neighbouring pixels) and every pixel's distance to them, and within about 0.6° of one a
+  photo's score drops to a tenth (a little error in the shapes or the pose would paint one surface's color onto the
+  other — the shards along furniture edges). Every surface takes photos up to ~78° off head-on (beyond, a photo
+  smears what it shows); furniture asks for photos taken square on (score × facing²), since its shape is only
+  approximate. **Consensus**: where at least three photos see a cell, each one's brightness there (gray copy,
+  exposure matched by the alignment) is compared with the others', and a photo that differs by more than 28 levels
+  from what at least two others agree on (within 12) saw something else there — a plant in front of the wall,
+  someone walking through — and counts a quarter. Each chart is split into
   cells of 4 × 4 texels; each cell keeps its six best photos and picks one, leaning toward its neighbours' choice
   (a photo counts up to 1.5 × more when all eight neighbours chose it; four rounds), so a surface becomes a few
   large patches, each from a single photo — sharp, with no double images. A texel blends the photos of the four
@@ -329,8 +358,17 @@ info.json            app / device / capture metadata, pipeline version, alignmen
    * **Start a scan** (disabled with an explanation when `RoomCaptureSession.isSupported` is false: "Needs an iPhone
      with LiDAR — iPhone 12 Pro or newer Pro model").
    * List of saved scans (date, rooms, floors, status: *Saved*, *Uploading 42%*, *Sent to Atrium*).
-2. **Capture** (full screen) — RoomPlan's live view with its own coaching. Top: "Room N" + Cancel. Bottom:
-   **Done with this room**. After a room finishes: a sheet "What is this room?" with a text field prefilled from
+2. **Capture** (full screen) — RoomPlan's live view with its own coaching. Top: "Room N" + Cancel, and below it the
+   **coverage map** (build 8 on, `CaptureCoverage.swift` + `CoverageMapView`): the room so far from RoomPlan's live
+   updates, seen from above and turned so the phone looks up the map, with every 25 cm of wall (three heights), every
+   30 cm of floor and every piece of furniture (its top below 1.4 m and its open sides, each face counting once) in
+   green where a photo already covers it well (within 60° of head-on, 4.5 m and away from the photo's edges), amber
+   where only weakly (from the side, far away, the edge of the frame) and red where no photo has yet — by the
+   painting's own rules, walls and furniture boxes hiding what's behind them, with this run's photos. Below the map:
+   "Walls 80% · Floor 55% · Furniture 60%" (shares covered well); tapping folds the map away. Recomputed off the main
+   thread whenever the room or the photos change, at most twice a second. Bottom: **Done with this room** — if
+   under 60% of the walls or 35% of the floor is covered well, it asks first ("Parts of this room have no good photo
+   yet" → Finish the room anyway / Keep scanning). After a room finishes: a sheet "What is this room?" with a text field prefilled from
    RoomPlan's detected label and quick chips (Living Room, Kitchen, Dining Room, Bedroom, Primary Bedroom, Bathroom,
    Office, Hallway, Entry, Laundry), then **Scan next room** or **Finish**. Between rooms: "Walk to the next room —
    keep the phone pointed ahead. Your path becomes the tour route." The ARKit session (and the trajectory
@@ -340,7 +378,8 @@ info.json            app / device / capture metadata, pipeline version, alignmen
    `roomplan/mesh-run-N.bin`. Home's **Real furniture shapes** switch turns this off (RoomPlan's own session) in
    case scanning misbehaves with it.
 3. **Processing** — steps with checkmarks: Combining rooms → Building 3D model → Packaging scan. The photos are
-   decoded one at a time (`ScanPhotos`); for the people masks each is read as a 512-pixel thumbnail, turned upright
+   decoded one at a time (`ScanPhotos`); for lining them up each is also read as a 320-pixel JPEG thumbnail
+   (ImageIO decodes it at a fraction of the size); for the people masks each is read as a 512-pixel thumbnail, turned upright
    from its pose (`PhotoMask.uprightTurns`: one quarter turn for a phone held in portrait), segmented with Vision's
    `VNGeneratePersonSegmentationRequest` (balanced quality, confidence ≥ 50%), and the mask shrunk to at most 192
    cells across and turned back to the photo's orientation.
@@ -350,8 +389,9 @@ info.json            app / device / capture metadata, pipeline version, alignmen
    * **Preview** (AR Quick Look of RoomPlan's USDZ);
    * **Rebuild walkthrough** — re-processes the saved RoomPlan data with the current pipeline (no rescanning);
      scans built by an older pipeline (`record.pipeline` < `ScanBuilder.pipelineVersion`) show it as a card
-     ("Fix overlapping rooms" … "Paint people out of the photos"). A rebuilt scan has to be sent again;
-   * the summary says how much the photos cover, how many photos had people painted out, and whether furniture
+     ("Fix overlapping rooms" … "Sharpen edges and line up the photos"). A rebuilt scan has to be sent again;
+   * the summary says how much the photos cover, how many photos had people painted out, how many photos were lined
+     up with each other (and by how much on average), and whether furniture
      was shaped from the LiDAR mesh (in how many rooms) — or why not (switched off, no mesh recorded: the
      session's mode, from info.json);
    * **Delete**.

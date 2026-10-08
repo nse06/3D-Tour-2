@@ -1,6 +1,7 @@
 import AtriumScanCore
 import Foundation
 import RoomPlan
+import simd
 
 /// The state of a multi-room scan, shared by the capture screen's SwiftUI
 /// overlay and the UIKit controller that drives RoomPlan.
@@ -36,6 +37,11 @@ final class CaptureModel: ObservableObject {
     /// Photos taken so far, and whether the phone is moving too fast for sharp ones.
     @Published private(set) var photoCount = 0
     @Published private(set) var movingFast = false
+    /// What the photos of the room being scanned cover so far (nil until RoomPlan sees a room), and
+    /// the phone on that map: where it is and which way it looks (plan x, z).
+    @Published private(set) var coverage: CaptureCoverage?
+    @Published private(set) var mapPosition: SIMD2<Double>?
+    @Published private(set) var mapForward: SIMD2<Double>?
 
     /// Names the scan's folder (Documents/Scans/<scanId>) and its record.
     let scanId: UUID
@@ -51,6 +57,12 @@ final class CaptureModel: ObservableObject {
 
     private var pendingData: CapturedRoomData?
     private var pendingSegment = 0
+    /// RoomPlan's latest idea of the room being scanned, and the coverage map's bookkeeping.
+    private var livePart: RoomPart?
+    private var coverageRunning = false
+    private var coverageDirty = false
+    private var lastCoverage = Date.distantPast
+    private var lastPose: TimeInterval = 0
     /// Finished or cancelled: ignore late RoomPlan callbacks.
     private var closed = false
 
@@ -96,6 +108,8 @@ final class CaptureModel: ObservableObject {
     func startNextRoom() {
         detectedName = nil
         instruction = nil
+        livePart = nil
+        coverage = nil
         phase = .scanning
         controller?.startRoom()
     }
@@ -119,8 +133,69 @@ final class CaptureModel: ObservableObject {
     /// After each recorded AR frame: publishes the photo count and the "slow down" hint when they change.
     func updatePhotoStatus() {
         let count = recorder.keyframes.count, fast = recorder.movingFast
-        if photoCount != count { photoCount = count }
+        if photoCount != count {
+            photoCount = count
+            refreshCoverage()
+        }
         if movingFast != fast { movingFast = fast }
+    }
+
+    /// The phone on the coverage map (a few times a second is plenty).
+    func updatePose(_ m: simd_float4x4, at time: TimeInterval) {
+        guard phase == .scanning, time - lastPose > 0.15 else { return }
+        lastPose = time
+        mapPosition = SIMD2(Double(m.columns.3.x), Double(m.columns.3.z))
+        // The camera looks along its −z; pointing almost straight down keeps the last heading.
+        let forward = SIMD2(-Double(m.columns.2.x), -Double(m.columns.2.z))
+        if simd_length(forward) > 0.25 { mapForward = forward }
+    }
+
+    /// RoomPlan's latest idea of the room being scanned (in this run's frame).
+    func roomUpdated(_ part: RoomPart) {
+        guard phase == .scanning else { return }
+        livePart = part
+        refreshCoverage()
+    }
+
+    /// Too little of the room has a good photo to finish without asking.
+    var coverageIsLow: Bool {
+        guard let coverage else { return false }
+        return (coverage.wallShare ?? 1) < 0.6 || (coverage.floorShare ?? 1) < 0.35
+    }
+
+    /// Recomputes the coverage map off the main thread: one at a time, at most twice a second, and
+    /// once more if the room or the photos changed meanwhile.
+    private func refreshCoverage() {
+        guard let part = livePart, phase == .scanning else { return }
+        let wait = 0.5 - Date().timeIntervalSince(lastCoverage)
+        guard !coverageRunning, wait <= 0 else {
+            if !coverageDirty {
+                coverageDirty = true
+                if !coverageRunning {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: UInt64(max(wait, 0.05) * 1e9))
+                        self.coverageDirty = false
+                        self.refreshCoverage()
+                    }
+                }
+            }
+            return
+        }
+        coverageRunning = true
+        lastCoverage = Date()
+        let segment = recorder.segment
+        let photos = recorder.keyframes.filter { $0.segment == segment }
+        Task.detached(priority: .utility) {
+            let result = CaptureCoverage.compute(part, photos: photos)
+            await MainActor.run {
+                self.coverageRunning = false
+                if self.phase == .scanning, self.livePart != nil { self.coverage = result }
+                if self.coverageDirty {
+                    self.coverageDirty = false
+                    self.refreshCoverage()
+                }
+            }
+        }
     }
 
     // MARK: Events (from RoomPlan)

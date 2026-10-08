@@ -27,6 +27,7 @@
 		ECB09D58FC16EE294B318597 /* ScanStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E483D89A8ED1BD77985EA5C4 /* ScanStore.swift */; };
 		F73A37FCA445BD9C750E240E /* ZipWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B63B3AB195F6307727C6E214 /* ZipWriter.swift */; };
 		FB2499D28A7A080E5A812018 /* Automation.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE42C3F8C91EB98EF5740774 /* Automation.swift */; };
+		FDCB32231D639EB6376E9950 /* CoverageMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8432B5FB93FB9EFE07C49D6B /* CoverageMapView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +48,7 @@
 		7B911C94325B3CE971DCEA87 /* CaptureScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureScreen.swift; sourceTree = "<group>"; };
 		7D57A545AA38FB44B74D1E4A /* PairingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingSheet.swift; sourceTree = "<group>"; };
 		7F670F478F99DC65E5116018 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		8432B5FB93FB9EFE07C49D6B /* CoverageMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverageMapView.swift; sourceTree = "<group>"; };
 		9F93BBC1793430415D527F39 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		B63B3AB195F6307727C6E214 /* ZipWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipWriter.swift; sourceTree = "<group>"; };
 		CF141B11A199D88E6CF44A71 /* ScanDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanDetailView.swift; sourceTree = "<group>"; };
@@ -157,6 +159,7 @@
 				44259BCD1E9C12867870E07C /* CaptureModel.swift */,
 				7B911C94325B3CE971DCEA87 /* CaptureScreen.swift */,
 				2F7668958D2B29EA30541A7D /* CaptureViewController.swift */,
+				8432B5FB93FB9EFE07C49D6B /* CoverageMapView.swift */,
 				6A73D528BB3E897B832B3AFF /* MeshRecorder.swift */,
 				717E948C59B3606CE25CA54F /* MotionRecorder.swift */,
 				3A297B9D67013EF721E92BEB /* RoomPlanAdapter.swift */,
@@ -256,6 +259,7 @@
 				C0BD810058883B4BCD0F9A1C /* CaptureModel.swift in Sources */,
 				600FA14EBAC14CF6C7177629 /* CaptureScreen.swift in Sources */,
 				D4A376C01A925412D87A013F /* CaptureViewController.swift in Sources */,
+				FDCB32231D639EB6376E9950 /* CoverageMapView.swift in Sources */,
 				DF1A95BDCF38BCCFEB01A6DA /* HomeView.swift in Sources */,
 				E249916CEFBCD394B320539F /* MeshRecorder.swift in Sources */,
 				7955FA69097F598EE44083BF /* MotionRecorder.swift in Sources */,
@@ -328,7 +332,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -414,7 +418,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

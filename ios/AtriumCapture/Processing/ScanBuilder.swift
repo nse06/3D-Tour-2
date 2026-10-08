@@ -15,7 +15,7 @@ enum ScanBuilder {
     /// 4: the scan's photos painted onto the model. 5: one sharp photo per patch, furniture in parts.
     /// 6: a clean model next to the photo model, for the viewer's "photos off" view.
     /// 7: people painted out of the photos; furniture shaped from the LiDAR mesh (scans that have one).
-    static let pipelineVersion = 7
+    static let pipelineVersion = 8
 
     enum Step: Int, CaseIterable {
         case combining, modeling, packaging
@@ -235,6 +235,8 @@ enum ScanBuilder {
             "lidarMeshRooms": meshRooms,
             "meshTriangles": processed.stats.meshTriangles ?? 0,
             "meshObjects": processed.stats.meshObjects ?? 0,
+            "photosAligned": processed.stats.photosAligned ?? 0,
+            "photoShiftCm": processed.stats.photoShiftCm ?? 0,
         ]
         try JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]).write(to: dir.appendingPathComponent("info.json"))
         // The package zips these files; an old one would be stale.

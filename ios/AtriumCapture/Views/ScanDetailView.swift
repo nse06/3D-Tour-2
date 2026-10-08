@@ -99,6 +99,14 @@ struct ScanDetailView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if let aligned = scan.stats.photosAligned, aligned > 0 {
+                Label(
+                    "\(aligned) photos lined up with each other (by \(String(format: "%.1f", scan.stats.photoShiftCm ?? 0)) cm on average)",
+                    systemImage: "square.on.square.dashed")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             if let lidar = lidarNote(scan) {
                 Label(lidar.text, systemImage: lidar.used ? "cube.transparent" : "cube")
                     .font(.footnote)
@@ -145,9 +153,12 @@ struct ScanDetailView: View {
         case 5:
             title = "Add the photos-off view"
             text = "Buyers and you can now switch the photos off in the walkthrough and see a clean 3D model of the home, and people in your photos are painted out. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
-        default:
+        case 6:
             title = "Paint people out of the photos"
             text = "Atrium Capture now paints people out of the walkthrough — someone walking through, or you reflected in a mirror — using the other photos of the same spot. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
+        default:
+            title = "Sharpen edges and line up the photos"
+            text = "Atrium Capture now lines your photos up with each other before painting (the phone's tracking drifts a centimeter or two), keeps furniture edges from smearing onto the walls behind them, and gives LiDAR furniture finer, smoother shapes. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
         }
         return VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: "wand.and.stars")

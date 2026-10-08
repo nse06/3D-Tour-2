@@ -111,14 +111,18 @@ final class CaptureViewController: UIViewController, RoomCaptureViewDelegate, Ro
         guard isTracking, let frame = captureView.captureSession.arSession.currentFrame else { return }
         model.recorder.record(frame)
         model.updatePhotoStatus()
+        model.updatePose(frame.camera.transform, at: frame.timestamp)
     }
 
     // MARK: RoomCaptureSessionDelegate
 
     nonisolated func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
         let name = RoomPlanAdapter.suggestedName(for: RoomPlanAdapter.dominantLabel(of: room))
+        // The room so far, for the coverage map (in this run's frame, like its photos).
+        let part = RoomPlanAdapter.part(from: room, name: "", index: 0, segment: nil)
         Task { @MainActor in
             if let name { self.model.detectedName = name }
+            if let part { self.model.roomUpdated(part) }
         }
     }
 

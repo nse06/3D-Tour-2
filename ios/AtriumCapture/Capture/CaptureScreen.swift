@@ -3,6 +3,8 @@ import SwiftUI
 /// Full-screen multi-room capture: RoomPlan's live view with Atrium's controls on top.
 struct CaptureScreen: View {
     @ObservedObject var model: CaptureModel
+    @State private var mapOpen = true
+    @State private var confirmFinish = false
 
     var body: some View {
         ZStack {
@@ -11,6 +13,10 @@ struct CaptureScreen: View {
 
             VStack(spacing: 12) {
                 topBar
+                HStack {
+                    Spacer()
+                    coverageCard
+                }
                 if let instruction = model.instruction, model.phase == .scanning {
                     Text(instruction)
                         .font(.subheadline.weight(.semibold))
@@ -57,6 +63,31 @@ struct CaptureScreen: View {
         .padding(.top, 8)
     }
 
+    /// What the photos cover so far: a small map of the room, turned the way the phone looks, and the
+    /// shares covered well. Tap to fold the map away.
+    @ViewBuilder
+    private var coverageCard: some View {
+        if model.phase == .scanning, let coverage = model.coverage, coverage.outline.count >= 3 {
+            VStack(alignment: .trailing, spacing: 6) {
+                if mapOpen {
+                    CoverageMapView(coverage: coverage, position: model.mapPosition, forward: model.mapForward)
+                        .frame(width: 150, height: 150)
+                }
+                if let summary = CoverageMapView.summary(coverage) {
+                    Text(summary)
+                        .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
+                }
+            }
+            .padding(8)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { mapOpen.toggle() } }
+            .accessibilityElement(children: .combine)
+            .accessibilityHint("Red marks walls, floor and furniture that still need a photo")
+            .transition(.opacity)
+        }
+    }
+
     /// Photos are taken whenever the phone is steady; moving slowly gives more, sharper ones.
     private var photoStatus: some View {
         HStack(spacing: 6) {
@@ -83,8 +114,16 @@ struct CaptureScreen: View {
                         .foregroundStyle(.secondary)
                 }
                 photoStatus
-                Button("Done with this room") { model.finishRoom() }
-                    .buttonStyle(PillButtonStyle())
+                Button("Done with this room") {
+                    if model.coverageIsLow { confirmFinish = true } else { model.finishRoom() }
+                }
+                .buttonStyle(PillButtonStyle())
+                .confirmationDialog("Parts of this room have no good photo yet", isPresented: $confirmFinish, titleVisibility: .visible) {
+                    Button("Finish the room anyway") { model.finishRoom() }
+                    Button("Keep scanning", role: .cancel) {}
+                } message: {
+                    Text("Red on the map: walls, floor or furniture no photo covers well yet. Point the phone at them for a moment and they'll be painted from real photos.")
+                }
             }
             .padding(16)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))

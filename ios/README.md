@@ -79,7 +79,7 @@ which the phone can't pass.
   coordinate frame; the app lines the rooms up again afterwards from RoomPlan's merged layout and
   your walk, so keep the app open and the camera uncovered between rooms.
 * After the last room tap **Finish and build the tour**. The phone combines the rooms and builds
-  the walkthrough (10–60 seconds).
+  the walkthrough (15–90 seconds).
 * Open the scan and tap **Send to Atrium**. The listing page in the dashboard updates by itself;
   use **Walk through it** to preview, adjust room names or viewpoints in **Rooms & viewpoints**,
   then **Publish**.
@@ -101,17 +101,27 @@ you're moving too fast for them. Get close-ish (1–3 m) to furniture and look a
 from a couple of sides. Surfaces no photo saw are filled in from their surroundings; the scan's
 page says how much your photos covered.
 
+The **map** in the top right corner (build 8 on) shows what your photos cover so far: the room
+from above, turned the way you're facing (red on the map's left is the wall on your left), with
+walls, floor and furniture in green where a photo covers them well, amber where only from the
+side or far away, and red where none does yet. Before **Done with this room**, turn toward the red
+until it goes green — the floor near where you stand usually needs a slow look down. The numbers
+under it are the shares covered well; tap the map to fold it away. If much is still red when you
+finish a room, the app asks first.
+
 **A scan from an earlier version?** Builds 1–2 took each room where RoomPlan reported it, and
 RoomPlan reports every room relative to where its scan started, so rooms piled up; builds 1–3
 didn't use the photos; build 4 blended several photos per spot (soft, sometimes doubled) and
 painted furniture as plain boxes; builds before 6 had no "photos off" view; builds before 7
-painted people in the photos onto the model. Install the latest build over the old one (your
-scans stay), open the scan and tap **Rebuild walkthrough** (*Fix overlapping rooms* / *Add your
-photos to the walkthrough* / *Sharpen the photo walkthrough* / *Add the photos-off view* / *Paint
-people out of the photos*), then **Send to Atrium** again. No rescanning: the rebuild uses the
+painted people in the photos onto the model; builds before 8 didn't line the photos up with each
+other (the phone's tracking drifts a centimeter or two, which doubles edges and smears furniture
+colors onto the walls behind). Install the latest build over the old one (your scans stay), open
+the scan and tap **Rebuild walkthrough** (*Fix overlapping rooms* / *Add your photos to the
+walkthrough* / *Sharpen the photo walkthrough* / *Add the photos-off view* / *Paint people out of
+the photos* / *Sharpen edges and line up the photos*), then **Send to Atrium** again. No rescanning: the rebuild uses the
 RoomPlan data and photos saved on the phone. The lines under the scan's numbers say how the rooms
-were placed, how much the photos cover, how many photos had people painted out and whether the
-furniture was shaped from the LiDAR mesh. Scans made with build 5 or later also get the sharper
+were placed, how much the photos cover, how many photos had people painted out, how many were
+lined up with each other and whether the furniture was shaped from the LiDAR mesh. Scans made with build 5 or later also get the sharper
 full-resolution photos; only scans made with build 7 or later have the LiDAR mesh, so real
 furniture shapes need a new scan.
 
