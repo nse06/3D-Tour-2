@@ -847,7 +847,11 @@ struct PhotoBaker {
                     var spot = -1, nearest = Int.max
                     for j in (cy * cell)..<min(chart.h, (cy + 1) * cell) {
                         for i in (cx * cell)..<min(chart.w, (cx + 1) * cell) where inside.buffer[offsets[ci] + j * chart.w + i] {
-                            let d = abs(2 * i + 1 - (2 * cx + 1) * cell) + abs(2 * j + 1 - (2 * cy + 1) * cell)
+                            // Twice the distance from the cell's center, in texels (typed: one long
+                            // expression of literals takes Swift 6.2's type checker too long).
+                            let dx: Int = 2 * i + 1 - (2 * cx + 1) * cell
+                            let dy: Int = 2 * j + 1 - (2 * cy + 1) * cell
+                            let d = abs(dx) + abs(dy)
                             if d < nearest {
                                 nearest = d
                                 spot = j * chart.w + i
