@@ -554,6 +554,7 @@ export class SupabaseRepository implements Repository {
           .select("*")
           .eq("property_id", propertyId)
           .eq("user_id", userId)
+          .not("tour_id", "is", null)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle(),

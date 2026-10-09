@@ -331,7 +331,7 @@ export class LocalRepository implements Repository {
   }
 
   async latestPhotorealJob(userId: string, propertyId: string): Promise<PhotorealJob | null> {
-    const jobs = (await readDb()).photorealJobs.filter((j) => j.propertyId === propertyId && j.userId === userId);
+    const jobs = (await readDb()).photorealJobs.filter((j) => j.propertyId === propertyId && j.userId === userId && j.tourId);
     return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
   }
 

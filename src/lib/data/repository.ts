@@ -46,6 +46,7 @@ export interface Repository {
   /** Any job by id: callers check it against the phone's session or the worker's secret. */
   getPhotorealJob(jobId: string): Promise<PhotorealJob | null>;
   updatePhotorealJob(jobId: string, update: PhotorealJobUpdate): Promise<PhotorealJob | null>;
+  /** The latest job for the scan the listing shows now (sending a new scan unlinks older jobs). */
   latestPhotorealJob(userId: string, propertyId: string): Promise<PhotorealJob | null>;
   /** Shows finished splats on the job's tour; false if that tour has since been replaced. */
   attachSplats(job: PhotorealJob, splatUrl: string): Promise<boolean>;
