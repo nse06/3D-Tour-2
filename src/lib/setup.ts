@@ -15,9 +15,12 @@ export type SetupStatus =
   | { ok: false; reason: "unreachable"; message: string };
 
 /** Tables each migration introduces, in migration order. */
-const REQUIRED_TABLES = ["properties", "tours", "floors", "rooms", "capture_sessions"];
+const REQUIRED_TABLES = ["properties", "tours", "floors", "rooms", "capture_sessions", "photoreal_jobs"];
 /** Columns later migrations add to existing tables (a missing one also triggers the setup). */
-const REQUIRED_COLUMNS: [table: string, column: string][] = [["tours", "clean_asset_url"]];
+const REQUIRED_COLUMNS: [table: string, column: string][] = [
+  ["tours", "clean_asset_url"],
+  ["tours", "splat_url"],
+];
 
 const MISSING_TABLE = /PGRST205|42P01|schema cache|does not exist/i;
 

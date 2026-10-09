@@ -77,11 +77,13 @@ def quats_from_normals(n: np.ndarray) -> np.ndarray:
 
 def init_splats(capture: Capture, cfg: TrainConfig, device: torch.device, rng: np.random.Generator) -> torch.nn.ParameterDict:
     xyz, normal, rgb = capture.seeds_xyz, capture.seeds_normal, capture.seeds_rgb
+    s = capture.seed_spacing
     if len(xyz) > cfg.max_gaussians:
+        # Fewer seeds than the scan made: spread wider, so the discs still cover the surfaces.
+        s *= float(np.sqrt(len(xyz) / cfg.max_gaussians))
         keep = rng.choice(len(xyz), cfg.max_gaussians, replace=False)
         xyz, normal, rgb = xyz[keep], normal[keep], rgb[keep]
     n = len(xyz)
-    s = capture.seed_spacing
     # Discs on the surface: half the seed spacing across, a tenth of it thick.
     scales = np.log(np.tile([0.5 * s, 0.5 * s, 0.1 * s], (n, 1)))
     colors = torch.zeros((n, (cfg.sh_degree + 1) ** 2, 3))

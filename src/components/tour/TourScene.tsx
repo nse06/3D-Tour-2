@@ -26,6 +26,12 @@ export interface TourSceneProps {
   onShowingClean?: (clean: boolean) => void;
   /** The model asked for by a switch couldn't be loaded; the starting one stays on screen. */
   onSwitchError?: (message: string) => void;
+  /** Photoreal Gaussian splats (.spz) in the model's frame (docs/photoreal.md). */
+  splatUrl?: string | null;
+  /** Show the splats instead of the models (loaded the first time it's asked for). */
+  photoreal?: boolean;
+  /** How the splats are doing: loading, on screen, or failed (the models stay on screen). */
+  onSplatState?: (state: "loading" | "ready" | "failed", message?: string) => void;
   space: TourSpace;
   startWaypoint: Waypoint;
   apiRef: MutableRefObject<ViewerApi | null>;
@@ -110,6 +116,9 @@ function PropertyModel({
   photos = true,
   onShowingClean,
   onSwitchError,
+  splatUrl = null,
+  photoreal = false,
+  onSplatState,
   space,
   startWaypoint,
   apiRef,
@@ -171,28 +180,48 @@ function PropertyModel({
     return showUnlit(photoScene);
   }, [photoScene, photoLook]);
 
-  const captured = (showingClean ? "studio" : photoLook) === "captured";
+  // Photoreal splats load the first time they're asked for; until they're ready (or if they
+  // fail) the models stay on screen. The models keep doing the walking either way: the rig picks
+  // floors and sight lines on them, hidden or not.
+  const [splatAsked, setSplatAsked] = useState(false);
+  const [splatReady, setSplatReady] = useState(false);
+  if (photoreal && splatUrl && !splatAsked) setSplatAsked(true);
+  const showSplats = photoreal && splatReady;
+
+  const captured = showSplats || (showingClean ? "studio" : photoLook) === "captured";
   return (
     <>
       {!captured && <EnvironmentLighting intensity={hasLights ? 0.9 : 1.15} />}
       {!captured && <hemisphereLight args={["#fff8ee", "#b9ab98", hasLights ? 0.5 : 0.75]} />}
-      <group visible={showingPrimary}>
-        <Bvh firstHitOnly>
-          <primitive object={gltf.scene} />
-        </Bvh>
+      <group visible={!showSplats}>
+        <group visible={showingPrimary}>
+          <Bvh firstHitOnly>
+            <primitive object={gltf.scene} />
+          </Bvh>
+        </group>
+        {alternateAsked && alternateUrl && (
+          <SceneErrorBoundary
+            onError={(message) => {
+              setAlternateFailed(true);
+              setAlternateAsked(false);
+              onSwitchError?.(message);
+            }}
+          >
+            <Suspense fallback={null}>
+              <AlternateModel url={alternateUrl} visible={!showingPrimary} onReady={setAlternate} />
+            </Suspense>
+          </SceneErrorBoundary>
+        )}
       </group>
-      {alternateAsked && alternateUrl && (
-        <SceneErrorBoundary
-          onError={(message) => {
-            setAlternateFailed(true);
-            setAlternateAsked(false);
-            onSwitchError?.(message);
+      {splatAsked && splatUrl && (
+        <SplatLayer
+          url={splatUrl}
+          visible={showSplats}
+          onState={(state, message) => {
+            if (state === "ready") setSplatReady(true);
+            onSplatState?.(state, message);
           }}
-        >
-          <Suspense fallback={null}>
-            <AlternateModel url={alternateUrl} visible={!showingPrimary} onReady={setAlternate} />
-          </Suspense>
-        </SceneErrorBoundary>
+        />
       )}
       <CameraRig
         space={space}
@@ -217,6 +246,58 @@ function PropertyModel({
       )}
     </>
   );
+}
+
+/**
+ * Photoreal Gaussian splats (Spark, loaded on first use). Rendered like gsplat trained them:
+ * splats out to 3 standard deviations, with gsplat's 0.3-pixel² screen-space blur.
+ */
+function SplatLayer({ url, visible, onState }: { url: string; visible: boolean; onState: (state: "loading" | "ready" | "failed", message?: string) => void }) {
+  const { gl, scene, invalidate } = useThree();
+  const [layer, setLayer] = useState<{ spark: THREE.Object3D; splats: THREE.Object3D } | null>(null);
+  const report = useRef(onState);
+  useLayoutEffect(() => {
+    report.current = onState;
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let created: { spark: THREE.Object3D & { dispose?: () => void }; splats: THREE.Object3D & { dispose: () => void } } | null = null;
+    report.current("loading");
+    (async () => {
+      try {
+        const { SparkRenderer, SplatMesh } = await import("@sparkjsdev/spark");
+        if (disposed) return;
+        const spark = new SparkRenderer({ renderer: gl, maxStdDev: 3, preBlurAmount: 0.3 });
+        const splats = new SplatMesh({ url });
+        created = { spark, splats };
+        await splats.initialized;
+        if (disposed) return;
+        scene.add(spark, splats);
+        setLayer({ spark, splats });
+        invalidate();
+        report.current("ready");
+      } catch (e) {
+        if (!disposed) report.current("failed", e instanceof Error ? e.message : "The photoreal walkthrough couldn't be loaded.");
+      }
+    })();
+    return () => {
+      disposed = true;
+      if (created) {
+        scene.remove(created.spark, created.splats);
+        created.splats.dispose();
+        created.spark.dispose?.();
+      }
+    };
+  }, [gl, scene, url, invalidate]);
+
+  useEffect(() => {
+    if (!layer) return;
+    layer.spark.visible = visible;
+    layer.splats.visible = visible;
+    invalidate();
+  }, [layer, visible, invalidate]);
+  return null;
 }
 
 /** The model not shown at the start (photos or clean), loaded on first switch. */

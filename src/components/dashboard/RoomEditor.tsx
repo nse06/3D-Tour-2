@@ -21,6 +21,8 @@ interface Props {
   assetUrl: string;
   /** Photo scans: the clean model of the same rooms (buyers can turn the photos off). */
   cleanAssetUrl?: string | null;
+  /** Photoreal splats trained on the scan's photos (docs/photoreal.md). */
+  splatUrl?: string | null;
   initialSpace: TourSpace;
   initialAppearance: TourAppearance;
 }
@@ -30,7 +32,7 @@ interface Props {
  * in each room. (With iPhone scans this happens automatically; this editor is
  * for manual uploads and for fine-tuning.)
  */
-export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, initialSpace, initialAppearance }: Props) {
+export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, splatUrl = null, initialSpace, initialAppearance }: Props) {
   const router = useRouter();
   const apiRef = useRef<ViewerApi | null>(null);
   const [space, setSpace] = useState<TourSpace>(initialSpace);
@@ -308,6 +310,8 @@ export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, initial
               appearance={appearance}
               cleanAssetUrl={cleanAssetUrl}
               photos={appearance !== "studio"}
+              splatUrl={splatUrl}
+              photoreal={appearance === "photoreal"}
               onSwitchError={(m) => flash("error", `That view couldn't be loaded: ${m}`)}
               effects
             />
@@ -329,6 +333,9 @@ export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, initial
             >
               {(cleanAssetUrl
                 ? ([
+                    ...(splatUrl
+                      ? ([["photoreal", "Photoreal", "Buyers start with the photoreal walkthrough (they can switch to the photos on the model)"]] as const)
+                      : []),
                     ["captured", "Photos on", "Buyers start with your photos painted on the model (they can turn them off)"],
                     ["studio", "Photos off", "Buyers start with the clean 3D model (they can turn the photos on)"],
                   ] as const)
@@ -350,7 +357,15 @@ export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, initial
                     if (!res.ok) {
                       setAppearance(previous);
                       flash("error", res.error ?? "Could not change the lighting.");
-                    } else if (cleanAssetUrl) flash("ok", value === "captured" ? "Buyers start with the photos on" : "Buyers start with the photos off");
+                    } else if (cleanAssetUrl)
+                      flash(
+                        "ok",
+                        value === "photoreal"
+                          ? "Buyers start with the photoreal walkthrough"
+                          : value === "captured"
+                            ? "Buyers start with the photos on"
+                            : "Buyers start with the photos off",
+                      );
                     else flash("ok", value === "captured" ? "Showing the capture as scanned" : "Using studio lighting");
                   }}
                   className={`rounded-full px-3 py-1 transition ${appearance === value ? "bg-white text-neutral-900" : "text-white/80 hover:text-white"}`}

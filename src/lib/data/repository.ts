@@ -1,7 +1,17 @@
 import { slugify } from "@/lib/format";
 import type { TourAppearance, TourData, TourSpace } from "@/lib/tour/types";
 import { isSupabaseConfigured, supabaseAdminKey } from "./config";
-import type { CaptureInput, CaptureSession, CaptureSessionLookup, Property, PropertyBundle, PropertyInput, PropertySummary } from "./types";
+import type {
+  CaptureInput,
+  CaptureSession,
+  CaptureSessionLookup,
+  PhotorealJob,
+  PhotorealJobUpdate,
+  Property,
+  PropertyBundle,
+  PropertyInput,
+  PropertySummary,
+} from "./types";
 
 /**
  * Storage-agnostic persistence API. Two implementations:
@@ -29,6 +39,16 @@ export interface Repository {
   /** The unexpired session with this token hash, or null. Needs no user: the phone only has the token. */
   findCaptureSessionByTokenHash(tokenHash: string): Promise<CaptureSessionLookup | null>;
   completeCaptureSession(userId: string, sessionId: string): Promise<void>;
+
+  // Photoreal walkthroughs (docs/photoreal.md).
+  /** A new job for the property's current tour, or null if the property has no tour yet. */
+  createPhotorealJob(userId: string, propertyId: string, input: { files: number; bytes: number }): Promise<PhotorealJob | null>;
+  /** Any job by id: callers check it against the phone's session or the worker's secret. */
+  getPhotorealJob(jobId: string): Promise<PhotorealJob | null>;
+  updatePhotorealJob(jobId: string, update: PhotorealJobUpdate): Promise<PhotorealJob | null>;
+  latestPhotorealJob(userId: string, propertyId: string): Promise<PhotorealJob | null>;
+  /** Shows finished splats on the job's tour; false if that tour has since been replaced. */
+  attachSplats(job: PhotorealJob, splatUrl: string): Promise<boolean>;
 }
 
 let repo: Promise<Repository> | null = null;
@@ -92,6 +112,7 @@ export function bundleToTourData(bundle: PropertyBundle): TourData | null {
     },
     assetUrl: tour.assetUrl,
     cleanAssetUrl: tour.cleanAssetUrl ?? null,
+    splatUrl: tour.splatUrl ?? null,
     source: tour.source,
     appearance: tour.appearance ?? "studio",
     space,

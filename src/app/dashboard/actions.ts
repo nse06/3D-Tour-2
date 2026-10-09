@@ -7,10 +7,11 @@ import QRCode from "qrcode";
 import { requireUser } from "@/lib/auth";
 import { CAPTURE_SESSION_TTL_MS, newCaptureToken, pairingDeepLink, serverBaseUrl } from "@/lib/capture-sessions";
 import { isSupabaseConfigured, storageMode } from "@/lib/data/config";
-import { adminRepositoryUnavailableReason, getRepository } from "@/lib/data/repository";
+import { adminRepositoryUnavailableReason, getAdminRepository, getRepository } from "@/lib/data/repository";
 import type { PropertyInput } from "@/lib/data/types";
 import { DEMO_ASSET_URL, DEMO_COVER_URL, demoManifest } from "@/lib/demo";
 import { ingestCapture } from "@/lib/ingest";
+import { dispatchJob, gpuConfigured, inputNames, WAITING_FOR_GPU } from "@/lib/photoreal";
 import { manifestToSpace } from "@/lib/tour/scan-manifest";
 import { newId, parseSpace } from "@/lib/tour/space";
 import type { TourAppearance } from "@/lib/tour/types";
@@ -196,7 +197,7 @@ export async function saveSpaceAction(propertyId: string, space: unknown): Promi
 
 export async function setAppearanceAction(propertyId: string, appearance: TourAppearance): Promise<ActionResult> {
   const user = await requireUser();
-  if (appearance !== "studio" && appearance !== "captured") return { ok: false, error: "Unknown appearance." };
+  if (appearance !== "studio" && appearance !== "captured" && appearance !== "photoreal") return { ok: false, error: "Unknown appearance." };
   try {
     await (await getRepository()).setAppearance(user.id, propertyId, appearance);
   } catch (e) {
@@ -204,6 +205,29 @@ export async function setAppearanceAction(propertyId: string, appearance: TourAp
   }
   revalidatePath(`/dashboard/properties/${propertyId}`);
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Photoreal walkthroughs (docs/photoreal.md)
+// ---------------------------------------------------------------------------
+
+/** Hands the listing's waiting (or failed) photoreal job to the GPU again. */
+export async function startPhotorealAction(propertyId: string): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    // Through the realtor's own session first: only their job is found.
+    const job = await (await getRepository()).latestPhotorealJob(user.id, propertyId);
+    if (!job) return { ok: false, error: "No photos have been sent for a photoreal walkthrough yet." };
+    if (job.status !== "queued" && job.status !== "failed")
+      return { ok: false, error: `The photoreal walkthrough is already ${job.status === "done" ? "ready" : job.status}.` };
+    if (!gpuConfigured()) return { ok: false, error: WAITING_FOR_GPU };
+    if ((await inputNames(job)).length < job.files) return { ok: false, error: "The photos are no longer on the server. Send them again from Atrium Capture." };
+    const started = await dispatchJob(await getAdminRepository(), job, serverBaseUrl(await headers()).url);
+    revalidatePath(`/dashboard/properties/${propertyId}`);
+    return started.status === "running" ? { ok: true } : { ok: false, error: started.message ?? "The GPU didn't take the job." };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }
 
 // ---------------------------------------------------------------------------

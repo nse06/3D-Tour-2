@@ -69,8 +69,11 @@ export type CaptureSource = "demo" | "upload" | "ios_scan";
  * lighting (the demo, iPhone RoomPlan scans, modeled homes). "captured": the
  * textures already contain the real lighting (photo-textured scans from apps
  * like Polycam or Scaniverse), so the model is shown unlit, exactly as scanned.
+ * "photoreal": start with the trained splats (docs/photoreal.md); the painted
+ * model, unlit as "captured", stays one switch away (and stands in until the
+ * splats exist).
  */
-export type TourAppearance = "studio" | "captured";
+export type TourAppearance = "studio" | "captured" | "photoreal";
 
 export interface PropertyInfo {
   slug: string;
@@ -93,6 +96,8 @@ export interface TourData {
   assetUrl: string;
   /** iPhone photo scans: the same rooms as a clean model, behind the viewer's "photos off" switch. */
   cleanAssetUrl: string | null;
+  /** Photoreal Gaussian splats (.spz) trained on the scan's photos, in the model's frame. */
+  splatUrl: string | null;
   source: CaptureSource;
   appearance: TourAppearance;
   space: TourSpace;

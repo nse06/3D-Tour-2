@@ -3,12 +3,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CaptureUploader } from "@/components/dashboard/CaptureUploader";
 import { PhoneCapturePanel } from "@/components/dashboard/PhoneCapturePanel";
+import { PhotorealPanel } from "@/components/dashboard/PhotorealPanel";
 import { AttachDemoButton, DeletePropertyButton, PublishPanel } from "@/components/dashboard/PropertyActions";
 import { PropertyForm } from "@/components/dashboard/PropertyForm";
 import { ButtonLink, Card, StatusPill } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { getRepository } from "@/lib/data/repository";
 import { cityLine, formatPrice } from "@/lib/format";
+import { gpuConfigured, jobSummary } from "@/lib/photoreal";
 import { sortedFloors } from "@/lib/tour/navigation";
 import { updatePropertyAction } from "../../actions";
 
@@ -27,9 +29,15 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
   const { id } = await props.params;
   const { scan } = await props.searchParams;
   const user = await requireUser();
-  const bundle = await (await getRepository()).getProperty(user.id, id);
+  const repo = await getRepository();
+  const bundle = await repo.getProperty(user.id, id);
   if (!bundle) notFound();
   const { property: p, tour, space } = bundle;
+  // The photoreal panel is a side show: a database that can't answer yet mustn't break the page.
+  const photorealJob = await repo.latestPhotorealJob(user.id, id).catch((e) => {
+    console.error("photoreal job lookup:", (e as Error).message);
+    return null;
+  });
   const live = p.published && !!tour?.published;
   const floors = space ? sortedFloors(space) : [];
   const roomCount = space?.rooms.length ?? 0;
@@ -135,6 +143,17 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
           <Card className="p-6">
             <PhoneCapturePanel propertyId={p.id} tourId={tour?.id ?? null} autoStart={scan === "1"} />
           </Card>
+
+          {tour?.source === "ios_scan" && (
+            <Card className="p-6">
+              <PhotorealPanel
+                propertyId={p.id}
+                initialJob={photorealJob ? jobSummary(photorealJob) : null}
+                gpuReady={gpuConfigured()}
+                hasPhotoScan={!!tour.cleanAssetUrl}
+              />
+            </Card>
+          )}
 
           <Card className="p-6 md:p-8">
             <PropertyForm mode="edit" action={updatePropertyAction.bind(null, p.id)} initial={p} />

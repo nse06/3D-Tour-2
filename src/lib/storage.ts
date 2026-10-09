@@ -15,13 +15,15 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured, localDataDir, SUPABASE_BUCKET, supabasePublicKey, supabaseUrl } from "./data/config";
 
-export type UploadKind = "capture" | "cover" | "package";
+export type UploadKind = "capture" | "cover" | "package" | "splat";
 
 export const UPLOAD_RULES: Record<UploadKind, { extensions: string[]; maxBytes: number }> = {
   capture: { extensions: ["glb", "gltf"], maxBytes: 250 * 1024 * 1024 },
   cover: { extensions: ["jpg", "jpeg", "png", "webp"], maxBytes: 12 * 1024 * 1024 },
   // iPhone scan package: scan.json, RoomPlan data and RGB keyframes (docs/iphone-capture.md §3.3).
   package: { extensions: ["zip"], maxBytes: 1024 * 1024 * 1024 },
+  // Photoreal splats (.spz) the GPU worker trained on a scan's photos (docs/photoreal.md).
+  splat: { extensions: ["spz"], maxBytes: 500 * 1024 * 1024 },
 };
 
 export const CONTENT_TYPES: Record<string, string> = {
@@ -32,6 +34,9 @@ export const CONTENT_TYPES: Record<string, string> = {
   png: "image/png",
   webp: "image/webp",
   zip: "application/zip",
+  spz: "application/octet-stream",
+  json: "application/json",
+  ply: "application/octet-stream",
 };
 
 export interface UploadTarget {
@@ -72,6 +77,21 @@ function sign(key: string, exp: number) {
   return createHmac("sha256", uploadSecret()).update(`${key}:${exp}`).digest("hex");
 }
 
+/** Local mode: a signature for reading a private file (photoreal inputs), distinct from upload links. */
+export function signLocalRead(key: string, exp: number): string {
+  return sign(`read:${key}`, exp);
+}
+
+export function verifyLocalRead(key: string, exp: string | null, sig: string | null): boolean {
+  return verifyLocalUpload(`read:${key}`, exp, sig);
+}
+
+/** Local mode: a signed upload link for any key (photoreal inputs use their own key layout). */
+export function localUploadUrl(key: string, minutes = 30): string {
+  const exp = Date.now() + minutes * 60 * 1000;
+  return `/api/uploads/${key}?exp=${exp}&sig=${sign(key, exp)}`;
+}
+
 export function verifyLocalUpload(key: string, exp: string | null, sig: string | null): boolean {
   if (!exp || !sig || Number(exp) < Date.now()) return false;
   const expected = Buffer.from(sign(key, Number(exp)));
@@ -93,7 +113,7 @@ export function extensionOf(filename: string): string {
   return filename.split(".").pop()?.toLowerCase() ?? "";
 }
 
-const KEY_FILE = /^(capture|cover|package)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.([a-z0-9]+)$/;
+const KEY_FILE = /^(capture|cover|package|splat)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.([a-z0-9]+)$/;
 
 /** The kind of a storage key ("<userId>/<propertyId>/<kind>-<uuid>.<ext>"), or null if it isn't a valid key. */
 export function uploadKindOfKey(key: string): UploadKind | null {

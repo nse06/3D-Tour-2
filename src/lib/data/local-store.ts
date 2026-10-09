@@ -13,6 +13,8 @@ import type {
   CaptureSession,
   CaptureSessionLookup,
   FloorRecord,
+  PhotorealJob,
+  PhotorealJobUpdate,
   Property,
   PropertyBundle,
   PropertyInput,
@@ -28,9 +30,10 @@ interface Db {
   floors: FloorRecord[];
   rooms: RoomRecord[];
   captureSessions: CaptureSession[];
+  photorealJobs: PhotorealJob[];
 }
 
-const empty = (): Db => ({ version: 1, properties: [], tours: [], floors: [], rooms: [], captureSessions: [] });
+const empty = (): Db => ({ version: 1, properties: [], tours: [], floors: [], rooms: [], captureSessions: [], photorealJobs: [] });
 
 let queue: Promise<unknown> = Promise.resolve();
 
@@ -46,6 +49,7 @@ async function readDb(): Promise<Db> {
     db.tours = db.tours.map((t) => ({
       ...t,
       cleanAssetUrl: t.cleanAssetUrl ?? null,
+      splatUrl: t.splatUrl ?? null,
       scanPackageUrl: t.scanPackageUrl ?? null,
       appearance: t.appearance ?? "studio",
     }));
@@ -167,6 +171,7 @@ export class LocalRepository implements Repository {
       db.floors = db.floors.filter((f) => !tourIds.has(f.tourId));
       db.tours = db.tours.filter((t) => !tourIds.has(t.id));
       db.captureSessions = db.captureSessions.filter((s) => s.propertyId !== propertyId);
+      db.photorealJobs = db.photorealJobs.filter((j) => j.propertyId !== propertyId);
       db.properties = db.properties.filter((p) => p.id !== propertyId);
     });
   }
@@ -197,12 +202,14 @@ export class LocalRepository implements Repository {
       if (previous) {
         replaceSpace(db, previous, { floors: [], rooms: [], links: [], eyeHeight: 1.6 });
         db.tours = db.tours.filter((t) => t.id !== previous.id);
+        for (const job of db.photorealJobs) if (job.tourId === previous.id) job.tourId = null;
       }
       const tour: Tour = {
         id: randomUUID(),
         propertyId,
         assetUrl: capture.assetUrl,
         cleanAssetUrl: capture.cleanAssetUrl ?? null,
+        splatUrl: null,
         assetFormat: capture.assetFormat,
         source: capture.source,
         scanPackageUrl: capture.scanPackageUrl ?? null,
@@ -278,6 +285,62 @@ export class LocalRepository implements Repository {
       const session = db.captureSessions.find((s) => s.id === sessionId && s.userId === userId);
       if (!session) throw new NotFoundError("Capture session");
       session.completedAt = now();
+    });
+  }
+
+  createPhotorealJob(userId: string, propertyId: string, input: { files: number; bytes: number }): Promise<PhotorealJob | null> {
+    return mutate((db) => {
+      owned(db, userId, propertyId);
+      const tour = db.tours.find((t) => t.propertyId === propertyId);
+      if (!tour) return null;
+      const job: PhotorealJob = {
+        id: randomUUID(),
+        propertyId,
+        tourId: tour.id,
+        userId,
+        status: "uploading",
+        stage: null,
+        progress: 0,
+        message: null,
+        files: input.files,
+        bytes: input.bytes,
+        splatUrl: null,
+        stats: null,
+        createdAt: now(),
+        updatedAt: now(),
+        startedAt: null,
+        finishedAt: null,
+      };
+      db.photorealJobs.push(job);
+      return job;
+    });
+  }
+
+  async getPhotorealJob(jobId: string): Promise<PhotorealJob | null> {
+    return (await readDb()).photorealJobs.find((j) => j.id === jobId) ?? null;
+  }
+
+  updatePhotorealJob(jobId: string, update: PhotorealJobUpdate): Promise<PhotorealJob | null> {
+    return mutate((db) => {
+      const job = db.photorealJobs.find((j) => j.id === jobId);
+      if (!job) return null;
+      for (const [key, value] of Object.entries(update)) if (value !== undefined) Object.assign(job, { [key]: value });
+      job.updatedAt = now();
+      return { ...job };
+    });
+  }
+
+  async latestPhotorealJob(userId: string, propertyId: string): Promise<PhotorealJob | null> {
+    const jobs = (await readDb()).photorealJobs.filter((j) => j.propertyId === propertyId && j.userId === userId);
+    return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+  }
+
+  attachSplats(job: PhotorealJob, splatUrl: string): Promise<boolean> {
+    return mutate((db) => {
+      const tour = db.tours.find((t) => t.id === job.tourId && t.propertyId === job.propertyId);
+      if (!tour) return false;
+      tour.splatUrl = splatUrl;
+      return true;
     });
   }
 }

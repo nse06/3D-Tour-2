@@ -17,6 +17,7 @@ import {
   Pause,
   Play,
   Share2,
+  Sparkles,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -96,6 +97,18 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
   const [switchFailed, setSwitchFailed] = useState(false);
   const hasClean = !!data.cleanAssetUrl && !switchFailed;
   const switching = hasClean && showingClean === photos;
+  // Photoreal splats (docs/photoreal.md): on top of the photo model, or what buyers see first.
+  const [photoreal, setPhotoreal] = useState(!!data.splatUrl && data.appearance === "photoreal");
+  const [splatState, setSplatState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const hasSplats = !!data.splatUrl && splatState !== "failed";
+  const splatsLoading = photoreal && splatState !== "ready";
+  const onSplatState = useCallback((state: "loading" | "ready" | "failed") => {
+    setSplatState(state);
+    if (state === "failed") {
+      setPhotoreal(false);
+      setToast("The photoreal walkthrough couldn't be loaded");
+    }
+  }, []);
   const pendingTitle = useRef<TourRoom | null>(null);
   const webgl = useSyncExternalStore(noopSubscribe, hasWebGL, () => true);
 
@@ -256,6 +269,9 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
             setToast(startWithPhotos ? "The clean model couldn't be loaded" : "The photos couldn't be loaded");
           }}
           appearance={data.appearance}
+          splatUrl={data.splatUrl}
+          photoreal={photoreal}
+          onSplatState={onSplatState}
           space={space}
           startWaypoint={startWaypoint}
           apiRef={apiRef}
@@ -392,7 +408,23 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
           <IconButton label={planOpen ? "Hide floor plan" : "Show floor plan"} onClick={() => setPlanOpen(!planOpen)} active={planOpen}>
             <MapIcon className="size-[18px]" />
           </IconButton>
-          {hasClean && (
+          {hasSplats && (
+            <button
+              onClick={() => {
+                if (!photoreal) setPhotos(true);
+                setPhotoreal(!photoreal);
+                setToast(photoreal ? "Photoreal off — the photos painted on the model" : "Photoreal — learned from the scan's photos");
+              }}
+              aria-pressed={photoreal}
+              aria-label={photoreal ? "Turn photoreal off" : "Turn photoreal on"}
+              title={photoreal ? "Turn photoreal off" : "Photoreal: the home as the scan's photos saw it"}
+              className={`glass flex h-11 items-center gap-2 rounded-full px-3.5 text-[13px] font-medium text-white/90 transition hover:bg-white/20 hover:text-white sm:pr-4 ${photoreal ? "ring-1 ring-[#d6b67c]/70" : ""}`}
+            >
+              {splatsLoading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              <span className="hidden sm:inline">Photoreal</span>
+            </button>
+          )}
+          {hasClean && !photoreal && (
             <button
               onClick={() => {
                 setPhotos(!photos);

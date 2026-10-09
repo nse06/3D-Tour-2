@@ -11,7 +11,18 @@ import { defaultSpace } from "@/lib/tour/space";
 import type { FloorFeature, NavLink, TourAppearance, TourSpace, Vec2, Vec3 } from "@/lib/tour/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { NotFoundError, uniqueSlug, type Repository } from "./repository";
-import type { CaptureInput, CaptureSession, CaptureSessionLookup, Property, PropertyBundle, PropertyInput, PropertySummary, Tour } from "./types";
+import type {
+  CaptureInput,
+  CaptureSession,
+  CaptureSessionLookup,
+  PhotorealJob,
+  PhotorealJobUpdate,
+  Property,
+  PropertyBundle,
+  PropertyInput,
+  PropertySummary,
+  Tour,
+} from "./types";
 
 interface PropertyRow {
   id: string;
@@ -39,6 +50,8 @@ interface TourRow {
   asset_url: string;
   /** Added by migration 20261009000000; absent on databases that haven't run it yet. */
   clean_asset_url?: string | null;
+  /** Added by migration 20261010000000 (photoreal splats). */
+  splat_url?: string | null;
   asset_format: "glb" | "gltf";
   source: Tour["source"];
   scan_package_url: string | null;
@@ -57,6 +70,25 @@ interface CaptureSessionRow {
   expires_at: string;
   created_at: string;
   completed_at: string | null;
+}
+
+interface PhotorealJobRow {
+  id: string;
+  property_id: string;
+  tour_id: string | null;
+  user_id: string;
+  status: PhotorealJob["status"];
+  stage: string | null;
+  progress: number;
+  message: string | null;
+  files: number;
+  bytes: number | string;
+  splat_url: string | null;
+  stats: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  finished_at: string | null;
 }
 
 interface FloorRow {
@@ -104,12 +136,13 @@ const toTour = (r: TourRow): Tour => ({
   propertyId: r.property_id,
   assetUrl: r.asset_url,
   cleanAssetUrl: r.clean_asset_url ?? null,
+  splatUrl: r.splat_url ?? null,
   assetFormat: r.asset_format,
   source: r.source,
   scanPackageUrl: r.scan_package_url,
   processingStatus: r.processing_status,
   navigation: { links: r.navigation?.links ?? [], eyeHeight: r.navigation?.eyeHeight ?? 1.6 },
-  appearance: r.appearance === "captured" ? "captured" : "studio",
+  appearance: r.appearance === "captured" || r.appearance === "photoreal" ? r.appearance : "studio",
   published: r.published,
   createdAt: r.created_at,
 });
@@ -123,6 +156,54 @@ const toCaptureSession = (r: CaptureSessionRow): CaptureSession => ({
   createdAt: r.created_at,
   completedAt: r.completed_at,
 });
+
+const toPhotorealJob = (r: PhotorealJobRow): PhotorealJob => ({
+  id: r.id,
+  propertyId: r.property_id,
+  tourId: r.tour_id,
+  userId: r.user_id,
+  status: r.status,
+  stage: r.stage,
+  progress: Number(r.progress),
+  message: r.message,
+  files: r.files,
+  bytes: Number(r.bytes),
+  splatUrl: r.splat_url,
+  stats: r.stats,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+  startedAt: r.started_at,
+  finishedAt: r.finished_at,
+});
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** PostgREST's answer when a table or column a request names isn't in the database (yet). */
+const MISSING_SCHEMA = /PGRST20[45]|42P01|schema cache|does not exist/i;
+
+/**
+ * Runs `fn`; if the database predates a migration it needs (photoreal jobs), applies the
+ * migrations first (when this server reaches Postgres directly) and retries while the API reloads
+ * its schema.
+ */
+async function withMigrations<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!(e instanceof Error) || !MISSING_SCHEMA.test(e.message)) throw e;
+    const { applyMigrations, databaseUrl } = await import("@/lib/migrations");
+    if (!databaseUrl()) throw e;
+    await applyMigrations();
+    for (let attempt = 0; ; attempt++) {
+      await new Promise((r) => setTimeout(r, 750));
+      try {
+        return await fn();
+      } catch (again) {
+        if (attempt >= 7 || !(again instanceof Error) || !MISSING_SCHEMA.test(again.message)) throw again;
+      }
+    }
+  }
+}
 
 const fromInput = (input: PropertyInput) => ({
   title: input.title,
@@ -418,5 +499,77 @@ export class SupabaseRepository implements Repository {
       await db.from("capture_sessions").update({ completed_at: new Date().toISOString() }).eq("id", sessionId).eq("user_id", userId).select("id").maybeSingle(),
     );
     if (!row) throw new NotFoundError("Capture session");
+  }
+
+  async createPhotorealJob(userId: string, propertyId: string, input: { files: number; bytes: number }): Promise<PhotorealJob | null> {
+    const db = await this.client();
+    await this.ownedProperty(db, userId, propertyId);
+    const tour = await this.latestTour(db, propertyId);
+    if (!tour) return null;
+    return withMigrations(async () => {
+      const row = check(
+        await db
+          .from("photoreal_jobs")
+          .insert({ property_id: propertyId, tour_id: tour.id, user_id: userId, status: "uploading", files: input.files, bytes: input.bytes })
+          .select("*")
+          .single(),
+      ) as PhotorealJobRow;
+      return toPhotorealJob(row);
+    });
+  }
+
+  async getPhotorealJob(jobId: string): Promise<PhotorealJob | null> {
+    if (!UUID.test(jobId)) return null;
+    const db = await this.client();
+    return withMigrations(async () => {
+      const row = check(await db.from("photoreal_jobs").select("*").eq("id", jobId).maybeSingle()) as PhotorealJobRow | null;
+      return row ? toPhotorealJob(row) : null;
+    });
+  }
+
+  async updatePhotorealJob(jobId: string, update: PhotorealJobUpdate): Promise<PhotorealJob | null> {
+    if (!UUID.test(jobId)) return null;
+    const db = await this.client();
+    const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (update.status !== undefined) row.status = update.status;
+    if (update.stage !== undefined) row.stage = update.stage;
+    if (update.progress !== undefined) row.progress = update.progress;
+    if (update.message !== undefined) row.message = update.message;
+    if (update.splatUrl !== undefined) row.splat_url = update.splatUrl;
+    if (update.stats !== undefined) row.stats = update.stats;
+    if (update.startedAt !== undefined) row.started_at = update.startedAt;
+    if (update.finishedAt !== undefined) row.finished_at = update.finishedAt;
+    return withMigrations(async () => {
+      const result = check(await db.from("photoreal_jobs").update(row).eq("id", jobId).select("*").maybeSingle()) as PhotorealJobRow | null;
+      return result ? toPhotorealJob(result) : null;
+    });
+  }
+
+  async latestPhotorealJob(userId: string, propertyId: string): Promise<PhotorealJob | null> {
+    const db = await this.client();
+    return withMigrations(async () => {
+      const row = check(
+        await db
+          .from("photoreal_jobs")
+          .select("*")
+          .eq("property_id", propertyId)
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ) as PhotorealJobRow | null;
+      return row ? toPhotorealJob(row) : null;
+    });
+  }
+
+  async attachSplats(job: PhotorealJob, splatUrl: string): Promise<boolean> {
+    if (!job.tourId) return false;
+    const db = await this.client();
+    return withMigrations(async () => {
+      const row = check(
+        await db.from("tours").update({ splat_url: splatUrl }).eq("id", job.tourId!).eq("property_id", job.propertyId).select("id").maybeSingle(),
+      );
+      return !!row;
+    });
   }
 }
