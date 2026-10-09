@@ -10,6 +10,8 @@ import Vision
 /// with ImageIO one at a time, and where each shows people (Vision).
 struct ScanPhotos: PhotoSource {
     let directory: URL
+    /// Where to keep each photo's people mask (masks/<photo>.png), for the photoreal training.
+    var masks: URL? = nil
 
     /// Person masks are computed on photos this small (Vision's segmentation is coarser anyway)...
     static let maskInputSide = 512
@@ -73,7 +75,12 @@ struct ScanPhotos: PhotoSource {
             for x in 0..<w { confidence[y * w + x] = bytes[y * row + x] }
         }
         let mask = PhotoMask(width: w, height: h, confidence: confidence).shrunk(toFit: Self.maskSide).rotated(clockwiseTurns: 4 - turns)
-        return mask.isEmpty ? nil : mask
+        guard !mask.isEmpty else { return nil }
+        if let masks {
+            let name = (frame.file as NSString).lastPathComponent
+            try? mask.png().write(to: masks.appendingPathComponent((name as NSString).deletingPathExtension + ".png"))
+        }
+        return mask
     }
 
     /// 8-bit RGB pixels of an image.

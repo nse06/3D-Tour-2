@@ -156,9 +156,12 @@ struct ScanDetailView: View {
         case 6:
             title = "Paint people out of the photos"
             text = "Atrium Capture now paints people out of the walkthrough — someone walking through, or you reflected in a mirror — using the other photos of the same spot. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
-        default:
+        case 7:
             title = "Sharpen edges and line up the photos"
-            text = "Atrium Capture now lines your photos up with each other before painting (the phone's tracking drifts a centimeter or two), keeps furniture edges from smearing onto the walls behind them, and gives LiDAR furniture finer, smoother shapes. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
+            text = "Atrium Capture now lines your photos up with each other before painting (the phone's tracking drifts a centimeter or two), keeps furniture edges from smearing onto the walls behind them, gives LiDAR furniture finer, smoother shapes and draws TVs as thin screens. Rebuilding also gets the scan ready for a photoreal walkthrough. No rescanning needed. Afterwards, send it to Atrium again."
+        default:
+            title = "Thin TVs, and ready for photoreal"
+            text = "Atrium Capture now draws TVs as thin screens instead of thick boxes, and gives the sides of furniture no photo saw the color of the rest of the piece. Rebuilding also gets the scan ready for a photoreal walkthrough. No rescanning needed. Afterwards, send it to Atrium again."
         }
         return VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: "wand.and.stars")

@@ -22,9 +22,12 @@ def main():
     args = parser.parse_args()
     folder, sample = args.folder, args.sample
     info = json.loads((folder / "info.json").read_text())
-    keys = ("pipeline", "alignment", "structure", "photos", "photoCoverage", "photosWithPeople", "lidarMesh", "lidarMeshRooms", "meshTriangles", "meshObjects", "photosAligned")
+    keys = (
+        "pipeline", "alignment", "structure", "photos", "photoCoverage", "photosWithPeople", "lidarMesh", "lidarMeshRooms", "meshTriangles", "meshObjects",
+        "photosAligned", "photorealSeeds",
+    )
     print("info:", json.dumps({k: info.get(k) for k in keys}))
-    assert info.get("pipeline", 0) >= 8 and "photosWithPeople" in info and "meshTriangles" in info and "photosAligned" in info, "rebuilt with an old pipeline"
+    assert info.get("pipeline", 0) >= 9 and "photosAligned" in info and "photorealSeeds" in info, "rebuilt with an old pipeline"
     report = json.loads((folder / "alignment.json").read_text())
     print("alignment:", json.dumps({k: v for k, v in report.items() if k != "rooms"}))
     for r in report["rooms"]:
@@ -83,6 +86,17 @@ def main():
         clean_rooms = clean_gltf["scenes"][0]["extras"]["atrium"]["rooms"]
         assert len(clean_rooms) == len(manifest["rooms"]), "the clean model covers the same rooms"
         print(f"clean model: {len(clean) / 1e6:.1f} MB, {len(clean_rooms)} rooms")
+        # The photoreal training data: every painted photo's camera and seeds on the painted surfaces.
+        cameras = json.loads((folder / "photoreal" / "cameras.json").read_text())
+        assert cameras["format"] == "atrium-photoreal/1", cameras.get("format")
+        assert len(cameras["frames"]) == info["photos"], f"{len(cameras['frames'])} cameras for {info['photos']} photos"
+        assert all(len(f["pose"]) == 16 and f["fx"] > 1 and f["width"] > 0 for f in cameras["frames"]), "camera entries"
+        seeds = (folder / "photoreal" / "seeds.ply").read_bytes()
+        header = seeds[: seeds.index(b"end_header\n") + len(b"end_header\n")].decode()
+        count = int(next(line for line in header.splitlines() if line.startswith("element vertex")).split()[-1])
+        assert count == cameras["seeds"]["count"] == info["photorealSeeds"] and count > 1000, f"seeds: {count}"
+        assert len(seeds) == len(header) + 27 * count, "seed records"
+        print(f"photoreal data: {len(cameras['frames'])} cameras, {count} seeds ({len(seeds) / 1e6:.1f} MB)")
 
     if args.mesh:
         rooms = len(json.loads((folder / "manifest.json").read_text())["rooms"])

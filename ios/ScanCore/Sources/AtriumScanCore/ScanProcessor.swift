@@ -69,6 +69,8 @@ public struct ProcessedScan: Sendable {
     /// Photo-textured scans only: each photo's pose as painted (after alignment), in the frames' order
     /// and the scan's own frame.
     public var photoPoses: [Transform]? = nil
+    /// Photo-textured scans only: what the cloud needs for a photoreal walkthrough (cameras, seeds).
+    public var photoreal: PhotorealExport? = nil
 }
 
 public enum ScanProcessingError: Error, LocalizedError, Equatable {
@@ -204,6 +206,9 @@ public enum ScanProcessor {
             photoShiftCm: rounded(baked.alignment.meanShift * 100, 2), photoTurnDegrees: rounded(baked.alignment.meanTurn * 180 / .pi, 3))
         var processed = ProcessedScan(glb: glb, manifest: manifest, stats: stats, frame: frame)
         processed.photoPoses = baked.poses
+        processed.photoreal = try PhotorealExport.make(
+            frames: cameras.map(\.frame), poses: baked.poses, rooms: rooms, model: model, atlases: baked.atlases, seen: baked.seen,
+            atlasSize: photoOptions.atlasSize)
         return processed
     }
 

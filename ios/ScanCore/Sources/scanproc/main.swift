@@ -5,6 +5,7 @@
 //   scanproc demo-scan <scan.json> [--local]   write the synthetic two-bedroom apartment scan
 //        (--local: in the apartment's own frame, floor at 0, not an ARKit-like one)
 //   scanproc paint <scan.json> <out.glb> --images <dir> [--meshes <dir>] [--clean <clean.glb>] [--keep-frame] [--poses <out.json>]
+//                  [--photoreal <dir>]   also write cameras.json and seeds.ply for photoreal training there
 //        paints the scan's photos onto it, as the phone does: each frame's image is <dir>/<name>.rgb
 //        (raw 8-bit RGB at the frame's imageWidth × imageHeight); LiDAR meshes are <dir>/mesh-<room id>.bin
 //   scanproc align <room.json|structure.json>... --out <scan.json> [--glb <out.glb>] [--report <alignment.json>]
@@ -23,7 +24,7 @@ func fail(_ message: String) -> Never {
 let usage = """
     usage: scanproc process <scan.json> <out.glb> [--manifest <manifest.json>] [--texture-size <px>]
            scanproc demo-scan <scan.json> [--local]
-           scanproc paint <scan.json> <out.glb> --images <dir> [--meshes <dir>] [--clean <clean.glb>] [--keep-frame] [--poses <out.json>]
+           scanproc paint <scan.json> <out.glb> --images <dir> [--meshes <dir>] [--clean <clean.glb>] [--keep-frame] [--poses <out.json>] [--photoreal <dir>]
            scanproc align <room.json|structure.json>... --out <scan.json> [--glb <out.glb>] [--report <alignment.json>]
                 [--structure <structure.json> [--top-level-only]] [--path <scan.json>] [--scramble [--walk] [--no-structure]]
     """
@@ -134,7 +135,7 @@ case "demo-scan":
 case "paint":
     args.removeFirst()
     guard let imagesDir = option("--images") else { fail(usage) }
-    let meshDir = option("--meshes"), cleanPath = option("--clean"), posesPath = option("--poses")
+    let meshDir = option("--meshes"), cleanPath = option("--clean"), posesPath = option("--poses"), photorealDir = option("--photoreal")
     let keepFrame = flag("--keep-frame")
     guard args.count == 2 else { fail(usage) }
     do {
@@ -152,6 +153,13 @@ case "paint":
         try result.glb.write(to: URL(fileURLWithPath: args[1]))
         if let cleanPath, let clean = result.cleanGLB { try clean.write(to: URL(fileURLWithPath: cleanPath)) }
         if let posesPath, let poses = result.photoPoses { try JSONEncoder().encode(poses).write(to: URL(fileURLWithPath: posesPath)) }
+        if let photorealDir, let export = result.photoreal {
+            let dir = URL(fileURLWithPath: photorealDir, isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try export.cameras.write(to: dir.appendingPathComponent("cameras.json"))
+            try export.seeds.write(to: dir.appendingPathComponent("seeds.ply"))
+            print(String(format: "photoreal: %d seeds %.1f cm apart, %.1f MB", export.seedCount, export.seedSpacing * 100, Double(export.seeds.count) / 1_048_576))
+        }
         let s = result.stats
         print(
             String(

@@ -394,6 +394,58 @@ final class PhotoTexturingTests: XCTestCase {
         XCTAssertLessThan(lowParts.count, parts.count, "no headboard")
     }
 
+    func testFacesNoPhotoSawTakeTheirOwnPiecesColor() throws {
+        // The magenta cabinet's back and its side by the wall are never photographed. A bigger low
+        // sideboard across the room (the photos show the room's pattern where it stands) outweighs the
+        // cabinet in the house's typical furniture color; the cabinet's hidden faces stay magenta.
+        var scan = Self.room()
+        scan.frames = Self.frames()
+        scan.objects.append(
+            ScanObject(id: "O2", roomId: scan.rooms[0].id, category: "storage", transform: .translating(Vec3(1.5, 0.25, 2.4)), size: Vec3(2.4, 0.5, 1)))
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        var model = PhotoModel.build(scan: scan, rooms: rooms, walls: walls, defaultThickness: 0.12, includeCeilings: true)
+        model.measureCharts()
+        let options = PhotoTexturingOptions(atlasSize: 1024, maxAtlases: 2, texelSize: 0.03, depthWidth: 96)
+        let atlases = try XCTUnwrap(PhotoBaker.pack(&model.charts, options: options))
+        let cameras = scan.frames.compactMap { PhotoCamera($0, depthWidth: options.depthWidth) }
+        let baked = PhotoBaker.bake(model: model, cameras: cameras, photos: Raycast(), atlasCount: atlases, options: options)
+        func center(_ ci: Int) -> [Int] {
+            let c = model.charts[ci]
+            let a = ((c.y + c.h / 2) * options.atlasSize + c.x + c.w / 2) * 3
+            return (0..<3).map { Int(baked.atlases[c.atlas].pixels[a + $0]) }
+        }
+        let cabinet = model.charts.indices.filter { model.charts[$0].group == 0 }
+        let sideboard = model.charts.indices.filter { model.charts[$0].group == 1 }
+        XCTAssertFalse(sideboard.isEmpty)
+        let seenArea = { (charts: [Int]) in charts.reduce(0) { $0 + baked.seen[$1].filter { $0 }.count } }
+        XCTAssertGreaterThan(seenArea(sideboard), seenArea(cabinet), "the sideboard outweighs the cabinet")
+        let hidden = cabinet.filter { !baked.seen[$0].contains(true) }
+        XCTAssertFalse(hidden.isEmpty, "the cabinet's back and wall side")
+        for ci in hidden {
+            let c = center(ci)
+            XCTAssertTrue(c[0] > 200 && c[1] < 60 && c[2] > 200, "hidden cabinet face \(c), not the house's furniture color")
+        }
+    }
+
+    func testTelevisionsAreThinPanels() {
+        // RoomPlan's box for a TV on a stand takes in the stand's feet.
+        struct Boxes: BoxSink {
+            var boxes: [(lo: Vec3, hi: Vec3)] = []
+            mutating func addBox(_ frame: Transform, min lo: Vec3, max hi: Vec3, material: String, skipBottom: Bool) { boxes.append((lo, hi)) }
+        }
+        for (size, thinAxis) in [(Vec3(1.2, 0.8, 0.3), 2), (Vec3(0.28, 0.7, 1.1), 0)] {
+            var sink = Boxes()
+            Furniture.build(ScanObject(id: "T", roomId: "R", category: "television", transform: .translating(Vec3(1, 0.4, 1)), size: size), walls: [], into: &sink)
+            XCTAssertEqual(sink.boxes.count, 1)
+            let box = sink.boxes[0], wide = 2 - thinAxis
+            XCTAssertEqual(box.hi[thinAxis] - box.lo[thinAxis], Furniture.screenThickness, accuracy: 1e-5, "a screen's thickness")
+            XCTAssertEqual((box.hi[thinAxis] + box.lo[thinAxis]) / 2, 0, accuracy: 1e-5, "standing in the middle of the box")
+            XCTAssertEqual(box.hi[wide] - box.lo[wide], size[wide], accuracy: 1e-5, "full width")
+            XCTAssertEqual(box.hi.y - box.lo.y, size.y, accuracy: 1e-5, "full height")
+        }
+    }
+
     func testWallEdgesTakeTheWallsColor() throws {
         var scan = Self.room()
         scan.frames = Self.frames()

@@ -52,6 +52,9 @@ final class ScanStore: @unchecked Sendable {
     /// The clean model for the viewer's "photos off" view (photo-textured scans built by pipeline 6 on).
     static let cleanModelFile = "scan-clean.glb"
     func cleanModelURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent(Self.cleanModelFile) }
+    /// What the cloud needs for a photoreal walkthrough (cameras.json, seeds.ply, masks/; pipeline 9 on).
+    static let photorealFolder = "photoreal"
+    func photorealURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent(Self.photorealFolder, isDirectory: true) }
     func manifestURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("manifest.json") }
     func packageURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("package.zip") }
     func previewURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("roomplan/structure.usdz") }
@@ -112,7 +115,8 @@ final class ScanStore: @unchecked Sendable {
     }
 
     /// The scan package (docs/iphone-capture.md §3.3), zipped on first use. The photos and LiDAR
-    /// meshes stay on the phone (hundreds of MB; the walkthrough already carries them).
+    /// meshes stay on the phone (hundreds of MB; the walkthrough already carries them), and so does
+    /// the photoreal training data (uploaded on its own, when asked for).
     func ensurePackage(for id: UUID) throws -> URL {
         let zip = packageURL(for: id)
         if FileManager.default.fileExists(atPath: zip.path) { return zip }
@@ -124,7 +128,7 @@ final class ScanStore: @unchecked Sendable {
                 guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
                 let relative = String(url.standardizedFileURL.path.dropFirst(folder.standardizedFileURL.path.count + 1))
                 if skip.contains(relative) || (relative.hasPrefix("frames/") && relative.hasSuffix(".jpg"))
-                    || (relative.hasPrefix("roomplan/mesh-") && relative.hasSuffix(".bin"))
+                    || (relative.hasPrefix("roomplan/mesh-") && relative.hasSuffix(".bin")) || relative.hasPrefix(Self.photorealFolder + "/")
                 {
                     continue
                 }

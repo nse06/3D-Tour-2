@@ -15,7 +15,10 @@ enum ScanBuilder {
     /// 4: the scan's photos painted onto the model. 5: one sharp photo per patch, furniture in parts.
     /// 6: a clean model next to the photo model, for the viewer's "photos off" view.
     /// 7: people painted out of the photos; furniture shaped from the LiDAR mesh (scans that have one).
-    static let pipelineVersion = 8
+    /// 8: photos lined up with each other, edge-aware painting, finer LiDAR shapes.
+    /// 9: thin TVs, hidden furniture faces in their own piece's color; photoreal training data
+    ///    (photoreal/: cameras.json, seeds.ply, masks/).
+    static let pipelineVersion = 9
 
     enum Step: Int, CaseIterable {
         case combining, modeling, packaging
@@ -191,7 +194,12 @@ enum ScanBuilder {
         guard !found.isEmpty else { throw Failure.noRooms }
         let poses = structure.map(RoomPlanAdapter.structurePoses)
         let capturedAt = ISO8601DateFormatter().string(from: startedAt)
-        let photos = ScanPhotos(directory: dir)
+        // What the cloud needs for a photoreal walkthrough is written with each build; the people
+        // masks as the painting finds them.
+        let photoreal = dir.appendingPathComponent(ScanStore.photorealFolder, isDirectory: true)
+        try? FileManager.default.removeItem(at: photoreal)
+        try? FileManager.default.createDirectory(at: photoreal.appendingPathComponent("masks", isDirectory: true), withIntermediateDirectories: true)
+        let photos = ScanPhotos(directory: dir, masks: photoreal.appendingPathComponent("masks", isDirectory: true))
         let (aligned, processed, meshRooms) = try await Task.detached(priority: .userInitiated) {
             // Each room's LiDAR mesh rides along with it into the scan's frame.
             var parts = found.map { $0.0 }, meshRooms = 0
@@ -212,6 +220,12 @@ enum ScanBuilder {
         let clean = dir.appendingPathComponent(ScanStore.cleanModelFile)
         if let cleanGLB = processed.cleanGLB { try cleanGLB.write(to: clean) } else { try? FileManager.default.removeItem(at: clean) }
         try processed.manifest.jsonData(prettyPrinted: true).write(to: dir.appendingPathComponent("manifest.json"))
+        if let export = processed.photoreal {
+            try export.cameras.write(to: photoreal.appendingPathComponent("cameras.json"))
+            try export.seeds.write(to: photoreal.appendingPathComponent("seeds.ply"))
+        } else {
+            try? FileManager.default.removeItem(at: photoreal)
+        }
         let reportEncoder = JSONEncoder()
         reportEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try reportEncoder.encode(aligned.report).write(to: dir.appendingPathComponent("alignment.json"))
@@ -237,6 +251,7 @@ enum ScanBuilder {
             "meshObjects": processed.stats.meshObjects ?? 0,
             "photosAligned": processed.stats.photosAligned ?? 0,
             "photoShiftCm": processed.stats.photoShiftCm ?? 0,
+            "photorealSeeds": processed.photoreal?.seedCount ?? 0,
         ]
         try JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]).write(to: dir.appendingPathComponent("info.json"))
         // The package zips these files; an old one would be stale.

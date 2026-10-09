@@ -159,7 +159,14 @@ enum Furniture {
             box(-hx, hx, 0, size.y, -hz, hz, Mat.fireplace)
 
         case "television":
-            box(-hx, hx, 0, size.y, -hz, hz, Mat.black, skipBottom: false)
+            // A screen is a few centimeters thick; RoomPlan's box takes in a stand's feet. A thin
+            // panel in the middle of the box, where the screen stands over its feet.
+            let t = min(Self.screenThickness, size.x, size.z) / 2
+            if size.z <= size.x {
+                box(-hx, hx, 0, size.y, -t, t, Mat.black, skipBottom: false)
+            } else {
+                box(-t, t, 0, size.y, -hz, hz, Mat.black, skipBottom: false)
+            }
 
         case "stairs":
             buildStairs(size, frame: frame, into: &mesh)
@@ -168,6 +175,9 @@ enum Furniture {
             box(-hx, hx, 0, size.y, -hz, hz, Mat.neutral)
         }
     }
+
+    /// How thick a TV is drawn, meters.
+    static let screenThickness: Float = 0.06
 
     /// Steps rising along the longer horizontal axis.
     static func buildStairs<Sink: BoxSink>(_ size: Vec3, frame: Transform, into mesh: inout Sink) {

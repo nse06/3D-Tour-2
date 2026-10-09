@@ -83,6 +83,9 @@ struct PhotoChart {
     let kind: Kind
     /// Color when no photo saw the surface (sRGB bytes).
     let fallback: (UInt8, UInt8, UInt8)
+    /// The piece of furniture the chart is part of (index in the scan's objects; −1: none). A face
+    /// no photo saw takes the color of the rest of its piece.
+    var group = -1
     var minU = Double.infinity, maxU = -Double.infinity, minV = Double.infinity, maxV = -Double.infinity
     // Placement in the atlas (texels), including padding.
     var atlas = 0, x = 0, y = 0, w = 0, h = 0
@@ -131,6 +134,8 @@ struct PhotoModel {
     var charts: [PhotoChart] = []
     /// Each room's floor chart, by room index (thresholds extend it).
     var floorChart: [Int: Int] = [:]
+    /// The piece of furniture being added (index in the scan's objects; −1: none).
+    var group = -1
     /// Furniture and clutter from the LiDAR mesh: its triangles, and the RoomPlan boxes it replaced.
     var meshTriangles = 0
     var meshObjects = 0
@@ -173,6 +178,7 @@ struct PhotoModel {
         case let .solid(of): fallback = charts[of].fallback
         }
         charts.append(PhotoChart(origin: origin, u: vnormalize(u), v: vnormalize(v), normal: vnormalize(normal), kind: kind, fallback: fallback))
+        if case .object = kind { charts[charts.count - 1].group = group }
         return charts.count - 1
     }
 
@@ -221,7 +227,11 @@ struct PhotoModel {
         // parts (a bed's mattress and headboard, a sofa's seat and back), so each photo lands on the
         // surface it shows rather than on the top of one big box.
         let shapes = MeshShapes.build(scan.meshes, rooms: rooms, walls: walls, objects: scan.objects)
-        for o in scan.objects where !shapes.replaced.contains(o.id) { Furniture.build(o, walls: walls, into: &model, decor: false) }
+        for (k, o) in scan.objects.enumerated() where !shapes.replaced.contains(o.id) {
+            model.group = k
+            Furniture.build(o, walls: walls, into: &model, decor: false)
+        }
+        model.group = -1
         model.addShapes(shapes)
         return model
     }
@@ -1097,14 +1107,21 @@ struct PhotoBaker {
             }
         }
 
-        // Charts no photo saw take the typical color of their kind of surface; solid charts their wall's.
+        // Charts no photo saw take the typical color of the rest of their piece of furniture (a TV's
+        // back its screen's black), else of their kind of surface; solid charts their wall's.
         var byKind: [String: [(SIMD3<Float>, Int)]] = [:]
+        var byGroup: [Int: [(SIMD3<Float>, Int)]] = [:]
         func kindKey(_ kind: PhotoChart.Kind) -> String { "\(kind)" }
-        for (ci, c) in charts.enumerated() where seenCounts.buffer[ci] > 0 { byKind[kindKey(c.kind), default: []].append((medians.buffer[ci], seenCounts.buffer[ci])) }
+        for (ci, c) in charts.enumerated() where seenCounts.buffer[ci] > 0 {
+            byKind[kindKey(c.kind), default: []].append((medians.buffer[ci], seenCounts.buffer[ci]))
+            if c.group >= 0 { byGroup[c.group, default: []].append((medians.buffer[ci], seenCounts.buffer[ci])) }
+        }
         let kindColor = byKind.mapValues(weightedMedian)
+        let groupColor = byGroup.mapValues(weightedMedian)
         func typical(_ ci: Int) -> SIMD3<Float> {
             let c = charts[ci]
             if seenCounts.buffer[ci] > 0 { return medians.buffer[ci] }
+            if c.group >= 0, let color = groupColor[c.group] ?? nil { return color }
             if let color = kindColor[kindKey(c.kind)] ?? nil { return color }
             return SIMD3(Float(c.fallback.0), Float(c.fallback.1), Float(c.fallback.2))
         }
