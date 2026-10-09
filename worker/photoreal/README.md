@@ -28,7 +28,7 @@ A capture folder for `run_local.py` comes from the app (a scan's `photoreal/` fo
 ## Deploy on Modal
 
 ```sh
-pip install modal fastapi
+pip install modal fastapi                      # behind an HTTPS proxy: 'modal[api-proxy-support]' fastapi
 modal setup                                   # or MODAL_TOKEN_ID / MODAL_TOKEN_SECRET in the environment
 modal secret create atrium-photoreal PHOTOREAL_WORKER_SECRET=<a long random string>
 cd worker/photoreal && modal deploy modal_app.py

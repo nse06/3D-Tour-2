@@ -90,6 +90,10 @@ PSNR.
    modal deploy modal_app.py          # PHOTOREAL_GPU=L4 modal deploy … for a cheaper, slower GPU
    ```
 
+   Behind an HTTPS proxy (a Claude Code cloud session, a company network), install
+   `'modal[api-proxy-support]'` instead: Modal's client only goes through `HTTPS_PROXY` with it, and
+   otherwise reports "Could not connect to the Modal server".
+
    It prints the URL of the `start` endpoint (`https://<workspace>--atrium-photoreal-start.modal.run`).
 
 ### 4.2 The site
