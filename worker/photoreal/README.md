@@ -8,9 +8,10 @@ saved as `.spz` for the tour viewer. The whole pipeline is described in
 |---|---|
 | `atrium_photoreal/capture.py` | Reads what the app uploads: `cameras.json` (poses in the model's frame), `seeds.ply`, `frames/`, `masks/` |
 | `atrium_photoreal/train.py` | gsplat's 3DGS recipe (MCMC on a GPU) with splats starting as discs on the painted surfaces, per-photo exposure, pose refinement, people left out, bounds |
+| `atrium_photoreal/shell.py` | The room's shape: splats on walls, floors and ceilings kept flat on them, no needles, floaters in front of the cameras cleared |
 | `atrium_photoreal/render.py` | gsplat's CUDA rasterizer; a dense PyTorch one on the CPU for tests |
 | `atrium_photoreal/spz.py` | SPZ v3 writer/reader (checked against three.js's `SPZLoader`) |
-| `atrium_photoreal/job.py` | One job: download, train, write the `.spz` (under 45 MB: the highest view-dependent color bands go first), upload, report to the Atrium site |
+| `atrium_photoreal/job.py` | One job: download, train, write the `.spz` (under 45 MB: the highest view-dependent color bands go first), upload, report to the Atrium site (with where each photo was taken) |
 | `modal_app.py` | The Modal app: `train_job` on a GPU, and the `start` endpoint the site calls |
 | `run_local.py` | Train a capture folder on this machine |
 
@@ -19,8 +20,12 @@ saved as `.spz` for the tour viewer. The whole pipeline is described in
 ```sh
 cd worker/photoreal
 pip install -r requirements.txt pytest
-python -m pytest tests -q        # ~1.5 min: conventions, .spz, a small training run, the job protocol
+python -m pytest tests -q        # ~1.5 min: conventions, .spz, the room's shape, a small training run, the job protocol
 ```
+
+To judge a change to training where it matters (views no photo matches, close to walls), train it on the synthetic
+apartment and score it against the real thing: `prototypes/photoreal/tools/eval_data.sh`, then
+`modal run tools/eval_modal.py` there (see `prototypes/photoreal/README.md`).
 
 A capture folder for `run_local.py` comes from the app (a scan's `photoreal/` folder plus its
 `frames/`) or from `scanproc paint <scan.json> <out.glb> --images <dir> --photoreal <dir>`.

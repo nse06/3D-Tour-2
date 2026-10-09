@@ -7,7 +7,10 @@ GPU), adapted to phone scans of homes:
 * each photo's pose is refined a little (the phone's tracking drifts);
 * pixels showing people are left out;
 * splats wandering far outside the rooms are dropped (window views may sit a few meters out);
-* a random background behind the splats, so nothing stays see-through.
+* a random background behind the splats, so nothing stays see-through;
+* the rooms' shape (shell.py): splats on a wall, floor or ceiling are kept flat on it, no splat is
+  much longer than it is wide, and splats hanging in the air just in front of a camera are cleared,
+  so the room holds together away from the spots the photos were taken from.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from . import shell as room_shell
 from .capture import Capture, load_photo
 from .render import psnr, rasterize, rgb_to_sh, ssim
 
@@ -52,6 +56,14 @@ class TrainConfig:
     refine_start: int = 500
     refine_stop_frac: float = 25 / 30
     refine_every: int = 100
+    # The rooms' shape (shell.py). Splats within `shell_snap` m of a wall, floor or ceiling are put on
+    # it, `shell_thickness` m thick at most (0: off); no splat longer than `max_anisotropy` times its
+    # middle axis (0: no limit); splats within `floater_radius` m of a camera and away from the
+    # painted surfaces are cleared while splats are still being moved around (0: off).
+    shell_snap: float = 0.025
+    shell_thickness: float = 0.002
+    max_anisotropy: float = 6.0
+    floater_radius: float = 0.3
     # Every nth photo is left out of training and scored at the end (0: train on all).
     holdout_every: int = 0
     strategy: str = "auto"  # "mcmc" (needs CUDA), "default", or "auto"
@@ -211,6 +223,13 @@ def train(
 
     lo = torch.tensor(capture.bounds_min, dtype=torch.float32, device=device) - cfg.bounds_margin
     hi = torch.tensor(capture.bounds_max, dtype=torch.float32, device=device) + cfg.bounds_margin
+    shell = room_shell.from_capture(capture.rooms, capture.seeds_xyz, capture.seeds_normal, capture.seed_spacing) if cfg.shell_snap > 0 else None
+    if shell is not None:
+        shell = shell.to(device)
+        log(f"room shell: {shell.walls} walls, {shell.flats} floors and ceilings")
+    surfaces = room_shell.SurfaceIndex(torch.from_numpy(capture.seeds_xyz).to(device), 0.1) if cfg.floater_radius > 0 else None
+    train_centers = centers[train_ids]
+    cleared = 0
     recent: list[float] = []
     log(f"training {len(train_ids)} photos ({len(test_ids)} held out) at {cfg.long_side} px, {len(splats['means'])} splats to start, {kind} on {device}")
     for step in range(cfg.steps):
@@ -250,13 +269,19 @@ def train(
         else:
             strategy.step_post_backward(splats, optimizers, state, step, info, packed=False)
 
-        # Splats far outside the home: made transparent, so the strategy drops or reuses them.
+        if cfg.max_anisotropy > 0:
+            room_shell.limit_anisotropy(splats["scales"], cfg.max_anisotropy)
         if step % cfg.refine_every == 0 and step > 0:
+            # Splats far outside the home: made transparent, so the strategy drops or reuses them.
             with torch.no_grad():
                 means = splats["means"]
                 outside = ((means < lo) | (means > hi)).any(dim=1)
                 if outside.any():
                     splats["opacities"][outside] = -10.0
+            if shell is not None:
+                room_shell.snap_to_shell(splats, shell, cfg.shell_snap, cfg.shell_thickness)
+            if surfaces is not None and step < refine_stop:
+                cleared += room_shell.clear_floaters(splats, train_centers, surfaces, cfg.floater_radius)
 
         with torch.no_grad():
             recent.append(psnr(predicted.clamp(0, 1), image))
@@ -264,6 +289,9 @@ def train(
         if progress and (step % cfg.progress_every == 0 or step == cfg.steps - 1):
             progress((step + 1) / cfg.steps, f"step {step + 1} of {cfg.steps}, {len(splats['means'])} splats, {np.mean(recent):.1f} dB")
 
+    on_shell = room_shell.snap_to_shell(splats, shell, cfg.shell_snap, cfg.shell_thickness) if shell is not None else 0
+    if cfg.max_anisotropy > 0:
+        room_shell.limit_anisotropy(splats["scales"], cfg.max_anisotropy)
     stats = {
         "steps": cfg.steps,
         "gaussians": int(len(splats["means"])),
@@ -274,6 +302,9 @@ def train(
         "strategy": kind,
         "device": device.type,
         "poseShiftCm": round(float(pose.embeds.weight[:, :3].detach().norm(dim=1).mean()) * 100, 2),
+        "shellPlanes": 0 if shell is None else shell.walls + shell.flats,
+        "onShell": on_shell,
+        "floatersCleared": cleared,
     }
     if test_ids:
         scores = []

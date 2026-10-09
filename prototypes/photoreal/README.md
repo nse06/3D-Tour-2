@@ -99,6 +99,29 @@ the swollen meshes 0.5 dB, exposure 0.1 dB. Build 8 lines the photos up with eac
 drift relative to one another; drift that neighbouring photos share stays, and needs an absolute anchor
 (each photo's own LiDAR depth, a capture change).
 
+## Judging the photoreal worker away from the photos
+
+The splats are scored above at views near where photos were taken. Buyers also walk between those spots and
+up to walls, where splats trained on a real scan fell apart (smears, needles, blobs off the walls). The worker's
+trainer (`worker/photoreal`) is judged there on this apartment: `tools/eval_views.py` picks 104 viewpoints no
+photo matches, at eye height (1.6 m) — 1.2 m and 0.6 m in front of every wall and 0.8 m from it looking along it
+at 45°, halfway between two photo spots in the same room, and the 12 held-out views — skipping any in or within
+30 cm of furniture; `scene/render_views.mjs` renders the real apartment from them. `tools/eval_splats.py` trains
+the rough capture's export several ways (`VARIANTS`: the trainer's own options) and scores every view (PSNR, SSIM,
+LPIPS), with contact sheets of the real view next to each variant's.
+
+```sh
+cd prototypes/photoreal
+tools/eval_data.sh                  # eval-data/: both captures, their exports, the views (~20 min; needs scanproc)
+pip install 'modal[api-proxy-support]' && modal setup     # or MODAL_TOKEN_ID / MODAL_TOKEN_SECRET
+modal run tools/eval_modal.py --capture eval-data/capture-rough --views eval-data/views --out eval-data/results
+python tools/eval_splats.py eval-data/capture-rough eval-data/views /tmp/smoke --variants baseline,priors \
+    --steps 100 --long-side 64 --seeds 3000 --eval-scale 0.15 --cpu      # the plumbing only, on a CPU
+```
+
+`eval_modal.py` trains every variant at once, an A10G each (the worker's GPU), from the Modal volume
+`atrium-photoreal-eval`, and writes `results.json`, `summary.md`, the renders and `sheet-*.jpg` into `--out`.
+
 ## How the splats are trained
 
 `splat/rasterize.cpp` is a CPU tile rasterizer (16 × 16 tiles, depth-sorted, early termination) with

@@ -14,7 +14,7 @@ Pieces:
 | Phone (`ios/`, build 9 on) | Every photo scan writes `photoreal/` (§1). After the scan is sent, **Make it photoreal** uploads it with the photos |
 | Site (`src/lib/photoreal.ts`, `src/app/api/…/photoreal`) | Jobs (`photoreal_jobs`), signed uploads to the private `photoreal` bucket, hands the job to the GPU, takes the worker's reports, attaches the splats to the tour, deletes the photos |
 | GPU worker (`worker/photoreal`, on [Modal](https://modal.com)) | Downloads the job, trains, writes `.spz`, uploads it, reports back |
-| Viewer (`src/components/tour/TourScene.tsx`) | Loads the `.spz` with [Spark](https://sparkjs.dev) 2.2.0 the first time Photoreal is switched on |
+| Viewer (`src/components/tour/TourScene.tsx`) | Loads the `.spz` with [Spark](https://sparkjs.dev) 2.2.0 the first time Photoreal is switched on; hands over to the painted model up close and away from where the photos were taken (§4) |
 
 ## 1. What the phone uploads (`atrium-photoreal/1`)
 
@@ -48,8 +48,9 @@ Written by `PhotorealExport.swift` with each build (and `scanproc paint … --ph
    * `{ event: "progress", stage, progress, message }`: stages `starting`, `downloading`, `training`, `uploading`;
    * `{ event: "upload", bytes }` → `{ url, method, headers, assetUrl }`: where to PUT the `.spz` (stored next to the
      tour's other files);
-   * `{ event: "done", assetUrl, stats }`: the site attaches the splats to the tour (`tours.splat_url`), marks the
-     job `done` and deletes the photos (they stay on the phone);
+   * `{ event: "done", assetUrl, stats, spots }`: the site attaches the splats to the tour (`tours.splat_url`, and
+     `tours.splat_spots`: where each photo was taken, `[x, y, z, yaw, pitch]` in meters and radians in the model's
+     frame, yaw 0 looking along −z), marks the job `done` and deletes the photos (they stay on the phone);
    * `{ event: "failed", message }`: the job is `failed`; the photos stay, and **Try again** in the dashboard hands
      them to the GPU again.
 4. **Dashboard** (listing page): the job's state, live; **Start** / **Try again**; when done, how big and how long.
@@ -68,9 +69,33 @@ the model. The `.spz` (version 3) is kept under 45 MB (`options.maxMB`): if it w
 view-dependent color bands are dropped until it fits. `stats` reports splats, steps, size, minutes and the training
 PSNR.
 
-## 4. Set it up
+**The room's shape** (`shell.py`). Photos only say what a surface looks like from where they were taken, so a
+splat can sit wherever that looks right from those spots: from closer, or from the side, it shows as a smear, a
+needle or a blob hanging off a wall. Training keeps three rules on top of the recipe:
 
-### 4.1 Modal (the GPU)
+* splats within 2.5 cm of a wall, floor or ceiling are put on it, lying flat in it, at most 2 mm thick. The planes
+  are the rooms' walls, floors and ceilings in `cameras.json`, each checked against the seeds: a plane counts where
+  seeds lie on it facing the same way (the seeds' median says exactly where it is), so an outline edge between two
+  open rooms, a doorway and a window are left alone;
+* no splat is more than 6 times longer than it is wide;
+* splats hanging in the air within 30 cm of where a photo was taken, away from every painted surface, are cleared
+  (what a photo explains with something right in front of the lens).
+
+`stats` adds `shellPlanes`, `onShell` (splats on them at the end) and `floatersCleared`.
+
+## 4. In the walkthrough
+
+Splats are at their best near where the photos were taken, so the viewer shows them there and the painted model
+elsewhere (`SplatLayer` in `TourScene.tsx`). A few times a second it casts nine rays across the view: if most of
+what is in view is within 0.9 m, or (when the tour has its photo spots) no photo was taken within 1.4 m of the
+camera looking within 70° of the same way, the splats fade out over a third of a second and the painted model
+shows; they come back from 1.15 m, or within 1.05 m and 55° of a photo spot. The first time, a hint says why
+("Up close: the photos painted on the model"), and the Photoreal button's ring dims while it waits. Tours made
+before the spots were reported go by distance alone.
+
+## 5. Set it up
+
+### 5.1 Modal (the GPU)
 
 1. Make a free account at [modal.com](https://modal.com) (the Starter plan includes $30 of compute a month).
 2. Create a token: Modal → Settings → API Tokens → **New token**. On your computer, `pip install modal` and
@@ -96,7 +121,7 @@ PSNR.
 
    It prints the URL of the `start` endpoint (`https://<workspace>--atrium-photoreal-start.modal.run`).
 
-### 4.2 The site
+### 5.2 The site
 
 In Vercel → the project → Settings → Environment Variables (Production), add:
 
@@ -109,21 +134,23 @@ Then redeploy. The worker reaches the site at `NEXT_PUBLIC_SITE_URL` (or the add
 a public HTTPS address: a dashboard on a laptop can take uploads from a phone on the same Wi-Fi, but a cloud GPU
 can't download from it.
 
-### 4.3 Database and storage (Supabase)
+### 5.3 Database and storage (Supabase)
 
 `supabase/migrations/20261010000000_photoreal.sql` adds `tours.splat_url`, the `photoreal_jobs` table (owners can
-read their jobs; the server writes them) and the private `photoreal` bucket. Open `/setup` on the site, or apply it
-with the other migrations; the site also adds what's missing on first use when it can reach Postgres directly.
+read their jobs; the server writes them) and the private `photoreal` bucket; `20261011000000_photoreal_spots.sql`
+adds `tours.splat_spots`. Open `/setup` on the site, or apply them with the other migrations; the site also adds
+what's missing on first use when it can reach Postgres directly. Without `splat_spots` the splats still attach,
+and the viewer goes by distance alone.
 
 Supabase's free plan takes files up to **50 MB** (Storage → Settings): photos are 1–3 MB each and the splats are
 kept under 45 MB, so the defaults fit.
 
-### 4.4 Without Supabase (local data folder)
+### 5.4 Without Supabase (local data folder)
 
 Everything works with the local store too: the photos go to `<data>/uploads/<user>/<listing>/photoreal-<job>/`,
 readable only through the signed links the GPU gets, and are deleted when the splats arrive.
 
-## 5. Costs and sizes
+## 6. Costs and sizes
 
 * **GPU**: 20–35 minutes on an A10G (about $1.10 an hour on Modal): roughly $0.40–0.70 per home. Nothing runs
   between jobs.
@@ -131,7 +158,7 @@ readable only through the signed links the GPU gets, and are deleted when the sp
   the splats exist.
 * **Download for buyers**: the `.spz`, at most 45 MB, only when they switch to Photoreal (or start in it).
 
-## 6. Status and limits
+## 7. Status and limits
 
 * Checked end to end on this repo's synthetic apartment, with a stand-in for the GPU (the same worker code on a CPU,
   tiny images): the phone's upload code (run on Linux against the site), the site, the job, the callback, the
@@ -142,7 +169,7 @@ readable only through the signed links the GPU gets, and are deleted when the sp
   learn from.
 * The pairing code lasts 24 hours; to make an older scan photoreal, connect the phone to the listing again.
 
-## 7. Develop and test
+## 8. Develop and test
 
 ```sh
 cd worker/photoreal

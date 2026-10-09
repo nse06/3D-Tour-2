@@ -172,6 +172,7 @@ def test_a_job_downloads_trains_uploads_and_reports(tmp_path):
     assert "upload" in kinds and kinds[-1] == "done", kinds
     done = _Site.events[-1]
     assert done["assetUrl"].endswith("/assets/splats.spz") and done["stats"]["steps"] == 40
+    assert len(done["spots"]) == 6 and all(len(spot) == 5 for spot in done["spots"])
     uploaded = _Site.uploads["/upload/splats.spz"]
     (tmp_path / "got.spz").write_bytes(uploaded)
     assert spz.read(tmp_path / "got.spz")["means"].shape[0] == stats["splats"] > 1000

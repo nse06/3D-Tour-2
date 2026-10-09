@@ -1,6 +1,7 @@
 node_modules/
 vendor/
 data/
+eval-data/
 out/
 runs/
 eval/

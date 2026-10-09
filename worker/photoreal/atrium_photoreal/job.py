@@ -8,12 +8,15 @@ Downloads the capture, trains, writes the splats as .spz, asks the callback wher
 uploads, and reports back. Every call to the callback carries the shared worker secret
 (Authorization: Bearer ...). The callback hears: {"event": "progress", "stage", "progress",
 "message"}, {"event": "upload", "bytes"} (answered with {"url", "method", "headers", "assetUrl"}),
-{"event": "done", "assetUrl", "stats"} or {"event": "failed", "message"}.
+{"event": "done", "assetUrl", "stats", "spots"} or {"event": "failed", "message"}. `spots` says
+where each photo was taken, [x, y, z, yaw, pitch] (meters and radians in the model's frame; yaw 0
+looks along -z): the viewer shows the splats near those spots and the painted model elsewhere.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import time
@@ -101,6 +104,18 @@ def write_splats(out: Path, splats: dict, sh_degree: int, max_bytes: int) -> dic
     return {**written, "trainedShDegree": sh_degree}
 
 
+def photo_spots(capture) -> list[list[float]]:
+    """Where each photo was taken and which way it looked: [x, y, z, yaw, pitch]."""
+    spots = []
+    for camera in capture.cameras:
+        c2w = camera.camtoworld
+        f = c2w[:3, 2]  # OpenCV: the camera looks along +z
+        x, y, z = c2w[:3, 3]
+        yaw, pitch = math.atan2(-f[0], -f[2]), math.asin(max(-1.0, min(1.0, float(f[1]))))
+        spots.append([round(float(v), 3) for v in (x, y, z, yaw, pitch)])
+    return spots
+
+
 def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-photoreal") -> dict:
     from .capture import load
     from .train import TrainConfig, train
@@ -133,7 +148,7 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-photo
         if not target.get("url"):
             raise RuntimeError(f"no upload target: {target}")
         upload(target, out)
-        reporter.send({"event": "done", "assetUrl": target["assetUrl"], "stats": stats})
+        reporter.send({"event": "done", "assetUrl": target["assetUrl"], "stats": stats, "spots": photo_spots(capture)})
         return stats
     except Exception as e:
         traceback.print_exc()
