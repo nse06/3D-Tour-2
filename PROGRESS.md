@@ -43,6 +43,17 @@ Branch: `claude/3d-real-estate-tour-mvp-pxgyqw`
 | Sharper painting (build 8): photos lined up with each other before painting (rigid color-map optimization on 320 px thumbnails, kept only where they agree better); 320 px millimeter depth images with a slope-aware hidden test; photos lose their say next to outlines; ~78° grazing limit; consensus vote against things in front of a surface; LiDAR shapes on a 2.5 cm grid with Taubin smoothing (150k triangles) | done — 3 new XCTests (pose gradient checked by finite differences; drifted photos 2.37 → ~1.0 px off; smoothing flattens bumps without shrinking); messy synthetic benchmark 21.22 → 22.00 dB (SSIM 0.776 → 0.796), clean 23.40 → 23.65; ~2× painting time |
 | Viewer (build 8 data): photo scans no wider than the photos (85° across); opaque floor-plan panel; starting spots where photos were taken | done — 1 XCTest + web lint/typecheck/build |
 | Coverage map while scanning (build 8): the room so far from above, heading up, walls/floor/furniture green (a good photo), amber (side-on or far), red (none yet) by the painting's own rules; "Done with this room" asks when under 60% of walls or 35% of floor is covered well; what furniture stands right in front of (the wall behind a wardrobe, a cabinet side against the next) needs no photo | done — 6 XCTests; checked on the synthetic apartment (a full pass: walls 95–97%, floor 89–91%); needs the phone to judge it live |
+| Furniture polish (build 9): TVs as 6 cm panels in the middle of RoomPlan's box; furniture faces no photo saw take the color of the rest of their own piece | done — 2 XCTests |
+
+## Photoreal walkthroughs (build 9, [docs/photoreal.md](docs/photoreal.md))
+
+| Piece | Status |
+|-------|--------|
+| Phone export (`PhotorealExport.swift`): `cameras.json` (poses as painted, in the model's frame), `seeds.ply` (3 cm points on seen surfaces), people masks | done — 3 XCTests; checked on the synthetic apartment (seeds match their photos to a median 3.3 levels); CI checks a rebuilt scan's export |
+| Phone upload: **Make it photoreal** after sending (four files at a time, three tries each, job status on the scan's page) | done — the app's upload code run on Linux against the site (667 files, 127 MB in 3.8 s) and the mock server; simulator CI step added |
+| Site: `photoreal_jobs`, private `photoreal` bucket, phone routes, GPU dispatch, worker callback (shared secret), dashboard panel with Start/Try again, photos deleted when done | done — e2e on a prod build in local mode: upload → dispatch → train (stand-in GPU) → splats on the tour; wrong secret 401; another scan's model 409 |
+| GPU worker (`worker/photoreal`): gsplat MCMC recipe, discs on the seeds, per-photo exposure and pose, people masked out, `.spz` v3 under 45 MB; Modal app | done — 7 CPU tests; waiting for Modal tokens to run on a GPU |
+| Viewer: **Photoreal** switch (Spark 2.2.0, loaded on first use), photoreal as a starting look | done — in Chromium the splats sit on the painted model with its colors (seed-disc splats 26–46 dB against the painted view at 6 spots) |
 
 ## Photoreal prototype (`prototypes/photoreal`)
 
@@ -56,4 +67,4 @@ Branch: `claude/3d-real-estate-tour-mvp-pxgyqw`
 
 Verdict so far: photoreal is far closer to the real rooms (window views, reflections, plants), at the cost of a cloud GPU step (15–30 min, ~$0.25–1 per listing), uploading the photos (100–400 MB; today they stay on the phone) and a 9 MB download. Suggested: ship build 7 now, add photoreal as a cloud upgrade.
 
-Next: the user rebuilds their bedroom with build 8 and rescans a room with the coverage map; their call on photoreal as a cloud upgrade (upload → GPU job → splat viewer); per-photo LiDAR depth to anchor drift; 360° photo spots at the waypoints; turn email confirmation back on before opening sign-ups.
+Next: deploy the worker on Modal (the user adds `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` to the environment) and set `PHOTOREAL_GPU_URL` / `PHOTOREAL_WORKER_SECRET` on Vercel; the first real GPU run on the user's bedroom and on an empty house; per-photo LiDAR depth to anchor drift; 360° photo spots at the waypoints; turn email confirmation back on before opening sign-ups.

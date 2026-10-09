@@ -6,6 +6,7 @@
     ///
     ///     -atrium-automation "pair=<atriumcapture://pair?…>|demo|send"
     ///     -atrium-automation "rebuild"       (rebuilds every scan from an older pipeline)
+    ///     -atrium-automation "pair=<…>|photoreal"  (sends a scan with photos, then uploads them for photoreal)
     ///
     /// Progress goes to Documents/automation-status.json so the test can wait
     /// on each stage and take screenshots. Debug builds only.
@@ -44,6 +45,22 @@
                         }
                         report("rebuilt", "\(rebuilt.stats.rooms) rooms · \(rebuilt.alignment ?? "")")
                     }
+                } else if step == "photoreal" {
+                    guard let record = scans.first(where: { !$0.isDemo && store.hasPhotorealData($0.id) }) else {
+                        return report("failed", "no scan with photoreal data")
+                    }
+                    await performSend(record)
+                    guard case .done? = uploads[record.id], let sent = scans.first(where: { $0.id == record.id }) else {
+                        if case let .failed(message)? = uploads[record.id] { return report("failed", "send: \(message)") }
+                        return report("failed", "send did not finish")
+                    }
+                    report("sent", "\(sent.stats.rooms) rooms")
+                    await performPhotoreal(sent)
+                    if case let .failed(message)? = photorealUploads[record.id] { return report("failed", "photoreal: \(message)") }
+                    guard let job = photorealJobs[record.id], scans.first(where: { $0.id == record.id })?.photoreal?.jobId == job.id else {
+                        return report("failed", "photoreal upload did not finish")
+                    }
+                    report("photoreal", "\(job.status): \(job.message ?? "")")
                 } else if step.hasPrefix("wait=") {
                     try? await Task.sleep(for: .seconds(Double(step.dropFirst(5)) ?? 1))
                 }

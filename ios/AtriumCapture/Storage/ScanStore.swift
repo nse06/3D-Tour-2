@@ -8,6 +8,16 @@ struct ScanRecord: Codable, Identifiable, Equatable {
         var propertyUrl: String
         var previewUrl: String
         var sentAt: Date
+        /// The model as the listing received it (build 9 on): a photoreal upload checks the
+        /// listing still shows it.
+        var assetUrl: String? = nil
+    }
+
+    /// A photoreal walkthrough made from this scan's photos (docs/photoreal.md).
+    struct Photoreal: Codable, Equatable {
+        var jobId: String
+        var propertyId: String
+        var sentAt: Date
     }
 
     var id: UUID
@@ -21,6 +31,8 @@ struct ScanRecord: Codable, Identifiable, Equatable {
     var pipeline: Int?
     /// How the rooms were put together ("4 rooms placed with RoomPlan's merged layout").
     var alignment: String?
+    /// Set once the photos were uploaded for a photoreal walkthrough of the sent scan.
+    var photoreal: Photoreal? = nil
 
     var title: String {
         if isDemo { return "Demo apartment" }
@@ -55,6 +67,9 @@ final class ScanStore: @unchecked Sendable {
     /// What the cloud needs for a photoreal walkthrough (cameras.json, seeds.ply, masks/; pipeline 9 on).
     static let photorealFolder = "photoreal"
     func photorealURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent(Self.photorealFolder, isDirectory: true) }
+    func hasPhotorealData(_ id: UUID) -> Bool {
+        FileManager.default.fileExists(atPath: photorealURL(for: id).appendingPathComponent("cameras.json").path)
+    }
     func manifestURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("manifest.json") }
     func packageURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("package.zip") }
     func previewURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("roomplan/structure.usdz") }

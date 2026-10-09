@@ -2,7 +2,7 @@
 
     {"jobId": "...", "callback": "https://<site>/api/photoreal/jobs/<id>",
      "files": [{"name": "cameras.json", "url": "<signed download URL>"}, ...],
-     "options": {"steps": 30000, "longSide": 1440, "maxGaussians": 1000000}}
+     "options": {"steps": 30000, "longSide": 1440, "maxGaussians": 1000000, "maxMB": 45}}
 
 Downloads the capture, trains, writes the splats as .spz, asks the callback where to upload them,
 uploads, and reports back. Every call to the callback carries the shared worker secret
@@ -86,10 +86,22 @@ def upload(target: dict, path: Path):
         response.read()
 
 
-def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-photoreal") -> dict:
+def write_splats(out: Path, splats: dict, sh_degree: int, max_bytes: int) -> dict:
+    """Writes the .spz, dropping view-dependent color (the highest SH bands first) until it fits
+    `max_bytes`: buyers download it, and Supabase's free plan takes files up to 50 MB."""
     import torch
 
     from . import spz
+
+    sh = torch.cat([splats["sh0"], splats["shN"]], 1).numpy()
+    for degree in range(sh_degree, -1, -1):
+        written = spz.write(out, splats["means"].numpy(), splats["scales"].numpy(), splats["quats"].numpy(), splats["opacities"].numpy(), sh, degree)
+        if written["bytes"] <= max_bytes:
+            break
+    return {**written, "trainedShDegree": sh_degree}
+
+
+def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-photoreal") -> dict:
     from .capture import load
     from .train import TrainConfig, train
 
@@ -115,15 +127,7 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-photo
 
         reporter.progress("uploading", 1, "", force=True)
         out = work / "splats.spz"
-        written = spz.write(
-            out,
-            result.splats["means"].numpy(),
-            result.splats["scales"].numpy(),
-            result.splats["quats"].numpy(),
-            result.splats["opacities"].numpy(),
-            torch.cat([result.splats["sh0"], result.splats["shN"]], 1).numpy(),
-            result.sh_degree,
-        )
+        written = write_splats(out, result.splats, result.sh_degree, int(float(options.get("maxMB", 45)) * 1e6))
         stats = {**result.stats, **written, "downloadMB": round(received / 1e6, 1), "totalSeconds": round(time.time() - started, 1)}
         target = reporter.send({"event": "upload", "bytes": written["bytes"], "stats": stats})
         if not target.get("url"):

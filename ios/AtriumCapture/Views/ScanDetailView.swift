@@ -10,6 +10,7 @@ struct ScanDetailView: View {
     @State private var previewURL: URL?
     @State private var confirmDelete = false
     @State private var showingPairing = false
+    @State private var photorealSize: (photos: Int, bytes: Int64)?
 
     private var scan: ScanRecord? { model.scans.first { $0.id == scanId } }
 
@@ -26,6 +27,7 @@ struct ScanDetailView: View {
                     stats(scan)
                     if needsRebuild(scan) { rebuildCard(scan) }
                     sendCard(scan)
+                    if !scan.isDemo && model.store.hasPhotorealData(scan.id) { photorealCard(scan) }
                     VStack(spacing: 10) {
                         ShareLink(item: model.store.modelURL(for: scan.id)) {
                             Label("Share 3D model (.glb)", systemImage: "square.and.arrow.up")
@@ -38,7 +40,7 @@ struct ScanDetailView: View {
                                 Label("Rebuild walkthrough", systemImage: "arrow.triangle.2.circlepath")
                             }
                             .buttonStyle(PillButtonStyle(primary: false))
-                            .disabled(model.building != nil || model.uploads[scan.id]?.isBusy == true)
+                            .disabled(model.building != nil || model.isSending(scan.id))
                         }
                         if FileManager.default.fileExists(atPath: model.store.previewURL(for: scan.id).path) {
                             Button {
@@ -175,7 +177,7 @@ struct ScanDetailView: View {
                 Label("Rebuild walkthrough", systemImage: "arrow.triangle.2.circlepath")
             }
             .buttonStyle(PillButtonStyle())
-            .disabled(model.building != nil || model.uploads[scan.id]?.isBusy == true)
+            .disabled(model.building != nil || model.isSending(scan.id))
         }
         .card()
     }
@@ -231,6 +233,100 @@ struct ScanDetailView: View {
         .card()
     }
 
+    // MARK: Photoreal (docs/photoreal.md)
+
+    private func photorealCard(_ scan: ScanRecord) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Photoreal walkthrough", systemImage: "sparkles").font(.footnote.weight(.semibold)).foregroundStyle(Theme.stone)
+            switch model.photorealUploads[scan.id] {
+            case .preparing?:
+                progressRow("Getting the photos ready…", nil)
+            case let .uploading(fraction)?:
+                progressRow("Uploading the photos…", fraction)
+            case .finishing?:
+                progressRow("Handing them to the cloud GPU…", nil)
+            case let .failed(message)?:
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.orange)
+                photorealButton(scan, title: "Try again")
+            case nil:
+                if let job = scan.photoreal {
+                    photorealStatus(scan, job)
+                } else {
+                    Text("A cloud GPU learns the home from this scan's photos — window views, reflections, every plant — and buyers can switch to it in the walkthrough. It takes about half an hour after the upload.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    if scan.delivery == nil {
+                        Text("Send the scan to Atrium first.").font(.footnote).foregroundStyle(.secondary)
+                    } else {
+                        if let size = photorealSize {
+                            Text("Uploads \(size.photos) photos (\(megabytes(size.bytes))). Best on Wi-Fi.").font(.footnote).foregroundStyle(.secondary)
+                        }
+                        photorealButton(scan, title: "Make it photoreal")
+                    }
+                }
+            }
+        }
+        .card()
+        .task(id: scan.photoreal?.jobId) {
+            if scan.photoreal == nil {
+                photorealSize = await model.photorealSize(scan)
+            } else {
+                await model.refreshPhotoreal(scan)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func photorealStatus(_ scan: ScanRecord, _ sent: ScanRecord.Photoreal) -> some View {
+        let job = model.photorealJobs[scan.id]
+        switch job?.status {
+        case "done"?:
+            Label("Ready. Open the walkthrough and tap Photoreal.", systemImage: "checkmark.circle.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.green)
+        case "failed"?:
+            Label("The cloud GPU couldn't finish: \(job?.message ?? "unknown error")", systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline)
+                .foregroundStyle(.orange)
+            Text("Try again from the listing in the Atrium dashboard; the photos are still there.").font(.footnote).foregroundStyle(.secondary)
+        case "running"?:
+            VStack(alignment: .leading, spacing: 8) {
+                let percent = Int(((job?.progress ?? 0) * 100).rounded())
+                Text(verbatim: job?.stage == "training" ? "Training on your photos… \(percent)%" : "The cloud GPU is on it…")
+                    .font(.subheadline.weight(.semibold))
+                ProgressView(value: max(0.03, job?.progress ?? 0)).tint(Theme.gold)
+                Text("You can close the app. Follow it in the Atrium dashboard.").font(.footnote).foregroundStyle(.secondary)
+            }
+        default:
+            Text("Photos uploaded \(sent.sentAt.formatted(.relative(presentation: .named))).").font(.subheadline.weight(.semibold))
+            Text(job?.message ?? "Waiting for the cloud GPU. Follow it in the Atrium dashboard.").font(.footnote).foregroundStyle(.secondary)
+        }
+        if job?.status != "done" && model.pairing?.propertyId == sent.propertyId {
+            Button {
+                Task { await model.refreshPhotoreal(scan) }
+            } label: {
+                Label("Check progress", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(PillButtonStyle(primary: false))
+        }
+    }
+
+    private func photorealButton(_ scan: ScanRecord, title: String) -> some View {
+        Button {
+            model.makePhotoreal(scan)
+        } label: {
+            Label(title, systemImage: "sparkles")
+        }
+        .buttonStyle(PillButtonStyle())
+        .disabled(model.building != nil || model.isSending(scan.id))
+    }
+
+    private func megabytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
     private func sendButton(_ scan: ScanRecord, title: String) -> some View {
         Button {
             model.send(scan)
@@ -238,6 +334,7 @@ struct ScanDetailView: View {
             Label(title, systemImage: "paperplane.fill")
         }
         .buttonStyle(PillButtonStyle())
+        .disabled(model.isSending(scan.id))
     }
 
     private func progressRow(_ title: String, _ fraction: Double?) -> some View {
@@ -248,7 +345,7 @@ struct ScanDetailView: View {
             } else {
                 ProgressView().frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text("Keep Atrium Capture open until the upload finishes.").font(.footnote).foregroundStyle(.secondary)
+            Text("Keep Atrium Capture open until the upload finishes. The screen stays on meanwhile.").font(.footnote).foregroundStyle(.secondary)
         }
     }
 

@@ -54,6 +54,31 @@ struct AtriumAPI {
         let assetUrl: String
     }
 
+    /// A signed link to PUT one of a photoreal job's files to.
+    struct SignedUpload: Decodable, Sendable {
+        let name: String
+        let method: String
+        let url: String
+        let headers: [String: String]
+    }
+
+    struct PhotorealStart: Decodable {
+        let jobId: String
+        let uploads: [SignedUpload]
+    }
+
+    /// How a photoreal walkthrough is coming along (docs/photoreal.md).
+    struct PhotorealJob: Decodable, Equatable {
+        let id: String
+        /// uploading, queued, running, done or failed.
+        let status: String
+        /// While running: starting, downloading, training or uploading.
+        let stage: String?
+        let progress: Double
+        let message: String?
+        let splatUrl: String?
+    }
+
     struct Completion: Decodable, Equatable {
         let ok: Bool
         let rooms: Int
@@ -93,14 +118,18 @@ struct AtriumAPI {
 
     /// Streams a file to the signed upload URL, reporting progress 0…1.
     func put(_ file: URL, to target: UploadTarget, progress: @escaping @Sendable (Double) -> Void) async throws {
-        guard let url = URL(string: target.url, relativeTo: server)?.absoluteURL else { throw Failure.server("The server sent an invalid upload address.") }
-        var request = URLRequest(url: url, timeoutInterval: 900)
-        request.httpMethod = target.method
-        for (name, value) in target.headers { request.setValue(value, forHTTPHeaderField: name) }
-        let delegate = UploadProgressDelegate(onProgress: progress)
+        try await put(file, method: target.method, url: target.url, headers: target.headers, timeout: 900, progress: progress)
+        progress(1)
+    }
+
+    func put(_ file: URL, method: String, url: String, headers: [String: String], timeout: TimeInterval, progress: (@Sendable (Double) -> Void)? = nil) async throws {
+        guard let url = URL(string: url, relativeTo: server)?.absoluteURL else { throw Failure.server("The server sent an invalid upload address.") }
+        var request = URLRequest(url: url, timeoutInterval: timeout)
+        request.httpMethod = method
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        let delegate = progress.map { UploadProgressDelegate(onProgress: $0) }
         let (data, response) = try await perform { try await URLSession.shared.upload(for: request, fromFile: file, delegate: delegate) }
         try check(data, response)
-        progress(1)
     }
 
     /// - Parameter cleanAssetUrl: the uploaded clean model ("photos off" view), if the scan has one.
@@ -116,6 +145,69 @@ struct AtriumAPI {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return try await send(request)
+    }
+
+    // MARK: Photoreal (docs/photoreal.md)
+
+    /// Starts a photoreal walkthrough of the listing's scan: the files to upload, and a link for each.
+    /// - Parameter assetUrl: the model this scan was sent as, so the server can tell whether the
+    ///   listing still shows it (the photos only line up with their own scan).
+    func startPhotoreal(files: [(name: String, size: Int64)], assetUrl: String?) async throws -> PhotorealStart {
+        var request = URLRequest(url: endpoint("/photoreal"), timeoutInterval: 300)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["files": files.map { ["name": $0.name, "size": $0.size] as [String: Any] }]
+        if let assetUrl { body["assetUrl"] = assetUrl }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return try await send(request)
+    }
+
+    /// Every file is up: the server checks they all arrived and hands the job to the cloud GPU.
+    func completePhotoreal(job: String) async throws -> PhotorealJob {
+        var request = URLRequest(url: endpoint("/photoreal/\(job)"), timeoutInterval: 120)
+        request.httpMethod = "POST"
+        return try await send(request)
+    }
+
+    func photorealJob(_ job: String) async throws -> PhotorealJob {
+        try await send(URLRequest(url: endpoint("/photoreal/\(job)")))
+    }
+
+    /// Uploads a photoreal job's files four at a time, each tried up to three times, reporting
+    /// progress 0…1 by bytes.
+    func upload(_ files: PhotorealFiles, links: [SignedUpload], progress: @escaping @Sendable (Double) -> Void) async throws {
+        let byName = Dictionary(links.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        let work = try files.files.map { file -> (PhotorealFiles.File, SignedUpload) in
+            guard let link = byName[file.name] else { throw Failure.server("The server didn't send a link for \(file.name).") }
+            return (file, link)
+        }
+        let total = Double(max(1, files.bytes))
+        try await withThrowingTaskGroup(of: Int64.self) { group in
+            var next = 0, sent: Int64 = 0
+            func startNext() {
+                guard next < work.count else { return }
+                let (file, link) = work[next]
+                next += 1
+                group.addTask { try await putRetrying(file.url, link); return file.size }
+            }
+            for _ in 0..<4 { startNext() }
+            while let size = try await group.next() {
+                sent += size
+                progress(Double(sent) / total)
+                startNext()
+            }
+        }
+    }
+
+    private func putRetrying(_ file: URL, _ link: SignedUpload) async throws {
+        for attempt in 1... {
+            do {
+                return try await put(file, method: link.method, url: link.url, headers: link.headers, timeout: 300)
+            } catch {
+                if attempt == 3 || Task.isCancelled { throw error }
+                try await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
+            }
+        }
     }
 
     // MARK: Plumbing

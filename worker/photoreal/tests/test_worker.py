@@ -11,7 +11,7 @@ import torch
 
 from atrium_photoreal import spz
 from atrium_photoreal.capture import load, load_photo
-from atrium_photoreal.job import run_job
+from atrium_photoreal.job import run_job, write_splats
 from atrium_photoreal.render import psnr, rasterize
 from atrium_photoreal.train import TrainConfig, quats_from_normals, train
 
@@ -193,3 +193,21 @@ def test_a_failed_job_says_why(tmp_path):
     finally:
         server.shutdown()
     assert _Site.events[-1]["event"] == "failed" and "HTTP" in _Site.events[-1]["message"]
+
+
+def test_splats_drop_view_dependent_color_to_fit_the_size_limit(tmp_path):
+    rng = np.random.default_rng(0)
+    n = 20_000
+    splats = {
+        "means": torch.from_numpy(rng.uniform(-3, 3, (n, 3)).astype(np.float32)),
+        "scales": torch.full((n, 3), -4.0),
+        "quats": torch.from_numpy(rng.normal(size=(n, 4)).astype(np.float32)),
+        "opacities": torch.full((n,), 2.0),
+        "sh0": torch.from_numpy(rng.normal(size=(n, 1, 3)).astype(np.float32)),
+        "shN": torch.from_numpy(rng.normal(scale=0.1, size=(n, 15, 3)).astype(np.float32)),
+    }
+    full = write_splats(tmp_path / "full.spz", splats, 3, 10**9)
+    assert full["shDegree"] == 3
+    fitted = write_splats(tmp_path / "fitted.spz", splats, 3, full["bytes"] // 2)
+    assert fitted["shDegree"] < 3 and fitted["bytes"] <= full["bytes"] // 2 and fitted["trainedShDegree"] == 3
+    assert spz.read(tmp_path / "fitted.spz")["sh_degree"] == fitted["shDegree"]

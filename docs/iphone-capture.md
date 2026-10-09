@@ -188,7 +188,8 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
 * **Geometry**: every wall's inside face is one flat *chart* (pieces between holes share it, so no seams), and each
   room's floor and ceiling is a chart. Furniture is built in parts like the styled model (§3.4: a bed's base,
   mattress and headboard, a sofa's seat, back and arms, a chair's seat, legs and back), with a chart per face, so a
-  photo of a duvet lands on the mattress rather than on top of a box as tall as the headboard. Made-up decor (pillows,
+  photo of a duvet lands on the mattress rather than on top of a box as tall as the headboard. A TV is a 6 cm panel
+  in the middle of RoomPlan's box, thin across its shorter side (the box takes in a stand's feet; build 9). Made-up decor (pillows,
   counter tops, a fridge's door gap) is left out, and a headboard only appears if the bed was measured taller than a
   mattress. Only doorways with a scanned room on both sides are cut; other doors and windows stay on the wall, where
   the photos show them (and the view through the window). A wall's back, top, ends and doorway sides form one
@@ -261,7 +262,9 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   show as a step where one photo's patch meets the next, so each patch (connected cells that took one photo) gets one
   offset per channel; across every seam the two photos' difference (median along the seam, from cells where both
   were sampled) should vanish, small patches yield to big ones, at most 40 levels. Texels no photo saw are filled
-  smoothly from their neighbours (pull-push); charts no photo saw take the typical color of their kind of surface.
+  smoothly from their neighbours (pull-push). A furniture chart no photo saw takes the color of the rest of its own
+  piece (the median of its seen charts, weighted by area; build 9), so the hidden side of a TV doesn't turn gold;
+  other charts no photo saw take the typical color of their kind of surface.
   If the photos cover less than 15% of the surfaces, the styled model is built instead.
 * **Photos off**: alongside a photo-textured model, `ProcessedScan.cleanGLB` holds the styled model of the same
   rooms (same frame and manifest). The app uploads it as `scan-clean.glb`; the viewer shows it when a buyer or the
@@ -279,6 +282,14 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   painted; a round pouf from a LiDAR mesh is painted within 1.3 levels (median) of the pattern at its own surface.
 * **Lights**: one warm point light per room (`KHR_lights_punctual`), 0.6 m below the ceiling at the room's visual
   center, intensity scaled by floor area.
+
+### 2.5 Photoreal training data (`PhotorealExport.swift`, build 9 on)
+
+Each photo-textured build also writes what a cloud GPU needs to train a photoreal walkthrough (3D Gaussian splats),
+in `photoreal/`: `cameras.json` (every painted photo's intrinsics and pose, as painted after lining up, in the
+model's frame), `seeds.ply` (a point every 3 cm on the painted surfaces a photo saw, in their colors, with the
+surface normal) and `masks/` (where photos show people). Format and the rest of the pipeline: [photoreal.md](photoreal.md).
+`ProcessedScan.photoreal`; `scanproc paint … --photoreal <dir>`.
 
 ## 3. Atrium web API (phone ⇄ server)
 
@@ -299,6 +310,9 @@ The realtor opens a listing in the dashboard → **Scan with iPhone** → the se
 | `GET /api/capture/sessions/{token}` | — | `{ property: { id, addressLine, city, state }, expiresAt }` or 404 |
 | `POST /api/capture/sessions/{token}/uploads` | `{ kind: "capture" \| "package", filename, size }` | `{ method: "PUT", url, headers, assetUrl }` — `url` may be relative (resolve against the base URL) |
 | `POST /api/capture/sessions/{token}/complete` | `{ assetUrl, cleanAssetUrl \| null, packageUrl \| null, manifest }` | `{ ok, rooms, floors, propertyUrl, previewUrl }` |
+| `POST /api/capture/sessions/{token}/photoreal` | `{ files: [{ name, size }], assetUrl }` | `{ jobId, uploads: [{ name, method, url, headers }] }`; 409 if the listing shows another scan |
+| `POST /api/capture/sessions/{token}/photoreal/{jobId}` | — | the job (`{ id, status, stage, progress, message, … }`), handed to the GPU |
+| `GET /api/capture/sessions/{token}/photoreal/{jobId}` | — | the job |
 
 Files go straight to storage with `PUT` (local signed URL or Supabase Storage signed upload URL) — large scans never
 pass through a serverless function body. `complete` validates that the URLs belong to this user/property, validates
@@ -390,9 +404,12 @@ info.json            app / device / capture metadata, pipeline version, alignmen
    * **Send to Atrium** (when paired) with upload progress → success with **Open listing in Atrium**;
    * **Share 3D model (.glb)** (AirDrop / Files — can be uploaded in the dashboard by hand);
    * **Preview** (AR Quick Look of RoomPlan's USDZ);
+   * **Make it photoreal** (photo scans built by pipeline 9 on, once sent): uploads the photos and `photoreal/`
+     (four files at a time, each tried three times; the card shows how many photos and MB), then follows the cloud
+     GPU's job (waiting, training n%, ready) — see [photoreal.md](photoreal.md). Sending the scan again drops it;
    * **Rebuild walkthrough** — re-processes the saved RoomPlan data with the current pipeline (no rescanning);
      scans built by an older pipeline (`record.pipeline` < `ScanBuilder.pipelineVersion`) show it as a card
-     ("Fix overlapping rooms" … "Sharpen edges and line up the photos"). A rebuilt scan has to be sent again;
+     ("Fix overlapping rooms" … "Thin TVs, and ready for photoreal"). A rebuilt scan has to be sent again;
    * the summary says how much the photos cover, how many photos had people painted out, how many photos were lined
      up with each other (and by how much on average), and whether furniture
      was shaped from the LiDAR mesh (in how many rooms) — or why not (switched off, no mesh recorded: the
@@ -407,8 +424,8 @@ stores the pairing (server, token, property label, expiry) and shows it on Home.
 ### 4.3 Storage on device
 
 `Documents/Scans/<scan-id>/`: `scan.json`, `scan.glb`, `scan-clean.glb`, `manifest.json`, `alignment.json`,
-`roomplan/…` (including `capture.json` and the meshes), `frames/…`, `info.json`, `package.zip` (built on demand,
-deleted on rebuild), and
+`roomplan/…` (including `capture.json` and the meshes), `frames/…`, `photoreal/…` (build 9 on; not in the package),
+`info.json`, `package.zip` (built on demand, deleted on rebuild), and
 `record.json` (app metadata: name, created, stats, upload state, pipeline version, alignment summary).
 
 ### 4.4 Requirements

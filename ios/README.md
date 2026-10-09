@@ -117,15 +117,26 @@ didn't use the photos; build 4 blended several photos per spot (soft, sometimes 
 painted furniture as plain boxes; builds before 6 had no "photos off" view; builds before 7
 painted people in the photos onto the model; builds before 8 didn't line the photos up with each
 other (the phone's tracking drifts a centimeter or two, which doubles edges and smears furniture
-colors onto the walls behind). Install the latest build over the old one (your scans stay), open
+colors onto the walls behind); builds before 9 drew TVs as thick boxes with gold sides and can't
+make a scan photoreal. Install the latest build over the old one (your scans stay), open
 the scan and tap **Rebuild walkthrough** (*Fix overlapping rooms* / *Add your photos to the
 walkthrough* / *Sharpen the photo walkthrough* / *Add the photos-off view* / *Paint people out of
-the photos* / *Sharpen edges and line up the photos*), then **Send to Atrium** again. No rescanning: the rebuild uses the
+the photos* / *Sharpen edges and line up the photos* / *Thin TVs, and ready for photoreal*), then **Send to Atrium** again. No rescanning: the rebuild uses the
 RoomPlan data and photos saved on the phone. The lines under the scan's numbers say how the rooms
 were placed, how much the photos cover, how many photos had people painted out, how many were
 lined up with each other and whether the furniture was shaped from the LiDAR mesh. Scans made with build 5 or later also get the sharper
 full-resolution photos; only scans made with build 7 or later have the LiDAR mesh, so real
 furniture shapes need a new scan.
+
+## Make it photoreal (build 9 on, beta)
+
+Once a scan is sent, its page has a **Photoreal walkthrough** card: **Make it photoreal** uploads
+the scan's photos (it says how many and how big, typically 100–400 MB; use Wi-Fi and keep the app
+open until it's done), and a cloud GPU learns the home from them in about half an hour. Buyers
+then get a **Photoreal** button in the walkthrough, and in **Rooms & viewpoints** you can make it
+what they see first. The card and the listing's page in the dashboard follow the job. The site
+needs the GPU connected first ([docs/photoreal.md](../docs/photoreal.md)); until then the photos
+wait on the server. Sending the scan again replaces the walkthrough, photoreal included.
 
 **No LiDAR?** **Create a demo scan** builds a sample two-bedroom apartment on the phone so you
 can try pairing and sending on any iPhone.
@@ -136,6 +147,7 @@ can try pairing and sending on any iPhone.
 | --- | --- |
 | `scan.glb` | The 3D walkthrough (5–12 MB): walls, floors, ceilings and furniture (in its real shape from the LiDAR mesh, build 7 on) painted with your photos, people painted out (or, if the photos cover too little, a styled model with lights), plus the room/viewpoint/route data. |
 | `scan-clean.glb` | Photo scans only (build 6 on): the same rooms as a clean 3D model (1–3 MB), shown when a buyer or you turn the photos off. In **Rooms & viewpoints** you choose whether buyers start with the photos on or off. |
+| Photoreal upload | Only when you tap **Make it photoreal**: the photos (`frames/`), their cameras and starting points (`photoreal/cameras.json`, `seeds.ply`) and where they show people (`photoreal/masks/`). Deleted from the server once the photoreal walkthrough exists. |
 | `package.zip` | Raw data for future reprocessing: RoomPlan's rooms and merged structure, the scan in Atrium's format, the walked path and the photos' positions. The photos and LiDAR meshes themselves stay on the phone (they're already in `scan.glb`). Optional — if the server refuses it (Supabase's free plan limits files to 50 MB) the walkthrough is sent without it. |
 
 Everything also stays on the phone (**Files → On My iPhone → Atrium Capture → Scans**), and
@@ -147,6 +159,8 @@ Everything also stays on the phone (**Files → On My iPhone → Atrium Capture 
 | --- | --- |
 | *Can't reach …* | The phone can't see the server: same Wi‑Fi for a dev server, or use the deployed https address. |
 | *This pairing code has expired* | Codes last 24 hours — click **Connect an iPhone** again and rescan. |
+| *The listing shows a different scan now* | Photoreal is made for the scan the listing shows: send this scan again first. |
+| *This scan isn't ready for photoreal yet* | Tap **Rebuild walkthrough** (build 9), send it, then make it photoreal. |
 | *iPhone uploads need SUPABASE_SERVICE_ROLE_KEY…* | Add the Supabase service-role (or secret) key to the Vercel project's environment variables and redeploy. |
 | *Atrium's database isn't set up for iPhone scans yet* | Open `/setup` on your site and run the SQL it shows (safe to run again). |
 | *Scanning stopped* (tracking lost / too hot) | Choose **Keep what was scanned** or **Scan this room again**. |

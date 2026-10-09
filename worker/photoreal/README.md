@@ -10,7 +10,7 @@ saved as `.spz` for the tour viewer. The whole pipeline is described in
 | `atrium_photoreal/train.py` | gsplat's 3DGS recipe (MCMC on a GPU) with splats starting as discs on the painted surfaces, per-photo exposure, pose refinement, people left out, bounds |
 | `atrium_photoreal/render.py` | gsplat's CUDA rasterizer; a dense PyTorch one on the CPU for tests |
 | `atrium_photoreal/spz.py` | SPZ v3 writer/reader (checked against three.js's `SPZLoader`) |
-| `atrium_photoreal/job.py` | One job: download, train, upload, report to the Atrium site |
+| `atrium_photoreal/job.py` | One job: download, train, write the `.spz` (under 45 MB: the highest view-dependent color bands go first), upload, report to the Atrium site |
 | `modal_app.py` | The Modal app: `train_job` on a GPU, and the `start` endpoint the site calls |
 | `run_local.py` | Train a capture folder on this machine |
 
