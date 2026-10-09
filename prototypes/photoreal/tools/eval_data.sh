@@ -25,6 +25,8 @@ if [ ! -x "$SCANPROC" ]; then
   echo "building scanproc"
   (cd "$ROOT/ios/ScanCore" && swift build -c release --product scanproc)
 fi
+# The scene loads three.js from the app's own node_modules (server.mjs serves it as /three).
+[ -d "$ROOT/node_modules/three" ] || (cd "$ROOT" && npm ci --no-audit --no-fund)
 cd "$HERE"
 [ -d node_modules/playwright-core ] || npm install --no-audit --no-fund --no-package-lock
 

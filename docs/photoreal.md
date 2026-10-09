@@ -63,9 +63,15 @@ old model finishes without attaching them). Make the new scan photoreal again.
 
 gsplat 1.5.3's recipe: MCMC on the GPU (up to 1,000,000 splats), 30,000 steps on photos 1440 pixels on their long
 side, loss 0.8 L1 + 0.2 (1 − SSIM), spherical harmonics up to degree 3. Splats start as flat discs on the seeds, facing
-the surface. On top of the recipe, for phone photos: an exposure and white-balance correction per photo (the phone's
-auto exposure), small pose corrections per photo, people's pixels left out, and nothing grows more than 5 m outside
-the model. The `.spz` (version 3) is kept under 45 MB (`options.maxMB`): if it would be bigger, the highest
+the surface. gsplat tunes MCMC for scenes scaled so the cameras sit about a unit from their center; homes are in
+meters, so its position noise (which grows with the square of the unit) and scale penalty are sized to the capture
+(`TrainConfig.normalize`). Unsized, a whole apartment got about ten times a bedroom's noise and never converged.
+
+On top of the recipe, for phone photos: a gain and an offset per color channel and photo for the phone's auto
+exposure and white balance, averaging to none over all the photos so the splats keep the photos' average look (a full
+color matrix per photo, as first deployed, let color drift between the splats and the corrections until one channel
+carried all of it: right in training, red or white in the viewer); small pose corrections per photo; people's pixels
+left out; and nothing grows more than 5 m outside the model. The `.spz` (version 3) is kept under 45 MB (`options.maxMB`): if it would be bigger, the highest
 view-dependent color bands are dropped until it fits. `stats` reports splats, steps, size, minutes and the training
 PSNR.
 

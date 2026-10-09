@@ -104,6 +104,26 @@ def test_training_learns_the_scene_and_leaves_people_out(tmp_path):
     assert magenta.mean() < 0.05
 
 
+def test_exposure_keeps_the_photos_average_look():
+    """Per-photo gains and offsets average to none, so the splats' own colors are the photos' average
+    (what the viewer shows), and a photo can't stray more than two stops."""
+    from atrium_photoreal.train import Exposure
+
+    exposure = Exposure(6)
+    with torch.no_grad():
+        exposure.log_gain.copy_(torch.randn(6, 3, generator=torch.Generator().manual_seed(0)) * 0.2 + 0.3)
+        exposure.offset.copy_(torch.full((6, 3), 0.05))
+    exposure.anchor()
+    assert torch.allclose(exposure.log_gain.mean(0), torch.zeros(3), atol=1e-6)
+    assert torch.allclose(exposure.offset.mean(0), torch.zeros(3), atol=1e-6)
+    with torch.no_grad():
+        exposure.log_gain[0] = 5.0
+    exposure.anchor()
+    assert float(exposure.log_gain.max()) <= np.log(4.0) + 1e-6
+    image = torch.full((2, 2, 3), 0.5)
+    assert torch.allclose(exposure(image, 3), image * torch.exp(exposure.log_gain[3]) + exposure.offset[3])
+
+
 class _Site(http.server.BaseHTTPRequestHandler):
     """The Atrium site and its storage, as far as the worker sees them."""
 

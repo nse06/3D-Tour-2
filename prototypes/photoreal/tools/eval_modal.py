@@ -4,7 +4,7 @@
   cd prototypes/photoreal
   tools/eval_data.sh                   # eval-data/: captures and the real views (see that script)
   modal run tools/eval_modal.py --capture eval-data/capture-rough --views eval-data/views --out eval-data/results
-        [--variants baseline,priors] [--steps 30000] [--long-side 1440]
+        [--variants base,priors] [--steps 30000] [--long-side 1440]
 
 Uploads the capture and the views to the Modal volume "atrium-photoreal-eval", trains every variant at
 once on an A10G each (the worker's GPU), and writes what tools/eval_splats.py writes into --out. The
@@ -43,7 +43,7 @@ def evaluate(tag: str, variant: str, steps: int, long_side: int) -> dict:
 
 
 @app.local_entrypoint()
-def main(capture: str, views: str, out: str, variants: str = "baseline,shell,shell+aniso,priors,priors-aniso3,priors-sh1", steps: int = 30_000, long_side: int = 1440):
+def main(capture: str, views: str, out: str, variants: str = "base,base-matrix,base-meters,priors,priors-aniso3", steps: int = 30_000, long_side: int = 1440):
     import eval_splats
 
     names = [n for n in variants.split(",") if n]

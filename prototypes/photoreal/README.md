@@ -115,7 +115,7 @@ cd prototypes/photoreal
 tools/eval_data.sh                  # eval-data/: both captures, their exports, the views (~20 min; needs scanproc)
 pip install 'modal[api-proxy-support]' && modal setup     # or MODAL_TOKEN_ID / MODAL_TOKEN_SECRET
 modal run tools/eval_modal.py --capture eval-data/capture-rough --views eval-data/views --out eval-data/results
-python tools/eval_splats.py eval-data/capture-rough eval-data/views /tmp/smoke --variants baseline,priors \
+python tools/eval_splats.py eval-data/capture-rough eval-data/views /tmp/smoke --variants base,priors \
     --steps 100 --long-side 64 --seeds 3000 --eval-scale 0.15 --cpu      # the plumbing only, on a CPU
 ```
 

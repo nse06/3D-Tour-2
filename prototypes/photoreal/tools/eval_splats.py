@@ -2,8 +2,10 @@
 with the worker's own trainer (worker/photoreal), several ways, and scores each against the real
 apartment from the evaluation viewpoints (tools/eval_views.py, scene/render_views.mjs).
 
-  python tools/eval_splats.py <capture-dir> <views-dir> <out-dir> [--variants baseline,priors]
+  python tools/eval_splats.py <capture-dir> <views-dir> <out-dir> [--variants base,priors]
          [--steps 30000] [--long-side 1440] [--seeds N] [--eval-scale 1] [--cpu]
+
+The first variant listed is the reference the "most changed" sheet compares the last one with.
 
 On a GPU that is a real run (minutes per variant). On a CPU only a tiny one, to check the plumbing:
 --steps 100 --long-side 64 --seeds 3000 --eval-scale 0.15. tools/eval_modal.py runs it on Modal, a
@@ -36,7 +38,10 @@ if len(_repo) > 3 and (_repo[3] / "worker" / "photoreal" / "atrium_photoreal").i
 OFF = {"shell_snap": 0.0, "max_anisotropy": 0.0, "floater_radius": 0.0}
 # Each variant: TrainConfig fields that differ from the trainer's defaults.
 VARIANTS = {
-    "baseline": OFF,  # the trainer as first deployed
+    "first": {**OFF, "exposure_model": "matrix", "normalize": False},  # the trainer as first deployed
+    "base": OFF,  # ... with its exposure correction anchored and MCMC sized to the capture
+    "base-matrix": {**OFF, "exposure_model": "matrix"},  # ... the size fix only
+    "base-meters": {**OFF, "normalize": False},  # ... the exposure fix only
     "shell": {**OFF, "shell_snap": 0.025},  # splats on walls, floors and ceilings kept flat
     "shell+aniso": {"floater_radius": 0.0},  # ... and no needles
     "priors": {},  # ... and floaters in front of the cameras cleared: the defaults
@@ -186,11 +191,12 @@ def write_results(out: Path, views_dir: Path, results: list[dict]):
         for page in range(0, len(files), 12):
             slug = kind.replace(" ", "-").replace("°", "").replace(".", "")
             sheet(out / f"sheet-{slug}-{page // 12 + 1}.jpg", views_dir, out, results, files[page : page + 12], f"{kind}, {page + 1}–{min(len(files), page + 12)}")
-    if "baseline" in names and len(names) > 1:
-        base = {row["file"]: row["psnr"] for row in results[names.index("baseline")]["views"]}
-        other = results[-1] if names[-1] != "baseline" else results[0]
+    if len(names) > 1:
+        # The first variant is the reference; the views the last one changes most.
+        base = {row["file"]: row["psnr"] for row in results[0]["views"]}
+        other = results[-1]
         change = sorted(other["views"], key=lambda row: -abs(row["psnr"] - base[row["file"]]))
-        sheet(out / "sheet-most-changed.jpg", views_dir, out, results, [row["file"] for row in change[:12]], f"the 12 views {other['variant']} changes most from baseline")
+        sheet(out / "sheet-most-changed.jpg", views_dir, out, results, [row["file"] for row in change[:12]], f"the 12 views {other['variant']} changes most from {names[0]}")
 
 
 def main():
@@ -198,7 +204,7 @@ def main():
     p.add_argument("capture", type=Path)
     p.add_argument("views", type=Path)
     p.add_argument("out", type=Path)
-    p.add_argument("--variants", default="baseline,priors")
+    p.add_argument("--variants", default="base,priors")
     p.add_argument("--steps", type=int, default=30_000)
     p.add_argument("--long-side", type=int, default=1440)
     p.add_argument("--seeds", type=int, default=0)

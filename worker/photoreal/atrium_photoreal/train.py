@@ -2,8 +2,8 @@
 GPU), adapted to phone scans of homes:
 
 * splats start as flat discs on the painted model's surfaces (the seeds), in their painted colors;
-* each photo gets an exposure and white-balance correction (3x3 color matrix + offset), so the
-  phone's auto-exposure doesn't end up baked into the splats;
+* each photo gets an exposure and white-balance correction (a gain and an offset per color channel,
+  averaging to none over the photos), so the phone's auto-exposure doesn't end up baked into the splats;
 * each photo's pose is refined a little (the phone's tracking drifts);
 * pixels showing people are left out;
 * splats wandering far outside the rooms are dropped (window views may sit a few meters out);
@@ -52,6 +52,16 @@ class TrainConfig:
     pose_reg: float = 1e-6
     exposure_lr: float = 1e-3
     exposure_reg: float = 1e-2
+    # "gain": a gain and an offset per color channel and photo, their average over the photos held at
+    # none. "matrix": the first worker's 3x3 color matrix and offset per photo, kept for comparison: with
+    # nothing holding their average, color drifts between the splats and the photos' corrections (one
+    # channel can end up carrying all of it), which fits the photos and looks wrong in the viewer.
+    exposure_model: str = "gain"
+    # gsplat tunes MCMC for scenes scaled so that the cameras sit about one unit from their center. Its
+    # position noise grows with the square of the unit and its scale penalty with the unit, so both are
+    # sized to the capture as if it were scaled that way (False: as if the unit were the meter; a
+    # whole apartment then gets about ten times the noise of a bedroom and doesn't converge).
+    normalize: bool = True
     bounds_margin: float = 5.0
     refine_start: int = 500
     refine_stop_frac: float = 25 / 30
@@ -137,7 +147,34 @@ class PoseAdjust(torch.nn.Module):
 
 
 class Exposure(torch.nn.Module):
-    """Each photo's colors as the camera saw them: a 3x3 color matrix and offset on the splats' colors."""
+    """Each photo's colors as the camera saw them: a gain and an offset per color channel on the
+    splats' colors (the phone's auto exposure and white balance). Their average over all the photos is
+    held at none, so the splats keep the photos' average look, which is what the viewer shows."""
+
+    MAX_GAIN = math.log(4.0)  # two stops either way (a phone facing a bright window darkens that much)
+    MAX_OFFSET = 0.2
+
+    def __init__(self, n: int):
+        super().__init__()
+        self.log_gain = torch.nn.Parameter(torch.zeros(n, 3))
+        self.offset = torch.nn.Parameter(torch.zeros(n, 3))
+
+    def forward(self, image: torch.Tensor, index: int) -> torch.Tensor:
+        return image * torch.exp(self.log_gain[index]) + self.offset[index]
+
+    def penalty(self) -> torch.Tensor:
+        return (self.log_gain**2).mean() + (self.offset**2).mean()
+
+    @torch.no_grad()
+    def anchor(self):
+        """After each step: the average back to none, each photo within two stops and a fifth."""
+        self.log_gain.sub_(self.log_gain.mean(0)).clamp_(-self.MAX_GAIN, self.MAX_GAIN)
+        self.offset.sub_(self.offset.mean(0)).clamp_(-self.MAX_OFFSET, self.MAX_OFFSET)
+
+
+class ColorMatrix(torch.nn.Module):
+    """The first worker's correction (TrainConfig.exposure_model "matrix"): a 3x3 color matrix and an
+    offset per photo, held only by a weak penalty."""
 
     def __init__(self, n: int):
         super().__init__()
@@ -150,6 +187,9 @@ class Exposure(torch.nn.Module):
     def penalty(self) -> torch.Tensor:
         eye = torch.eye(3, device=self.matrix.device)
         return ((self.matrix - eye) ** 2).mean() + (self.offset**2).mean()
+
+    def anchor(self):
+        pass
 
 
 def train(
@@ -184,7 +224,10 @@ def train(
 
     # The spread of the cameras sets the step size for positions (gsplat's scene scale).
     centers = camtoworlds[:, :3, 3]
-    scene_scale = 1.1 * float((centers - centers.mean(0)).norm(dim=1).max().clamp(min=1.0))
+    spread = (centers - centers.mean(0)).norm(dim=1)
+    scene_scale = 1.1 * float(spread.max().clamp(min=1.0))
+    # MCMC's noise and scale penalty in gsplat's units (TrainConfig.normalize): per meter, how many.
+    unit = 1.0 / max(0.3, float(spread.median())) if cfg.normalize else 1.0
 
     splats = init_splats(capture, cfg, device, rng)
     lrs = {
@@ -197,7 +240,7 @@ def train(
     }
     optimizers = {k: torch.optim.Adam([{"params": splats[k], "lr": lr, "name": k}], eps=1e-15) for k, lr in lrs.items()}
     pose = PoseAdjust(len(cams)).to(device)
-    exposure = Exposure(len(cams)).to(device)
+    exposure = (Exposure if cfg.exposure_model == "gain" else ColorMatrix)(len(cams)).to(device)
     pose_opt = torch.optim.Adam(pose.parameters(), lr=cfg.pose_lr, weight_decay=cfg.pose_reg)
     exposure_opt = torch.optim.Adam(exposure.parameters(), lr=cfg.exposure_lr)
     schedulers = [
@@ -210,7 +253,9 @@ def train(
     if kind == "mcmc":
         from gsplat.strategy import MCMCStrategy
 
-        strategy = MCMCStrategy(cap_max=cfg.max_gaussians, refine_start_iter=cfg.refine_start, refine_stop_iter=refine_stop, refine_every=cfg.refine_every)
+        strategy = MCMCStrategy(
+            cap_max=cfg.max_gaussians, refine_start_iter=cfg.refine_start, refine_stop_iter=refine_stop, refine_every=cfg.refine_every, noise_lr=5e5 * unit**2
+        )
         state = strategy.initialize_state()
     else:
         from gsplat.strategy import DefaultStrategy
@@ -255,13 +300,14 @@ def train(
             compared = predicted
         loss = (1 - cfg.ssim_lambda) * l1 + cfg.ssim_lambda * (1 - ssim(compared[None], image[None]))
         if kind == "mcmc":
-            loss = loss + cfg.opacity_reg * torch.sigmoid(splats["opacities"]).mean() + cfg.scale_reg * torch.exp(splats["scales"]).mean()
+            loss = loss + cfg.opacity_reg * torch.sigmoid(splats["opacities"]).mean() + cfg.scale_reg * unit * torch.exp(splats["scales"]).mean()
         loss = loss + cfg.exposure_reg * exposure.penalty()
         loss.backward()
 
         for opt in [*optimizers.values(), pose_opt, exposure_opt]:
             opt.step()
             opt.zero_grad(set_to_none=True)
+        exposure.anchor()
         for scheduler in schedulers:
             scheduler.step()
         if kind == "mcmc":
@@ -302,6 +348,8 @@ def train(
         "strategy": kind,
         "device": device.type,
         "poseShiftCm": round(float(pose.embeds.weight[:, :3].detach().norm(dim=1).mean()) * 100, 2),
+        "unitsPerMeter": round(unit, 3),
+        "exposureModel": cfg.exposure_model,
         "shellPlanes": 0 if shell is None else shell.walls + shell.flats,
         "onShell": on_shell,
         "floatersCleared": cleared,
