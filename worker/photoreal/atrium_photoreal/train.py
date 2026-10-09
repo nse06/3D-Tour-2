@@ -66,6 +66,11 @@ class TrainConfig:
     refine_start: int = 500
     refine_stop_frac: float = 25 / 30
     refine_every: int = 100
+    # On a GPU, Adam moves only the splats the current photo shows (gsplat's SelectiveAdam). With plain
+    # Adam, a splat no photo has shown for a while still gets the regularizers' small nudges, at full step
+    # size: its opacity collapses and MCMC moves it elsewhere. A whole home, each room out of view most
+    # of the time, then forgets rooms faster than it learns them.
+    visible_adam: bool = True
     # The rooms' shape (shell.py). Splats within `shell_snap` m of a wall, floor or ceiling are put on
     # it, `shell_thickness` m thick at most (0: off); no splat longer than `max_anisotropy` times its
     # middle axis (0: no limit); splats within `floater_radius` m of a camera and away from the
@@ -238,7 +243,13 @@ def train(
         "sh0": cfg.sh0_lr,
         "shN": cfg.shN_lr,
     }
-    optimizers = {k: torch.optim.Adam([{"params": splats[k], "lr": lr, "name": k}], eps=1e-15) for k, lr in lrs.items()}
+    selective = cfg.visible_adam and device.type == "cuda"
+    if selective:
+        from gsplat.optimizers import SelectiveAdam
+
+        optimizers = {k: SelectiveAdam([{"params": splats[k], "lr": lr, "name": k}], eps=1e-15, betas=(0.9, 0.999)) for k, lr in lrs.items()}
+    else:
+        optimizers = {k: torch.optim.Adam([{"params": splats[k], "lr": lr, "name": k}], eps=1e-15) for k, lr in lrs.items()}
     pose = PoseAdjust(len(cams)).to(device)
     exposure = (Exposure if cfg.exposure_model == "gain" else ColorMatrix)(len(cams)).to(device)
     pose_opt = torch.optim.Adam(pose.parameters(), lr=cfg.pose_lr, weight_decay=cfg.pose_reg)
@@ -276,6 +287,8 @@ def train(
     train_centers = centers[train_ids]
     cleared = 0
     recent: list[float] = []
+    history: list[list[float]] = []  # [step, training PSNR], 50 times a run
+    history_every = max(1, cfg.steps // 50)
     log(f"training {len(train_ids)} photos ({len(test_ids)} held out) at {cfg.long_side} px, {len(splats['means'])} splats to start, {kind} on {device}")
     for step in range(cfg.steps):
         i = random.choice(train_ids)
@@ -304,7 +317,18 @@ def train(
         loss = loss + cfg.exposure_reg * exposure.penalty()
         loss.backward()
 
-        for opt in [*optimizers.values(), pose_opt, exposure_opt]:
+        if selective:
+            # Which splats this photo shows: a footprint on screen (radii: [camera, splat, (x, y)]).
+            seen = info["radii"] > 0
+            visible = (seen.all(-1) if seen.dim() == 3 else seen).any(0)
+            for opt in optimizers.values():
+                opt.step(visible)
+                opt.zero_grad(set_to_none=True)
+        else:
+            for opt in optimizers.values():
+                opt.step()
+                opt.zero_grad(set_to_none=True)
+        for opt in (pose_opt, exposure_opt):
             opt.step()
             opt.zero_grad(set_to_none=True)
         exposure.anchor()
@@ -332,6 +356,8 @@ def train(
         with torch.no_grad():
             recent.append(psnr(predicted.clamp(0, 1), image))
             recent = recent[-200:]
+        if step % history_every == 0 or step == cfg.steps - 1:
+            history.append([step + 1, round(float(np.mean(recent)), 2)])
         if progress and (step % cfg.progress_every == 0 or step == cfg.steps - 1):
             progress((step + 1) / cfg.steps, f"step {step + 1} of {cfg.steps}, {len(splats['means'])} splats, {np.mean(recent):.1f} dB")
 
@@ -353,6 +379,8 @@ def train(
         "shellPlanes": 0 if shell is None else shell.walls + shell.flats,
         "onShell": on_shell,
         "floatersCleared": cleared,
+        "visibleAdam": selective,
+        "psnrHistory": history,
     }
     if test_ids:
         scores = []

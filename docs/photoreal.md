@@ -65,7 +65,10 @@ gsplat 1.5.3's recipe: MCMC on the GPU (up to 1,000,000 splats), 30,000 steps on
 side, loss 0.8 L1 + 0.2 (1 − SSIM), spherical harmonics up to degree 3. Splats start as flat discs on the seeds, facing
 the surface. gsplat tunes MCMC for scenes scaled so the cameras sit about a unit from their center; homes are in
 meters, so its position noise (which grows with the square of the unit) and scale penalty are sized to the capture
-(`TrainConfig.normalize`). Unsized, a whole apartment got about ten times a bedroom's noise and never converged.
+(`TrainConfig.normalize`). Adam moves only the splats the current photo shows (gsplat's `SelectiveAdam`,
+`TrainConfig.visible_adam`): with plain Adam, a splat no photo has shown lately, such as one MCMC just placed, gets
+the regularizers' small pushes at full step size and dies before a photo sees it. In a whole home, where each room is
+out of view most of the time, rooms were forgotten faster than they were learned.
 
 On top of the recipe, for phone photos: a gain and an offset per color channel and photo for the phone's auto
 exposure and white balance, averaging to none over all the photos so the splats keep the photos' average look (a full
