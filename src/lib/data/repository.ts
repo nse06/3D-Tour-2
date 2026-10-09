@@ -1,5 +1,5 @@
 import { slugify } from "@/lib/format";
-import type { TourAppearance, TourData, TourSpace } from "@/lib/tour/types";
+import type { SplatSpot, TourAppearance, TourData, TourSpace } from "@/lib/tour/types";
 import { isSupabaseConfigured, supabaseAdminKey } from "./config";
 import type {
   CaptureInput,
@@ -48,8 +48,8 @@ export interface Repository {
   updatePhotorealJob(jobId: string, update: PhotorealJobUpdate): Promise<PhotorealJob | null>;
   /** The latest job for the scan the listing shows now (sending a new scan unlinks older jobs). */
   latestPhotorealJob(userId: string, propertyId: string): Promise<PhotorealJob | null>;
-  /** Shows finished splats on the job's tour; false if that tour has since been replaced. */
-  attachSplats(job: PhotorealJob, splatUrl: string): Promise<boolean>;
+  /** Shows finished splats on the job's tour (with where their photos were taken); false if that tour has since been replaced. */
+  attachSplats(job: PhotorealJob, splatUrl: string, spots: SplatSpot[] | null): Promise<boolean>;
 }
 
 let repo: Promise<Repository> | null = null;
@@ -114,6 +114,7 @@ export function bundleToTourData(bundle: PropertyBundle): TourData | null {
     assetUrl: tour.assetUrl,
     cleanAssetUrl: tour.cleanAssetUrl ?? null,
     splatUrl: tour.splatUrl ?? null,
+    splatSpots: tour.splatUrl ? (tour.splatSpots ?? null) : null,
     source: tour.source,
     appearance: tour.appearance ?? "studio",
     space,

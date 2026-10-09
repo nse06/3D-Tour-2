@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { apiError, readJson, serverError } from "@/lib/capture-api";
 import { serverBaseUrl } from "@/lib/capture-sessions";
 import { getAdminRepository } from "@/lib/data/repository";
-import { deleteInputs, isWorkerRequest, jobSummary, workerSecret } from "@/lib/photoreal";
+import { checkSpots, deleteInputs, isWorkerRequest, jobSummary, workerSecret } from "@/lib/photoreal";
 import { assetExists, createUploadTarget, isOwnedAssetUrl, UploadError } from "@/lib/storage";
 
 /**
@@ -11,7 +11,7 @@ import { assetExists, createUploadTarget, isOwnedAssetUrl, UploadError } from "@
  * shared secret (Authorization: Bearer PHOTOREAL_WORKER_SECRET). Events:
  *   { event: "progress", stage, progress (0–1), message }
  *   { event: "upload", bytes }       → { url, method, headers, assetUrl } for the splats (.spz)
- *   { event: "done", assetUrl, stats }
+ *   { event: "done", assetUrl, stats, spots }   spots: where the photos were taken, [[x, y, z, yaw, pitch], …]
  *   { event: "failed", message }
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/photoreal/jobs/[id]">) {
@@ -52,7 +52,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/photoreal/j
           return apiError(400, "assetUrl must be the uploaded splats.");
         }
         const stats = body.stats && typeof body.stats === "object" && JSON.stringify(body.stats).length < 8192 ? (body.stats as Record<string, unknown>) : null;
-        const attached = await repo.attachSplats(job, assetUrl as string);
+        const attached = await repo.attachSplats(job, assetUrl as string, checkSpots(body.spots));
         const updated = await repo.updatePhotorealJob(job.id, {
           status: "done",
           stage: null,

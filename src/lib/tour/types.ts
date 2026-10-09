@@ -90,6 +90,9 @@ export interface PropertyInfo {
   coverImageUrl: string | null;
 }
 
+/** Where a photo the photoreal splats learned from was taken: [x, y, z, yaw, pitch] (meters, radians). */
+export type SplatSpot = [number, number, number, number, number];
+
 /** Everything the public viewer needs to render a tour. */
 export interface TourData {
   property: PropertyInfo;
@@ -98,6 +101,8 @@ export interface TourData {
   cleanAssetUrl: string | null;
   /** Photoreal Gaussian splats (.spz) trained on the scan's photos, in the model's frame. */
   splatUrl: string | null;
+  /** Where those photos were taken: photoreal is shown near them, the painted model elsewhere. */
+  splatSpots: SplatSpot[] | null;
   source: CaptureSource;
   appearance: TourAppearance;
   space: TourSpace;

@@ -109,6 +109,16 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
       setToast("The photoreal walkthrough couldn't be loaded");
     }
   }, []);
+  // Up close or away from the photos the splats hand over to the painted model (said once).
+  const [splatPaused, setSplatPaused] = useState(false);
+  const pauseExplained = useRef(false);
+  const onSplatPaused = useCallback((paused: boolean) => {
+    setSplatPaused(paused);
+    if (paused && !pauseExplained.current) {
+      pauseExplained.current = true;
+      setToast("Up close: the photos painted on the model — photoreal returns as you step back");
+    }
+  }, []);
   const pendingTitle = useRef<TourRoom | null>(null);
   const webgl = useSyncExternalStore(noopSubscribe, hasWebGL, () => true);
 
@@ -272,6 +282,8 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
           splatUrl={data.splatUrl}
           photoreal={photoreal}
           onSplatState={onSplatState}
+          splatSpots={data.splatSpots}
+          onSplatPaused={onSplatPaused}
           space={space}
           startWaypoint={startWaypoint}
           apiRef={apiRef}
@@ -417,8 +429,14 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
               }}
               aria-pressed={photoreal}
               aria-label={photoreal ? "Turn photoreal off" : "Turn photoreal on"}
-              title={photoreal ? "Turn photoreal off" : "Photoreal: the home as the scan's photos saw it"}
-              className={`glass flex h-11 items-center gap-2 rounded-full px-3.5 text-[13px] font-medium text-white/90 transition hover:bg-white/20 hover:text-white sm:pr-4 ${photoreal ? "ring-1 ring-[#d6b67c]/70" : ""}`}
+              title={
+                photoreal
+                  ? splatPaused
+                    ? "Photoreal pauses up close and away from where the photos were taken"
+                    : "Turn photoreal off"
+                  : "Photoreal: the home as the scan's photos saw it"
+              }
+              className={`glass flex h-11 items-center gap-2 rounded-full px-3.5 text-[13px] font-medium text-white/90 transition hover:bg-white/20 hover:text-white sm:pr-4 ${photoreal ? (splatPaused ? "ring-1 ring-white/25" : "ring-1 ring-[#d6b67c]/70") : ""}`}
             >
               {splatsLoading ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
               <span className="hidden sm:inline">Photoreal</span>

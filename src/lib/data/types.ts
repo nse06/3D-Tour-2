@@ -1,4 +1,4 @@
-import type { CaptureSource, NavLink, TourAppearance, TourFloor, TourRoom, TourSpace } from "@/lib/tour/types";
+import type { CaptureSource, NavLink, SplatSpot, TourAppearance, TourFloor, TourRoom, TourSpace } from "@/lib/tour/types";
 
 export interface Property {
   id: string;
@@ -43,6 +43,8 @@ export interface Tour {
   cleanAssetUrl: string | null;
   /** Photoreal splats (.spz) trained on the capture's photos (docs/photoreal.md). */
   splatUrl: string | null;
+  /** Where those photos were taken ([x, y, z, yaw, pitch]): the viewer shows the splats near them. */
+  splatSpots: SplatSpot[] | null;
   assetFormat: "glb" | "gltf";
   source: CaptureSource;
   scanPackageUrl: string | null;

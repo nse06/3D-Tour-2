@@ -5,14 +5,14 @@
 import { Bvh } from "@react-three/drei";
 import { EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { Canvas, useLoader, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Component, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import type { TourAppearance, TourSpace, Waypoint } from "@/lib/tour/types";
+import type { SplatSpot, TourAppearance, TourSpace, Waypoint } from "@/lib/tour/types";
 import { CameraRig } from "./CameraRig";
 import type { LivePose, ViewerApi, ViewerMode } from "./viewer-types";
 
@@ -32,6 +32,10 @@ export interface TourSceneProps {
   photoreal?: boolean;
   /** How the splats are doing: loading, on screen, or failed (the models stay on screen). */
   onSplatState?: (state: "loading" | "ready" | "failed", message?: string) => void;
+  /** Where the photos the splats were trained on were taken (photoreal is only shown near them). */
+  splatSpots?: SplatSpot[] | null;
+  /** Photoreal is on but paused: up close or away from the photos, the painted model shows. */
+  onSplatPaused?: (paused: boolean) => void;
   space: TourSpace;
   startWaypoint: Waypoint;
   apiRef: MutableRefObject<ViewerApi | null>;
@@ -119,6 +123,8 @@ function PropertyModel({
   splatUrl = null,
   photoreal = false,
   onSplatState,
+  splatSpots = null,
+  onSplatPaused,
   space,
   startWaypoint,
   apiRef,
@@ -137,6 +143,8 @@ function PropertyModel({
 }: TourSceneProps) {
   // The camera rig picks floors and checks sight lines against the model on screen.
   const modelRef = useRef<THREE.Object3D | null>(null);
+  // The models, shown unless the photoreal splats cover them (SplatLayer decides frame by frame).
+  const modelsRef = useRef<THREE.Group>(null);
   // The model asked for at the start loads with the scene (and drives the progress bar); the
   // other one loads the first time the visitor switches, while this one stays on screen.
   const wantClean = !!cleanAssetUrl && !photos;
@@ -182,7 +190,8 @@ function PropertyModel({
 
   // Photoreal splats load the first time they're asked for; until they're ready (or if they
   // fail) the models stay on screen. The models keep doing the walking either way: the rig picks
-  // floors and sight lines on them, hidden or not.
+  // floors and sight lines on them, hidden or not. Where the splats are unreliable (up close, away
+  // from the photos), SplatLayer hands the view back to the painted model.
   const [splatAsked, setSplatAsked] = useState(false);
   const [splatReady, setSplatReady] = useState(false);
   if (photoreal && splatUrl && !splatAsked) setSplatAsked(true);
@@ -193,7 +202,7 @@ function PropertyModel({
     <>
       {!captured && <EnvironmentLighting intensity={hasLights ? 0.9 : 1.15} />}
       {!captured && <hemisphereLight args={["#fff8ee", "#b9ab98", hasLights ? 0.5 : 0.75]} />}
-      <group visible={!showSplats}>
+      <group ref={modelsRef}>
         <group visible={showingPrimary}>
           <Bvh firstHitOnly>
             <primitive object={gltf.scene} />
@@ -217,6 +226,10 @@ function PropertyModel({
         <SplatLayer
           url={splatUrl}
           visible={showSplats}
+          modelRef={modelRef}
+          modelsRef={modelsRef}
+          spots={splatSpots}
+          onPaused={onSplatPaused}
           onState={(state, message) => {
             if (state === "ready") setSplatReady(true);
             onSplatState?.(state, message);
@@ -248,21 +261,65 @@ function PropertyModel({
   );
 }
 
+/** Up close, splats trained on photos taken a step or two away smear: below this (median distance to
+ * what's in view, in meters) the painted model takes over, and photoreal returns past RESUME. */
+const SPLAT_NEAR_PAUSE = 0.9;
+const SPLAT_NEAR_RESUME = 1.15;
+/** A photo counts as covering the view within this distance (m) and angle of it (pause / resume). */
+const SPOT_RANGE = { pause: 1.4, resume: 1.05 };
+const SPOT_ANGLE = { pause: Math.cos((70 * Math.PI) / 180), resume: Math.cos((55 * Math.PI) / 180) };
+const SPLAT_FADE_SECONDS = 0.35;
+/** Where in the view to measure distance (normalized device coordinates). */
+const PROBES: [number, number][] = [-0.5, 0, 0.5].flatMap((x) => [-0.45, 0, 0.45].map((y) => [x, y] as [number, number]));
+const probe = new THREE.Vector2();
+const forward = new THREE.Vector3();
+
 /**
  * Photoreal Gaussian splats (Spark, loaded on first use). Rendered like gsplat trained them:
- * splats out to 3 standard deviations, with gsplat's 0.3-pixel² screen-space blur.
+ * splats out to 3 standard deviations, with gsplat's 0.3-pixel² screen-space blur. Splats are only
+ * as good as the photos they learned from, so they fade to the painted model when the view is
+ * close to a surface or not near where a photo looked the same way, and come back after.
  */
-function SplatLayer({ url, visible, onState }: { url: string; visible: boolean; onState: (state: "loading" | "ready" | "failed", message?: string) => void }) {
-  const { gl, scene, invalidate } = useThree();
-  const [layer, setLayer] = useState<{ spark: THREE.Object3D; splats: THREE.Object3D } | null>(null);
+function SplatLayer({
+  url,
+  visible,
+  modelRef,
+  modelsRef,
+  spots,
+  onPaused,
+  onState,
+}: {
+  url: string;
+  visible: boolean;
+  modelRef: MutableRefObject<THREE.Object3D | null>;
+  modelsRef: MutableRefObject<THREE.Group | null>;
+  spots: SplatSpot[] | null;
+  onPaused?: (paused: boolean) => void;
+  onState: (state: "loading" | "ready" | "failed", message?: string) => void;
+}) {
+  const { gl, scene, camera, raycaster, invalidate } = useThree();
+  const [layer, setLayer] = useState<{ spark: THREE.Object3D; splats: THREE.Object3D & { opacity: number } } | null>(null);
   const report = useRef(onState);
+  const reportPaused = useRef(onPaused);
   useLayoutEffect(() => {
     report.current = onState;
+    reportPaused.current = onPaused;
   });
+  // Spot positions and view directions, unpacked once.
+  const spotData = useMemo(
+    () =>
+      (spots ?? []).map(([x, y, z, yaw, pitch]) => ({
+        p: new THREE.Vector3(x, y, z),
+        d: new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)),
+      })),
+    [spots],
+  );
+  const guard = useRef({ fade: 0, clear: true, wait: 0, paused: false });
 
   useEffect(() => {
     let disposed = false;
     let created: { spark: THREE.Object3D & { dispose?: () => void }; splats: THREE.Object3D & { dispose: () => void } } | null = null;
+    const models = modelsRef.current;
     report.current("loading");
     (async () => {
       try {
@@ -273,6 +330,7 @@ function SplatLayer({ url, visible, onState }: { url: string; visible: boolean; 
         created = { spark, splats };
         await splats.initialized;
         if (disposed) return;
+        spark.visible = splats.visible = false;
         scene.add(spark, splats);
         setLayer({ spark, splats });
         invalidate();
@@ -288,15 +346,62 @@ function SplatLayer({ url, visible, onState }: { url: string; visible: boolean; 
         created.splats.dispose();
         created.spark.dispose?.();
       }
+      if (models) models.visible = true;
     };
-  }, [gl, scene, url, invalidate]);
+  }, [gl, scene, url, invalidate, modelsRef]);
 
-  useEffect(() => {
-    if (!layer) return;
-    layer.spark.visible = visible;
-    layer.splats.visible = visible;
-    invalidate();
-  }, [layer, visible, invalidate]);
+  /** Whether the splats can be trusted for the current view (with hysteresis: `wasClear`). */
+  const viewIsClear = (wasClear: boolean) => {
+    const model = modelRef.current;
+    if (model) {
+      const distances: number[] = [];
+      raycaster.far = 8;
+      for (const [x, y] of PROBES) {
+        probe.set(x, y);
+        raycaster.setFromCamera(probe, camera);
+        const hit = raycaster.intersectObject(model, true).find((h) => !h.object.userData.noPick);
+        distances.push(hit ? hit.distance : 8);
+      }
+      raycaster.far = Infinity;
+      distances.sort((a, b) => a - b);
+      const near = distances[Math.floor(distances.length / 2)];
+      if (near < (wasClear ? SPLAT_NEAR_PAUSE : SPLAT_NEAR_RESUME)) return false;
+    }
+    if (spotData.length) {
+      camera.getWorldDirection(forward);
+      const range = wasClear ? SPOT_RANGE.pause : SPOT_RANGE.resume;
+      const cosine = wasClear ? SPOT_ANGLE.pause : SPOT_ANGLE.resume;
+      if (!spotData.some((s) => s.p.distanceTo(camera.position) < range && s.d.dot(forward) > cosine)) return false;
+    }
+    return true;
+  };
+
+  useFrame((_, dt) => {
+    const models = modelsRef.current;
+    const g = guard.current;
+    if (!layer) {
+      if (models) models.visible = true;
+      return;
+    }
+    if (visible) {
+      g.wait -= dt;
+      if (g.wait <= 0) {
+        g.wait = 0.15;
+        g.clear = viewIsClear(g.clear);
+      }
+    }
+    const target = visible && g.clear ? 1 : 0;
+    // Switching photoreal on or off is immediate; pausing for a close-up fades.
+    g.fade = !visible ? 0 : g.fade + Math.sign(target - g.fade) * Math.min(Math.abs(target - g.fade), Math.min(dt, 0.1) / SPLAT_FADE_SECONDS);
+    layer.splats.opacity = g.fade;
+    layer.splats.visible = layer.spark.visible = g.fade > 0.001;
+    if (models) models.visible = g.fade < 0.999;
+    const paused = visible && !g.clear;
+    if (paused !== g.paused) {
+      g.paused = paused;
+      reportPaused.current?.(paused);
+    }
+  });
   return null;
 }
 

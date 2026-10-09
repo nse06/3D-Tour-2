@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { defaultSpace } from "@/lib/tour/space";
-import type { TourAppearance, TourSpace } from "@/lib/tour/types";
+import type { SplatSpot, TourAppearance, TourSpace } from "@/lib/tour/types";
 import { localDataDir } from "./config";
 import { NotFoundError, uniqueSlug, type Repository } from "./repository";
 import type {
@@ -50,6 +50,7 @@ async function readDb(): Promise<Db> {
       ...t,
       cleanAssetUrl: t.cleanAssetUrl ?? null,
       splatUrl: t.splatUrl ?? null,
+      splatSpots: t.splatSpots ?? null,
       scanPackageUrl: t.scanPackageUrl ?? null,
       appearance: t.appearance ?? "studio",
     }));
@@ -210,6 +211,7 @@ export class LocalRepository implements Repository {
         assetUrl: capture.assetUrl,
         cleanAssetUrl: capture.cleanAssetUrl ?? null,
         splatUrl: null,
+        splatSpots: null,
         assetFormat: capture.assetFormat,
         source: capture.source,
         scanPackageUrl: capture.scanPackageUrl ?? null,
@@ -335,11 +337,12 @@ export class LocalRepository implements Repository {
     return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
   }
 
-  attachSplats(job: PhotorealJob, splatUrl: string): Promise<boolean> {
+  attachSplats(job: PhotorealJob, splatUrl: string, spots: SplatSpot[] | null): Promise<boolean> {
     return mutate((db) => {
       const tour = db.tours.find((t) => t.id === job.tourId && t.propertyId === job.propertyId);
       if (!tour) return false;
       tour.splatUrl = splatUrl;
+      tour.splatSpots = spots;
       return true;
     });
   }

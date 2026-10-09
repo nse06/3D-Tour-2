@@ -11,7 +11,7 @@ import type { LivePose, ViewerApi } from "@/components/tour/viewer-types";
 import { Button, buttonClass } from "@/components/ui";
 import { floorForHeight, sortedFloors } from "@/lib/tour/navigation";
 import { newId } from "@/lib/tour/space";
-import type { TourAppearance, TourFloor, TourRoom, TourSpace, Waypoint } from "@/lib/tour/types";
+import type { SplatSpot, TourAppearance, TourFloor, TourRoom, TourSpace, Waypoint } from "@/lib/tour/types";
 import { dataUrlToBlob, uploadFile } from "@/lib/upload-client";
 
 const TourScene = dynamic(() => import("@/components/tour/TourScene"), { ssr: false });
@@ -23,6 +23,8 @@ interface Props {
   cleanAssetUrl?: string | null;
   /** Photoreal splats trained on the scan's photos (docs/photoreal.md). */
   splatUrl?: string | null;
+  /** Where those photos were taken (photoreal shows near them). */
+  splatSpots?: SplatSpot[] | null;
   initialSpace: TourSpace;
   initialAppearance: TourAppearance;
 }
@@ -32,7 +34,7 @@ interface Props {
  * in each room. (With iPhone scans this happens automatically; this editor is
  * for manual uploads and for fine-tuning.)
  */
-export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, splatUrl = null, initialSpace, initialAppearance }: Props) {
+export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, splatUrl = null, splatSpots = null, initialSpace, initialAppearance }: Props) {
   const router = useRouter();
   const apiRef = useRef<ViewerApi | null>(null);
   const [space, setSpace] = useState<TourSpace>(initialSpace);
@@ -311,6 +313,7 @@ export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, splatUr
               cleanAssetUrl={cleanAssetUrl}
               photos={appearance !== "studio"}
               splatUrl={splatUrl}
+              splatSpots={splatSpots}
               photoreal={appearance === "photoreal"}
               onSwitchError={(m) => flash("error", `That view couldn't be loaded: ${m}`)}
               effects

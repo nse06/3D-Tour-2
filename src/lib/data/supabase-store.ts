@@ -8,7 +8,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaultSpace } from "@/lib/tour/space";
-import type { FloorFeature, NavLink, TourAppearance, TourSpace, Vec2, Vec3 } from "@/lib/tour/types";
+import type { FloorFeature, NavLink, SplatSpot, TourAppearance, TourSpace, Vec2, Vec3 } from "@/lib/tour/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { NotFoundError, uniqueSlug, type Repository } from "./repository";
 import type {
@@ -52,6 +52,7 @@ interface TourRow {
   clean_asset_url?: string | null;
   /** Added by migration 20261010000000 (photoreal splats). */
   splat_url?: string | null;
+  splat_spots?: SplatSpot[] | null;
   asset_format: "glb" | "gltf";
   source: Tour["source"];
   scan_package_url: string | null;
@@ -137,6 +138,7 @@ const toTour = (r: TourRow): Tour => ({
   assetUrl: r.asset_url,
   cleanAssetUrl: r.clean_asset_url ?? null,
   splatUrl: r.splat_url ?? null,
+  splatSpots: Array.isArray(r.splat_spots) ? r.splat_spots : null,
   assetFormat: r.asset_format,
   source: r.source,
   scanPackageUrl: r.scan_package_url,
@@ -563,14 +565,27 @@ export class SupabaseRepository implements Repository {
     });
   }
 
-  async attachSplats(job: PhotorealJob, splatUrl: string): Promise<boolean> {
+  async attachSplats(job: PhotorealJob, splatUrl: string, spots: SplatSpot[] | null): Promise<boolean> {
     if (!job.tourId) return false;
     const db = await this.client();
-    return withMigrations(async () => {
-      const row = check(
-        await db.from("tours").update({ splat_url: splatUrl }).eq("id", job.tourId!).eq("property_id", job.propertyId).select("id").maybeSingle(),
+    const attach = async (withSpots: boolean) =>
+      check(
+        await db
+          .from("tours")
+          .update(withSpots ? { splat_url: splatUrl, splat_spots: spots } : { splat_url: splatUrl })
+          .eq("id", job.tourId!)
+          .eq("property_id", job.propertyId)
+          .select("id")
+          .maybeSingle(),
       );
-      return !!row;
-    });
+    try {
+      // A database from before splat_spots gets the column here when this server reaches Postgres.
+      return await withMigrations(async () => !!(await attach(true)));
+    } catch (e) {
+      // Otherwise the splats still go on the tour, and the viewer judges close-ups by distance alone.
+      if (!(e instanceof Error) || !/splat_spots/.test(e.message)) throw e;
+      console.error("photoreal: tours.splat_spots is missing (open /setup); attaching the splats without their photo spots");
+      return withMigrations(async () => !!(await attach(false)));
+    }
   }
 }

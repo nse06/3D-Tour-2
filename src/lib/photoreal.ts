@@ -11,6 +11,7 @@ import path from "node:path";
 import { isSupabaseConfigured, supabasePublicKey } from "@/lib/data/config";
 import type { Repository } from "@/lib/data/repository";
 import type { PhotorealJob } from "@/lib/data/types";
+import type { SplatSpot } from "@/lib/tour/types";
 import { CONTENT_TYPES, extensionOf, localUploadPath, localUploadUrl, signLocalRead } from "@/lib/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -241,6 +242,17 @@ export async function dispatchJob(repo: Repository, job: PhotorealJob, baseUrl: 
       finishedAt: null,
     })) ?? job
   );
+}
+
+/** The worker's photo spots ([x, y, z, yaw, pitch] each), checked and rounded; null if absent or malformed. */
+export function checkSpots(value: unknown): SplatSpot[] | null {
+  if (!Array.isArray(value) || !value.length || value.length > 10_000) return null;
+  const spots: SplatSpot[] = [];
+  for (const entry of value) {
+    if (!Array.isArray(entry) || entry.length !== 5 || !entry.every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 1e4)) return null;
+    spots.push(entry.map((v: number) => Math.round(v * 100) / 100) as SplatSpot);
+  }
+  return spots;
 }
 
 /** What the dashboard and the phone show of a job. */
