@@ -27,7 +27,7 @@ gpu_image = (
     modal.Image.debian_slim(python_version="3.10")
     .pip_install("torch==2.4.1", index_url="https://download.pytorch.org/whl/cu124")
     .pip_install("gsplat==1.5.3+pt24cu124", extra_index_url="https://docs.gsplat.studio/whl/pt24cu124")
-    .pip_install("numpy<2", "pillow>=10", "jaxtyping", "rich")
+    .pip_install("numpy<2", "pillow>=10", "jaxtyping", "rich", "packaging")  # gsplat imports packaging at runtime
     .add_local_python_source("atrium_photoreal")
 )
 web_image = modal.Image.debian_slim(python_version="3.10").pip_install("fastapi[standard]")
