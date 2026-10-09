@@ -112,8 +112,8 @@ jobs:
       - name: Pair, build the demo scan and send it to a mock Atrium server
         run: |
           python3 ios/ci/mock_atrium_server.py --port 8765 --out results > mock.log 2>&1 &
-          sleep 1
           TOKEN=$(python3 -c "print('T' * 43)")
+          for i in $(seq 1 30); do curl -sf "http://127.0.0.1:8765/api/capture/sessions/$TOKEN" > /dev/null && break; sleep 1; done
           LINK="atriumcapture://pair?server=http%3A%2F%2F127.0.0.1%3A8765&token=$TOKEN"
           xcrun simctl launch "$UDID" com.atrium.capture -atrium-automation "pair=$LINK|wait=2|demo|wait=3|send|wait=2"
           STATUS="$(xcrun simctl get_app_container "$UDID" com.atrium.capture data)/Documents/automation-status.json"
@@ -167,8 +167,8 @@ jobs:
       - name: Make a rebuilt scan photoreal (send it, then upload its photos to a mock Atrium server)
         run: |
           python3 ios/ci/mock_atrium_server.py --port 8766 --out results/photoreal > mock-photoreal.log 2>&1 &
-          sleep 1
           TOKEN=$(python3 -c "print('P' * 43)")
+          for i in $(seq 1 30); do curl -sf "http://127.0.0.1:8766/api/capture/sessions/$TOKEN" > /dev/null && break; sleep 1; done
           LINK="atriumcapture://pair?server=http%3A%2F%2F127.0.0.1%3A8766&token=$TOKEN"
           xcrun simctl terminate "$UDID" com.atrium.capture || true
           DATA="$(xcrun simctl get_app_container "$UDID" com.atrium.capture data)"

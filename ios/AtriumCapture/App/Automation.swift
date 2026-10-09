@@ -22,7 +22,8 @@
                         return report("failed", "not a pairing link: \(step)")
                     }
                     await pair(with: link)
-                    guard let pairing else { return report("failed", banner?.message ?? "pairing failed") }
+                    // A failed pairing leaves the previous one in place: that's a failure here.
+                    guard let pairing, pairing.token == link.token else { return report("failed", banner?.message ?? "pairing failed") }
                     report("paired", pairing.propertyLabel)
                 } else if step == "demo" {
                     guard let record = await makeDemoScan() else { return report("failed", banner?.message ?? "demo scan failed") }

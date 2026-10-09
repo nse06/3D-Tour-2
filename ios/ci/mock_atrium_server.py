@@ -12,6 +12,7 @@ results.json into --out.
 import argparse
 import json
 import re
+import socketserver
 import struct
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -219,12 +220,20 @@ def make_handler(state: State):
     return Handler
 
 
+class Server(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer looks up the host's name here, before it listens; on CI runners that lookup
+        # can take many seconds, refusing the app's first requests.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--out", type=Path, default=Path("results"))
     args = parser.parse_args()
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(State(args.out)))
+    server = Server(("127.0.0.1", args.port), make_handler(State(args.out)))
     print(f"mock Atrium server on http://127.0.0.1:{args.port}", flush=True)
     server.serve_forever()
 
