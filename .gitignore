@@ -48,3 +48,7 @@ next-env.d.ts
 ios/**/xcuserdata/
 ios/build/
 ios/ScanCore/.build/
+
+# Python (photoreal worker)
+__pycache__/
+.pytest_cache/

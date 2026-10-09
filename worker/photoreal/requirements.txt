@@ -1,0 +1,7 @@
+# The worker itself (the Modal image pins CUDA builds of these; see modal_app.py).
+torch>=2.4
+gsplat==1.5.3
+numpy
+pillow>=10
+jaxtyping
+rich
