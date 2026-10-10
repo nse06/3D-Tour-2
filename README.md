@@ -154,6 +154,19 @@ The repository interface (`src/lib/data/repository.ts`) has two implementations,
 
 Sign-ups are confirmed immediately when the server has the Supabase admin key. Without Supabase, a deployment still runs but has nowhere durable to keep listings, so the dashboard sends you to `/setup`. `/tour/sample` always works.
 
+### Password reset emails
+
+**Forgot your password?** on the sign-in page sends Supabase's reset email, whose link lands on `/auth/callback` and then
+`/reset-password` (signed-in realtors reach that page from **Change password** too). Set up once in Supabase:
+
+1. **Authentication → URL Configuration**: **Site URL** = the site's address, and add `https://<your site>/**` to
+   **Redirect URLs**. Otherwise the emailed link leads to `localhost`.
+2. Optional, so the link works from any device (the default only works in the browser that asked for it):
+   **Authentication → Email Templates → Reset password**, link to
+   `{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery`.
+3. Supabase's built-in email only reaches the project's own team members. Before other realtors sign up, add an
+   SMTP sender (**Authentication → SMTP Settings**, e.g. Resend or Postmark).
+
 ---
 
 ## Project structure

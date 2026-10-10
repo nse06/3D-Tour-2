@@ -40,5 +40,5 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Public tours and static assets never need the auth round-trip.
-  matcher: ["/dashboard/:path*", "/login", "/api/properties/:path*"],
+  matcher: ["/dashboard/:path*", "/login", "/reset-password", "/api/properties/:path*"],
 };

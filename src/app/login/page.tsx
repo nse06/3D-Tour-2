@@ -11,7 +11,7 @@ export const metadata = { title: "Sign in" };
 export default async function LoginPage(props: PageProps<"/login">) {
   if (!isSupabaseConfigured()) redirect("/dashboard");
   if (await getCurrentUser()) redirect("/dashboard");
-  const { next, error } = await props.searchParams;
+  const { next, error, mode } = await props.searchParams;
   return (
     <div className="grid min-h-screen md:grid-cols-2">
       <div className="relative hidden md:block">
@@ -30,7 +30,7 @@ export default async function LoginPage(props: PageProps<"/login">) {
         <p className="mt-2 text-neutral-600">Sign in to manage your 3D listings.</p>
         {typeof error === "string" && <p className="mt-4 max-w-sm rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">{error}</p>}
         <div className="mt-8 max-w-sm">
-          <LoginForm next={typeof next === "string" ? next : "/dashboard"} />
+          <LoginForm next={typeof next === "string" ? next : "/dashboard"} initialMode={mode === "reset" ? "reset" : "signin"} />
         </div>
       </div>
     </div>

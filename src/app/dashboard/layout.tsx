@@ -46,6 +46,11 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
               <span className="hidden text-sm font-medium md:inline">{user.name}</span>
             </div>
             {mode === "supabase" && (
+              <Link href="/reset-password" className="hidden rounded-full px-3 py-1.5 text-sm text-neutral-500 hover:bg-black/5 hover:text-ink sm:inline">
+                Change password
+              </Link>
+            )}
+            {mode === "supabase" && (
               <form action={signOutAction}>
                 <button className="rounded-full px-3 py-1.5 text-sm text-neutral-500 hover:bg-black/5 hover:text-ink">Sign out</button>
               </form>

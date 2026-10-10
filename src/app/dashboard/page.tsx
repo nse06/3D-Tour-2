@@ -13,8 +13,9 @@ import { cityLine, formatBaths, formatNumber, formatPrice } from "@/lib/format";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Listings" };
 
-export default async function DashboardPage() {
+export default async function DashboardPage(props: PageProps<"/dashboard">) {
   const user = await requireUser();
+  const { password } = await props.searchParams;
   const listings = await (await getRepository()).listProperties(user.id).catch((e) => {
     // A fresh Supabase project without Atrium's tables: /setup hands over the SQL.
     if (isMissingSchemaError(e)) redirect("/setup");
@@ -22,6 +23,7 @@ export default async function DashboardPage() {
   });
   return (
     <div className="rise">
+      {password === "updated" && <p className="mb-8 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Your password was changed.</p>}
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-[12px] font-semibold uppercase tracking-[0.24em] text-stone">Your listings</p>
