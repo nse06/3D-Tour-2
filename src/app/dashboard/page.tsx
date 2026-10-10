@@ -2,6 +2,7 @@ import { Box, Eye, Pencil, Plus, Smartphone } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CopyLinkButton } from "@/components/dashboard/CopyLinkButton";
+import { CoverMaker } from "@/components/dashboard/CoverMaker";
 import { ButtonLink, Card, StatusPill } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { getRepository } from "@/lib/data/repository";
@@ -43,6 +44,8 @@ export default async function DashboardPage() {
       )}
 
       <IphoneCaptureNote />
+      {/* Listings with a tour and no cover get its opening view as their thumbnail. */}
+      <CoverMaker propertyIds={listings.filter((l) => l.tour && !l.property.coverImageUrl).map((l) => l.property.id)} />
     </div>
   );
 }

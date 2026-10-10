@@ -2,6 +2,8 @@ import { ArrowLeft, Box, Eye, Layers, MousePointerClick, Pencil } from "lucide-r
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CaptureUploader } from "@/components/dashboard/CaptureUploader";
+import { CoverMaker } from "@/components/dashboard/CoverMaker";
+import { CoverUpload } from "@/components/dashboard/CoverUpload";
 import { PhoneCapturePanel } from "@/components/dashboard/PhoneCapturePanel";
 import { PhotorealPanel } from "@/components/dashboard/PhotorealPanel";
 import { AttachDemoButton, DeletePropertyButton, PublishPanel } from "@/components/dashboard/PropertyActions";
@@ -88,6 +90,8 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
                   </span>
                 </Link>
               )}
+              <CoverUpload propertyId={p.id} hasCover={!!p.coverImageUrl} />
+              {tour && !p.coverImageUrl && <CoverMaker propertyIds={[p.id]} />}
             </div>
             <div className="p-6">
               <div className="flex items-start justify-between gap-4">

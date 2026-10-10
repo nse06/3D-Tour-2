@@ -7,14 +7,14 @@ import QRCode from "qrcode";
 import { requireUser } from "@/lib/auth";
 import { CAPTURE_SESSION_TTL_MS, newCaptureToken, pairingDeepLink, serverBaseUrl } from "@/lib/capture-sessions";
 import { isSupabaseConfigured, storageMode } from "@/lib/data/config";
-import { adminRepositoryUnavailableReason, getAdminRepository, getRepository } from "@/lib/data/repository";
+import { adminRepositoryUnavailableReason, bundleToTourData, getAdminRepository, getRepository } from "@/lib/data/repository";
 import type { PropertyInput } from "@/lib/data/types";
 import { DEMO_ASSET_URL, DEMO_COVER_URL, demoManifest } from "@/lib/demo";
 import { ingestCapture } from "@/lib/ingest";
 import { dispatchJob, gpuConfigured, inputNames, WAITING_FOR_GPU } from "@/lib/photoreal";
 import { manifestToSpace } from "@/lib/tour/scan-manifest";
 import { newId, parseSpace } from "@/lib/tour/space";
-import type { TourAppearance } from "@/lib/tour/types";
+import type { TourAppearance, TourData } from "@/lib/tour/types";
 import { isOwnedAssetUrl } from "@/lib/storage";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -266,6 +266,14 @@ export async function createCaptureSessionAction(propertyId: string): Promise<Ac
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
+}
+
+/** What the cover maker renders for a listing with a tour and no cover yet (null: nothing to do). */
+export async function coverSourceAction(propertyId: string): Promise<TourData | null> {
+  const user = await requireUser();
+  const bundle = await (await getRepository()).getProperty(user.id, propertyId);
+  if (!bundle || bundle.property.coverImageUrl) return null;
+  return bundleToTourData(bundle);
 }
 
 export async function setCoverImageAction(propertyId: string, assetUrl: string): Promise<ActionResult> {
