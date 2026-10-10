@@ -15,7 +15,7 @@ export type SetupStatus =
   | { ok: false; reason: "unreachable"; message: string };
 
 /** Tables each migration introduces, in migration order. */
-const REQUIRED_TABLES = ["properties", "tours", "floors", "rooms", "capture_sessions", "photoreal_jobs"];
+const REQUIRED_TABLES = ["properties", "tours", "floors", "rooms", "capture_sessions", "photoreal_jobs", "billing_grants"];
 /** Columns later migrations add to existing tables (a missing one also triggers the setup). */
 const REQUIRED_COLUMNS: [table: string, column: string][] = [
   ["tours", "clean_asset_url"],

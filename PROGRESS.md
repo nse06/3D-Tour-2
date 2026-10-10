@@ -55,6 +55,16 @@ Branch: `claude/3d-real-estate-tour-mvp-pxgyqw`
 | GPU worker (`worker/photoreal`): gsplat MCMC recipe, discs on the seeds, per-photo exposure and pose, people masked out, `.spz` v3 under 45 MB; Modal app | done — 7 CPU tests; waiting for Modal tokens to run on a GPU |
 | Viewer: **Photoreal** switch (Spark 2.2.0, loaded on first use), photoreal as a starting look | done — in Chromium the splats sit on the painted model with its colors (seed-disc splats 26–46 dB against the painted view at 6 spots) |
 
+## Billing ([docs/billing.md](docs/billing.md))
+
+| Piece | Status |
+|-------|--------|
+| Plans: $19 a listing (first free), $39/month Unlimited, $79/month Pro (5 photoreal a month, then $15), photoreal $20 a listing and free during the beta; exempt accounts | done |
+| Stripe Checkout (prices by lookup key, created on first use), return page, signed webhook, customer portal (plan switches, cancelling, cards, invoices) | done |
+| Gates: publishing, photoreal from the dashboard and from the phone (the job waits; paying starts it; the phone never shows prices); **Plans & billing** page | done |
+| Supabase: billing tables (owner-read RLS, server-only writes), a trigger that refuses unpaid publishes from a realtor's own session, live listings carried over when charging starts | done — migration and trigger tested on Postgres 16, the store and RLS through PostgREST |
+| End to end against a Stripe stand-in, prod build, headless Chromium: billing on (74 checks), off, and on during the beta | done |
+
 ## Photoreal prototype (`prototypes/photoreal`)
 
 | Piece | Status |

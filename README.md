@@ -167,6 +167,15 @@ Sign-ups are confirmed immediately when the server has the Supabase admin key. W
 3. Supabase's built-in email only reaches the project's own team members. Before other realtors sign up, add an
    SMTP sender (**Authentication → SMTP Settings**, e.g. Resend or Postmark).
 
+### Billing (Stripe)
+
+Realtors pay on the website with Stripe Checkout: **$19 a listing** (the first one free) or **$39/month** for unlimited
+listings; photoreal walkthroughs are **$20 a listing**, or **$79/month Pro** with 5 a month included ($15 after that).
+Photoreal is free for founding agents during the beta. Everything is free until `STRIPE_SECRET_KEY` is set. To turn
+billing on, add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in Vercel and point a Stripe webhook at
+`https://<your site>/api/stripe/webhook`. Stripe's products and prices are created on first use. The steps, the
+events to send, and how listings are covered are in [docs/billing.md](docs/billing.md).
+
 ---
 
 ## Project structure
@@ -185,13 +194,15 @@ src/
     tour/[slug]/page.tsx          # PUBLIC shareable tour
     dashboard/…                   # listings, new, [id], [id]/rooms, [id]/preview + server actions
     login/                        # Supabase auth
-    api/                          # signed uploads, local asset serving
+    dashboard/billing/            # plans, Stripe checkout and portal (docs/billing.md)
+    api/                          # signed uploads, local asset serving, Stripe return + webhook
   components/
     tour/                         # TourViewer (overlay UI), TourScene (R3F), CameraRig, FloorPlan
     dashboard/                    # PropertyForm, CaptureUploader, RoomEditor, publish controls
   lib/
     tour/                         # types, navigation, scan manifest, space validation
     data/                         # repository + local / Supabase implementations
+    billing/                      # plans, who pays for what, Stripe, billing records
     demo/                         # demo listing + manifest
   proxy.ts                        # Supabase session refresh / dashboard guard
 ```

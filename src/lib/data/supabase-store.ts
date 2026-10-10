@@ -184,11 +184,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MISSING_SCHEMA = /PGRST20[45]|42P01|schema cache|does not exist/i;
 
 /**
- * Runs `fn`; if the database predates a migration it needs (photoreal jobs), applies the
+ * Runs `fn`; if the database predates a migration it needs (photoreal jobs, billing), applies the
  * migrations first (when this server reaches Postgres directly) and retries while the API reloads
  * its schema.
  */
-async function withMigrations<T>(fn: () => Promise<T>): Promise<T> {
+export async function withMigrations<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (e) {

@@ -10,6 +10,7 @@ import { AttachDemoButton, DeletePropertyButton, PublishPanel } from "@/componen
 import { PropertyForm } from "@/components/dashboard/PropertyForm";
 import { ButtonLink, Card, StatusPill } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
+import { photorealPricing, publishPricing } from "@/lib/billing/labels";
 import { getRepository } from "@/lib/data/repository";
 import { cityLine, formatPrice } from "@/lib/format";
 import { gpuConfigured, jobSummary } from "@/lib/photoreal";
@@ -29,7 +30,7 @@ const SOURCE_LABEL = { demo: "Sample capture", upload: "Uploaded model", ios_sca
 
 export default async function PropertyPage(props: PageProps<"/dashboard/properties/[id]">) {
   const { id } = await props.params;
-  const { scan } = await props.searchParams;
+  const { scan, paid } = await props.searchParams;
   const user = await requireUser();
   const repo = await getRepository();
   const bundle = await repo.getProperty(user.id, id);
@@ -43,9 +44,27 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
   const live = p.published && !!tour?.published;
   const floors = space ? sortedFloors(space) : [];
   const roomCount = space?.rooms.length ?? 0;
+  // Prices are a hint here (checked again on click): billing trouble mustn't break the page.
+  const noPricing = (e: unknown) => {
+    console.error("billing lookup:", (e as Error).message);
+    return null;
+  };
+  const [publishCost, photorealCost] = await Promise.all([
+    live ? null : publishPricing(user, id).catch(noPricing),
+    tour?.source === "ios_scan" ? photorealPricing(user, id).catch(noPricing) : null,
+  ]);
 
   return (
     <div className="rise">
+      {paid === "listing" && <p className="mb-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Payment received. Your tour is live.</p>}
+      {paid === "photoreal" && (
+        <p className="mb-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Payment received. Photoreal is on for this listing.</p>
+      )}
+      {paid === "pending" && (
+        <p className="mb-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Your payment is still clearing with the bank. The listing updates by itself once it has.
+        </p>
+      )}
       <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-ink">
         <ArrowLeft className="size-4" /> Listings
       </Link>
@@ -155,6 +174,7 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
                 initialJob={photorealJob ? jobSummary(photorealJob) : null}
                 gpuReady={gpuConfigured()}
                 hasPhotoScan={!!tour.cleanAssetUrl}
+                pricing={photorealCost}
               />
             </Card>
           )}
@@ -168,7 +188,7 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
           <Card className="p-6">
             <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-stone">Share</p>
             <div className="mt-4">
-              <PublishPanel propertyId={p.id} slug={p.slug} published={live} hasCapture={!!tour && roomCount > 0} />
+              <PublishPanel propertyId={p.id} slug={p.slug} published={live} hasCapture={!!tour && roomCount > 0} pricing={publishCost} />
             </div>
           </Card>
           <Card className="p-6 text-sm text-neutral-600">

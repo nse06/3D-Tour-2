@@ -42,7 +42,9 @@ Written by `PhotorealExport.swift` with each build (and `scanproc paint … --ph
 2. **`POST …/photoreal/{jobId}`**: the site lists what arrived; if everything is there the job is `queued` and
    handed to the GPU (`PHOTOREAL_GPU_URL`, with the shared secret): `{ jobId, callback, files: [{ name, url }] }`,
    download links valid for 24 hours. If the GPU takes it the job is `running`; if no GPU is set up, or it doesn't
-   answer, the job waits in `queued` with the reason, and the dashboard can start it later.
+   answer, the job waits in `queued` with the reason, and the dashboard can start it later. With billing on and
+   photoreal not yet paid for on this listing ([billing.md](billing.md)), the job also waits in `queued`: the
+   listing page offers **Add photoreal**, and paying starts it. The phone only says it's waiting, never a price.
    `GET …/photoreal/{jobId}` tells the phone how it is doing.
 3. **Worker → site**: `POST /api/photoreal/jobs/{id}` with `Authorization: Bearer PHOTOREAL_WORKER_SECRET`:
    * `{ event: "progress", stage, progress, message }`: stages `starting`, `downloading`, `training`, `uploading`;

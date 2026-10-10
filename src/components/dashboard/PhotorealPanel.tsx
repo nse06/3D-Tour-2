@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { startPhotorealAction } from "@/app/dashboard/actions";
 import { Button, ButtonLink } from "@/components/ui";
+import { PHOTOREAL_UNPAID, type PhotorealPricing } from "@/lib/billing/plans";
 
 export interface PhotorealJobView {
   id: string;
@@ -42,16 +43,20 @@ export function PhotorealPanel({
   initialJob,
   gpuReady,
   hasPhotoScan,
+  pricing,
 }: {
   propertyId: string;
   initialJob: PhotorealJobView | null;
   gpuReady: boolean;
   hasPhotoScan: boolean;
+  /** What photoreal costs for this listing (null: nothing to say). */
+  pricing: PhotorealPricing | null;
 }) {
   const router = useRouter();
   const [job, setJob] = useState(initialJob);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [leaving, setLeaving] = useState(false);
   const moving = job && (job.status === "uploading" || job.status === "queued" || job.status === "running");
 
   // While the job moves, follow it; once it's done, show the new look on the page.
@@ -76,11 +81,19 @@ export function PhotorealPanel({
     startTransition(async () => {
       setError(null);
       const res = await startPhotorealAction(propertyId);
+      if (res.checkoutUrl) {
+        // Paid on Stripe's page; training starts when it comes back.
+        setLeaving(true);
+        window.location.assign(res.checkoutUrl);
+        return;
+      }
       if (!res.ok) setError(res.error ?? "The GPU didn't take the job.");
       const latest = await fetch(`/api/properties/${propertyId}/photoreal`, { cache: "no-store" }).catch(() => null);
       if (latest?.ok) setJob((await latest.json()).job);
     });
 
+  const busy = pending || leaving;
+  const pay = !!pricing?.pay;
   const stats = job?.stats ?? {};
   const minutes = job?.startedAt && job.finishedAt ? Math.round((Date.parse(job.finishedAt) - Date.parse(job.startedAt)) / 60000) : null;
 
@@ -106,6 +119,7 @@ export function PhotorealPanel({
               <>Send a scan from Atrium Capture first: photoreal is made from its photos.</>
             )}
           </p>
+          {pricing?.note && <p className="text-xs text-neutral-500">{pricing.note}</p>}
           {!gpuReady && <p className="text-xs text-neutral-400">The GPU isn&apos;t connected to this site yet (see docs/photoreal.md).</p>}
         </div>
       )}
@@ -118,11 +132,15 @@ export function PhotorealPanel({
 
       {job?.status === "queued" && (
         <div className="mt-3 space-y-3 text-sm">
-          <p className="text-neutral-600">The photos are here and waiting for the GPU.</p>
-          {job.message && <p className="text-xs text-neutral-400">{job.message}</p>}
+          <p className="text-neutral-600">
+            {pay ? "The photos are here. Training starts as soon as photoreal is paid for." : "The photos are here and waiting for the GPU."}
+          </p>
+          {pricing?.note && <p className="text-xs text-neutral-500">{pricing.note}</p>}
+          {job.message && job.message !== PHOTOREAL_UNPAID && <p className="text-xs text-neutral-400">{job.message}</p>}
           {gpuReady && (
-            <Button onClick={start} disabled={pending} size="sm">
-              {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />} Start
+            <Button onClick={start} disabled={busy} size="sm">
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : pay ? <Sparkles className="size-3.5" /> : <Play className="size-3.5" />}{" "}
+              {pay ? pricing!.payLabel : "Start"}
             </Button>
           )}
         </div>
@@ -178,8 +196,8 @@ export function PhotorealPanel({
             <AlertTriangle className="mt-0.5 size-4 shrink-0" /> The GPU couldn&apos;t finish: {job.message ?? "unknown error"}
           </p>
           {gpuReady && (
-            <Button onClick={start} disabled={pending} size="sm" variant="secondary">
-              {pending ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />} Try again
+            <Button onClick={start} disabled={busy} size="sm" variant="secondary">
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />} {pay ? pricing!.payLabel : "Try again"}
             </Button>
           )}
         </div>

@@ -5,6 +5,9 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { requireUser } from "@/lib/auth";
+import { claim, listingAccess, photorealAccess, type Access } from "@/lib/billing/access";
+import type { PriceKey } from "@/lib/billing/plans";
+import { checkoutUrl } from "@/lib/billing/stripe";
 import { CAPTURE_SESSION_TTL_MS, newCaptureToken, pairingDeepLink, serverBaseUrl } from "@/lib/capture-sessions";
 import { isSupabaseConfigured, storageMode } from "@/lib/data/config";
 import { adminRepositoryUnavailableReason, bundleToTourData, getAdminRepository, getRepository } from "@/lib/data/repository";
@@ -15,6 +18,7 @@ import { dispatchJob, gpuConfigured, inputNames, WAITING_FOR_GPU } from "@/lib/p
 import { manifestToSpace } from "@/lib/tour/scan-manifest";
 import { newId, parseSpace } from "@/lib/tour/space";
 import type { TourAppearance, TourData } from "@/lib/tour/types";
+import { requestOrigin } from "@/lib/request-origin";
 import { isOwnedAssetUrl } from "@/lib/storage";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -30,6 +34,8 @@ export interface PropertyFormState {
 export interface ActionResult {
   ok: boolean;
   error?: string;
+  /** It costs money: Stripe's checkout page, where the realtor pays and comes back. */
+  checkoutUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,10 +133,44 @@ export async function deletePropertyAction(propertyId: string): Promise<void> {
 // Publishing
 // ---------------------------------------------------------------------------
 
+/**
+ * Claims what an action costs nothing for (docs/billing.md), or returns Stripe's checkout page when
+ * it has to be paid for first.
+ */
+async function claimOrCheckout(lookup: () => Promise<Access>, checkout: (price: PriceKey) => Promise<string>): Promise<string | null> {
+  let access = await lookup();
+  // The free first listing can go to another listing at the same moment: then this one is paid.
+  if (access.allowed && !(await claim(access))) {
+    access = await lookup();
+    if (access.allowed) await claim(access);
+  }
+  return access.allowed ? null : checkout(access.price);
+}
+
 export async function setPublishedAction(propertyId: string, published: boolean): Promise<ActionResult> {
   const user = await requireUser();
   try {
-    await (await getRepository()).setPublished(user.id, propertyId, published);
+    const repo = await getRepository();
+    if (published) {
+      const bundle = await repo.getProperty(user.id, propertyId);
+      if (!bundle) return { ok: false, error: "Property not found." };
+      if (!bundle.tour) return { ok: false, error: "Attach a 3D capture before publishing." };
+      const origin = requestOrigin(await headers());
+      const pay = await claimOrCheckout(
+        () => listingAccess(user, propertyId),
+        (price) =>
+          checkoutUrl({
+            payer: user,
+            price,
+            propertyId,
+            description: `Atrium listing: ${bundle.property.addressLine}`,
+            origin,
+            cancelPath: `/dashboard/properties/${propertyId}`,
+          }),
+      );
+      if (pay) return { ok: false, checkoutUrl: pay };
+    }
+    await repo.setPublished(user.id, propertyId, published);
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -211,17 +251,36 @@ export async function setAppearanceAction(propertyId: string, appearance: TourAp
 // Photoreal walkthroughs (docs/photoreal.md)
 // ---------------------------------------------------------------------------
 
-/** Hands the listing's waiting (or failed) photoreal job to the GPU again. */
+/**
+ * Hands the listing's waiting (or failed) photoreal job to the GPU again, or sends the realtor to
+ * pay for photoreal first; the job starts by itself once they have.
+ */
 export async function startPhotorealAction(propertyId: string): Promise<ActionResult> {
   const user = await requireUser();
   try {
     // Through the realtor's own session first: only their job is found.
-    const job = await (await getRepository()).latestPhotorealJob(user.id, propertyId);
+    const repo = await getRepository();
+    const job = await repo.latestPhotorealJob(user.id, propertyId);
     if (!job) return { ok: false, error: "No photos have been sent for a photoreal walkthrough yet." };
     if (job.status !== "queued" && job.status !== "failed")
       return { ok: false, error: `The photoreal walkthrough is already ${job.status === "done" ? "ready" : job.status}.` };
     if (!gpuConfigured()) return { ok: false, error: WAITING_FOR_GPU };
     if ((await inputNames(job)).length < job.files) return { ok: false, error: "The photos are no longer on the server. Send them again from Atrium Capture." };
+    const address = (await repo.getProperty(user.id, propertyId))?.property.addressLine ?? "your listing";
+    const origin = requestOrigin(await headers());
+    const pay = await claimOrCheckout(
+      () => photorealAccess(user, propertyId),
+      (price) =>
+        checkoutUrl({
+          payer: user,
+          price,
+          propertyId,
+          description: `Photoreal walkthrough: ${address}`,
+          origin,
+          cancelPath: `/dashboard/properties/${propertyId}`,
+        }),
+    );
+    if (pay) return { ok: false, checkoutUrl: pay };
     const started = await dispatchJob(await getAdminRepository(), job, serverBaseUrl(await headers()).url);
     revalidatePath(`/dashboard/properties/${propertyId}`);
     return started.status === "running" ? { ok: true } : { ok: false, error: started.message ?? "The GPU didn't take the job." };

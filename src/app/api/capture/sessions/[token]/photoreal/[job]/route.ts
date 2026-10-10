@@ -1,5 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { claim, payerFor, photorealAccess } from "@/lib/billing/access";
+import { PHOTOREAL_UNPAID } from "@/lib/billing/plans";
 import { apiError, resolveCaptureSession, serverError } from "@/lib/capture-api";
 import { serverBaseUrl } from "@/lib/capture-sessions";
 import type { Repository } from "@/lib/data/repository";
@@ -29,7 +31,11 @@ export async function GET(_request: Request, ctx: Context) {
   }
 }
 
-/** The phone uploaded every file: check they arrived and hand the job to the GPU. */
+/**
+ * The phone uploaded every file: check they arrived and hand the job to the GPU. When photoreal
+ * has to be paid for first, the job waits; paying on the website starts it (the phone never shows
+ * prices: payment happens on the website).
+ */
 export async function POST(_request: Request, ctx: Context) {
   const resolved = await sessionJob(ctx);
   if (resolved instanceof Response) return resolved;
@@ -43,8 +49,10 @@ export async function POST(_request: Request, ctx: Context) {
     if (!names.has("cameras.json") || !names.has("seeds.ply") || names.size < job.files) {
       return apiError(400, `Only ${names.size} of ${job.files} files arrived. Try sending again.`);
     }
-    job = (await repo.updatePhotorealJob(job.id, { status: "queued", stage: null, progress: 0, message: null })) ?? job;
-    job = await dispatchJob(repo, job, serverBaseUrl(await headers()).url);
+    const access = await photorealAccess(await payerFor(lookup.session.userId), lookup.property.id);
+    if (access.allowed) await claim(access);
+    job = (await repo.updatePhotorealJob(job.id, { status: "queued", stage: null, progress: 0, message: access.allowed ? null : PHOTOREAL_UNPAID })) ?? job;
+    if (access.allowed) job = await dispatchJob(repo, job, serverBaseUrl(await headers()).url);
     revalidatePath(`/dashboard/properties/${lookup.property.id}`);
     return Response.json(jobSummary(job), { headers: { "cache-control": "no-store" } });
   } catch (e) {

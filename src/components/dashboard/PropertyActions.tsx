@@ -1,21 +1,43 @@
 "use client";
 
 import { Box, ExternalLink, Globe, Loader2, Lock, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, useTransition } from "react";
 import { attachDemoCaptureAction, deletePropertyAction, setPublishedAction } from "@/app/dashboard/actions";
 import { Button, buttonClass } from "@/components/ui";
+import type { PublishPricing } from "@/lib/billing/plans";
 import { CopyLinkButton } from "./CopyLinkButton";
 
-export function PublishPanel({ propertyId, slug, published, hasCapture }: { propertyId: string; slug: string; published: boolean; hasCapture: boolean }) {
+export function PublishPanel({
+  propertyId,
+  slug,
+  published,
+  hasCapture,
+  pricing,
+}: {
+  propertyId: string;
+  slug: string;
+  published: boolean;
+  hasCapture: boolean;
+  /** What publishing costs (null: nothing to say). */
+  pricing: PublishPricing | null;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const path = `/tour/${slug}`;
   const toggle = () =>
     start(async () => {
       setError(null);
       const res = await setPublishedAction(propertyId, !published);
+      if (res.checkoutUrl) {
+        // Paid on Stripe's page; it comes back here with the tour live.
+        setLeaving(true);
+        window.location.assign(res.checkoutUrl);
+        return;
+      }
       if (!res.ok) setError(res.error ?? "Something went wrong.");
       router.refresh();
     });
@@ -49,11 +71,21 @@ export function PublishPanel({ propertyId, slug, published, hasCapture }: { prop
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button onClick={toggle} disabled={pending || (!published && !hasCapture)} variant={published ? "secondary" : "primary"}>
-          {pending && <Loader2 className="size-4 animate-spin" />}
-          {published ? "Unpublish" : "Publish tour"}
+        <Button onClick={toggle} disabled={pending || leaving || (!published && !hasCapture)} variant={published ? "secondary" : "primary"}>
+          {(pending || leaving) && <Loader2 className="size-4 animate-spin" />}
+          {published ? "Unpublish" : (pricing?.label ?? "Publish tour")}
         </Button>
       </div>
+      {!published && pricing?.note && (
+        <p className="mt-3 text-xs text-neutral-500">
+          {pricing.note}{" "}
+          {pricing.plans && (
+            <Link href="/dashboard/billing" className="font-medium text-ink underline underline-offset-2">
+              See plans
+            </Link>
+          )}
+        </p>
+      )}
     </div>
   );
 }

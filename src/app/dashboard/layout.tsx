@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Wordmark } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
+import { billingEnabled } from "@/lib/billing/config";
 import { storageMode } from "@/lib/data/config";
 import { signOutAction } from "./actions";
 
@@ -28,6 +29,11 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
             <Link href="/dashboard" className="rounded-full px-3 py-1.5 font-medium text-ink hover:bg-black/5">
               Listings
             </Link>
+            {billingEnabled() && (
+              <Link href="/dashboard/billing" className="rounded-full px-3 py-1.5 text-neutral-500 hover:bg-black/5 hover:text-ink">
+                Billing
+              </Link>
+            )}
             <Link href="/tour/sample" target="_blank" className="rounded-full px-3 py-1.5 text-neutral-500 hover:bg-black/5 hover:text-ink">
               Sample tour
             </Link>
