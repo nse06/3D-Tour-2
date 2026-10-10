@@ -174,7 +174,18 @@ readable only through the signed links the GPU gets, and are deleted when the sp
 * Checked end to end on this repo's synthetic apartment, with a stand-in for the GPU (the same worker code on a CPU,
   tiny images): the phone's upload code (run on Linux against the site), the site, the job, the callback, the
   splats on the tour. In a browser, splats made from the export's own seed points sit exactly on the painted model
-  and keep its colors (to 1–3 levels). Not yet run on a real GPU or a real home.
+  and keep its colors (to 1–3 levels).
+* **On the GPU, on the synthetic apartment** (rough capture, evaluation views it wasn't trained on): photoreal beats
+  the build 9 painted model on PSNR and SSIM for every kind of view, e.g. 26.75 vs 25.75 dB at 1.2 m from a wall
+  and 22.61 vs 21.08 dB at the photo spots. On LPIPS the painted model's crisp textures still win close to walls
+  (0.238 vs 0.269 at 1.2 m), and the splats win at the photo spots (0.161 vs 0.215). That's why the walkthrough
+  shows photoreal around the photo spots and the painted model up close (§4). The full table is in
+  `prototypes/photoreal/results/round-3/painted-vs-photoreal.md`. 16 views into a mirror are left out: the
+  reference renderer draws that reflection differently from one render to the next.
+* **First real home** (2026-10-10, worker `b8c7d79`): a bedroom scan with 199 photos at 1440 px trained in 24 minutes
+  on an A10G (about $0.45). That was 30,000 steps to 1,000,000 splats, with training PSNR rising steadily to 28.1.
+  The earlier trainer's collapse after a few thousand steps is gone. The room-shape rules found 10 walls plus the
+  floor and ceiling, and cleared 159 floaters.
 * Splats are weakest where no photo looked closely: a spot the phone only saw from far away or from above can show
   haze when a buyer walks right up to it. A scan whose coverage map is green everywhere gives the GPU the most to
   learn from.
