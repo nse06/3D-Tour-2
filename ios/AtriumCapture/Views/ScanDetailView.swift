@@ -286,6 +286,13 @@ struct ScanDetailView: View {
             Label("Ready. Open the walkthrough and tap Photoreal.", systemImage: "checkmark.circle.fill")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.green)
+            if model.pairing?.propertyId == sent.propertyId {
+                // Training improves; the photos are still on the phone, so a new run needs no rescan.
+                Text("Trains again on the same photos and replaces this photoreal walkthrough when it's done.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                photorealButton(scan, title: "Make it photoreal again", primary: false)
+            }
         case "failed"?:
             Label("The cloud GPU couldn't finish: \(job?.message ?? "unknown error")", systemImage: "exclamationmark.triangle.fill")
                 .font(.subheadline)
@@ -313,13 +320,13 @@ struct ScanDetailView: View {
         }
     }
 
-    private func photorealButton(_ scan: ScanRecord, title: String) -> some View {
+    private func photorealButton(_ scan: ScanRecord, title: String, primary: Bool = true) -> some View {
         Button {
             model.makePhotoreal(scan)
         } label: {
             Label(title, systemImage: "sparkles")
         }
-        .buttonStyle(PillButtonStyle())
+        .buttonStyle(PillButtonStyle(primary: primary))
         .disabled(model.building != nil || model.isSending(scan.id))
     }
 
@@ -354,7 +361,7 @@ struct ScanDetailView: View {
         Label("Sent\(label.map { " to \($0)" } ?? "")", systemImage: "checkmark.circle.fill")
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.green)
-        Text("\(rooms) room\(rooms == 1 ? "" : "s") are ready to walk through. Review them in the dashboard, then publish the tour.")
+        Text("\(rooms) room\(rooms == 1 ? " is" : "s are") ready to walk through. Review \(rooms == 1 ? "it" : "them") in the dashboard, then publish the tour.")
             .font(.subheadline)
             .foregroundStyle(.secondary)
         if let url = URL(string: previewUrl) {
