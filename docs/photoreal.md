@@ -23,7 +23,7 @@ Written by `PhotorealExport.swift` with each build (and `scanproc paint … --ph
 
 * **`cameras.json`**: `format`, `convention`, the model's `bounds`, its `rooms`, and per photo (`frames`)
   the `file` (`frames/000012.jpg`), `width`/`height`, intrinsics `fx fy cx cy` at that size, `exposure`, `turnRate`,
-  and `pose`: 16 numbers, column-major, the ARKit camera-to-world (x right, y up, looking down −z) **in the model's
+  `speed` (build 11 on: how fast the phone was moving, m/s) and `pose`: 16 numbers, column-major, the ARKit camera-to-world (x right, y up, looking down −z) **in the model's
   frame**, as painted after the photos were lined up (`PoseRefinement`). So the splats come out in the frame of the
   `.glb` the listing shows, and need no alignment. OpenCV camera-to-world = `pose · diag(1, −1, −1, 1)`.
 * **`seeds.ply`**: where training starts. Binary little-endian, per point `float x y z nx ny nz` and
@@ -96,8 +96,8 @@ needle or a blob hanging off a wall. Training keeps three rules on top of the re
 `stats` adds `shellPlanes`, `onShell` (splats on them at the end) and `floatersCleared`.
 
 **Sharp photos first** (`sharpness.py`). A photo taken while the phone turns is smeared by about turn rate ×
-exposure × focal length pixels: in evening light (1/30 s) a slow 0.2 rad/s turn smears 9 px across a 1920 px photo,
-and the app also takes photos while the phone keeps moving. Trained on every photo equally, the splats average the
+exposure × focal length pixels: indoors the camera runs at its longest exposure (1/60 s), where a slow 0.2 rad/s turn
+smears 5 px across a 1920 px photo, and builds before 11 also took photos while the phone kept moving. Trained on every photo equally, the splats average the
 smeared photos in and come out soft, while the painted model takes each spot from its sharpest photo. So each photo
 gets a say: the median, over the surface points it sees (seeds in front of it, not behind nearer ones), of (sharpest
 smear there + 1 px) / (its smear + 1 px). A photo that is the best view of its surfaces keeps a full say however

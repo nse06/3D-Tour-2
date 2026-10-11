@@ -5,9 +5,10 @@ import Foundation
 /// screen's map. A photo covers a spot by the painting's own rules: it faces the spot, points at it,
 /// is close enough and nothing stands in between (walls, furniture boxes). Good: within 60° of
 /// head-on, 4.5 m and away from the photo's edges; weak: seen at all (from the side, far away or at
-/// the edge of the frame), which paints soft or stretched. What furniture stands right in front of
-/// (the wall behind a wardrobe, the side of a cabinet against the next one) needs no photo and
-/// doesn't count.
+/// the edge of the frame), which paints soft or stretched. A photo smeared by the phone moving
+/// (PhotoSharpness) covers weakly at best, and not at all past `PhotoSharpness.soft`. What furniture
+/// stands right in front of (the wall behind a wardrobe, the side of a cabinet against the next one)
+/// needs no photo and doesn't count.
 public struct CaptureCoverage: Sendable, Equatable {
     public enum Level: UInt8, Sendable, Comparable {
         case missing = 0, weak = 1, good = 2
@@ -169,10 +170,15 @@ public struct CaptureCoverage: Sendable, Equatable {
     struct View {
         let position: Vec3, right: Vec3, up: Vec3, back: Vec3
         let fx: Float, fy: Float, cx: Float, cy: Float, width: Float, height: Float
+        /// The most this photo can do for a spot: weak when smeared (photos without a turn rate count as sharp).
+        let best: Level
 
         init?(_ f: CameraFrame) {
             let k = f.intrinsics
             guard k.count == 9, f.width > 0, f.height > 0, f.transform.isFinite, k[0] > 1, k[4] > 1 else { return nil }
+            let smear = f.smearPixels ?? 0
+            guard smear <= PhotoSharpness.soft else { return nil }
+            best = smear <= PhotoSharpness.sharp ? .good : .weak
             position = f.transform.translation
             right = vnormalize(f.transform.xAxis)
             up = vnormalize(f.transform.yAxis)
@@ -212,7 +218,7 @@ public struct CaptureCoverage: Sendable, Equatable {
             guard z > 0.1 else { continue }
             let u = (v.fx * vdot(d, v.right) / z + v.cx) / v.width, w = (-v.fy * vdot(d, v.up) / z + v.cy) / v.height
             guard u > 0.02, u < 0.98, w > 0.02, w < 0.98 else { continue }
-            let level: Level = facing >= 0.5 && dist <= 4.5 && abs(u - 0.5) < 0.42 && abs(w - 0.5) < 0.42 ? .good : .weak
+            let level: Level = min(v.best, facing >= 0.5 && dist <= 4.5 && abs(u - 0.5) < 0.42 && abs(w - 0.5) < 0.42 ? .good : .weak)
             guard level > best, !blocked(from: v.position, to: p, occluders, skipWall: skipWall, skipBox: skipBox) else { continue }
             best = level
             if best == .good { break }

@@ -37,6 +37,7 @@ public struct PhotorealExport: Sendable {
                 "pose": pose.m.map(Double.init), "t": frame.t,
             ]
             if let rate = frame.angularSpeed, rate.isFinite { entry["turnRate"] = Double(rate) }
+            if let speed = frame.linearSpeed, speed.isFinite { entry["speed"] = Double(speed) }
             if let exposure = frame.exposureDuration, exposure.isFinite { entry["exposure"] = exposure }
             cameras.append(entry)
         }
