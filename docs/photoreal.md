@@ -109,7 +109,10 @@ The first attempt drew smeared photos less often where sharper photos saw the sa
 a say of (sharpest smear there + 1 px) / (its smear + 1 px), photos drawn in proportion to say²). On the synthetic
 apartment with half its photos smeared (round 4, `prototypes/photoreal/results/round-4/`) that was a little crisper
 (LPIPS 0.01–0.02 better) but lost 0.2–0.6 dB, and edges seen from few sides, with fewer photos holding them, ghosted (a
-door frame). `stats` adds `smearPx` (median, 90th percentile, largest, at training size), `blurModel`,
+door frame). Matching smeared photos instead (round 5, `results/round-5/`) stays within 0.3 dB of taking them as they
+are, keeps most of the LPIPS gain (at the photo spots 0.173, against 0.189 as they are and 0.169 drawn less often), costs
+no time, and leaves the door frame as clean as before. The synthetic apartment is mostly flat walls, though, and its
+photos are 480 px across: a real, textured scan at 1920 px is the real test. `stats` adds `smearPx` (median, 90th percentile, largest, at training size), `blurModel`,
 `smearedPhotosMatched` and, with "sample", `photosLeftToSharper`.
 
 ## 4. In the walkthrough
