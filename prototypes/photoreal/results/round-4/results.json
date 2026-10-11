@@ -1,0 +1,3336 @@
+{
+ "summary": {
+  "even": {
+   "wall 1.2 m": {
+    "psnr": 26.36,
+    "ssim": 0.8736,
+    "lpips": 0.2825,
+    "views": 22
+   },
+   "wall 0.6 m": {
+    "psnr": 27.72,
+    "ssim": 0.888,
+    "lpips": 0.2642,
+    "views": 22
+   },
+   "wall at 45\u00b0": {
+    "psnr": 26.44,
+    "ssim": 0.8984,
+    "lpips": 0.2421,
+    "views": 22
+   },
+   "between": {
+    "psnr": 25.74,
+    "ssim": 0.8769,
+    "lpips": 0.2057,
+    "views": 26
+   },
+   "spots": {
+    "psnr": 22.77,
+    "ssim": 0.8339,
+    "lpips": 0.1863,
+    "views": 12
+   }
+  },
+  "priors": {
+   "wall 1.2 m": {
+    "psnr": 26.01,
+    "ssim": 0.8687,
+    "lpips": 0.2631,
+    "views": 22
+   },
+   "wall 0.6 m": {
+    "psnr": 27.16,
+    "ssim": 0.8841,
+    "lpips": 0.2556,
+    "views": 22
+   },
+   "wall at 45\u00b0": {
+    "psnr": 26.27,
+    "ssim": 0.8948,
+    "lpips": 0.2234,
+    "views": 22
+   },
+   "between": {
+    "psnr": 25.29,
+    "ssim": 0.8732,
+    "lpips": 0.1945,
+    "views": 26
+   },
+   "spots": {
+    "psnr": 22.54,
+    "ssim": 0.8283,
+    "lpips": 0.1725,
+    "views": 12
+   }
+  },
+  "blur-p1": {
+   "wall 1.2 m": {
+    "psnr": 26.15,
+    "ssim": 0.8722,
+    "lpips": 0.2681,
+    "views": 22
+   },
+   "wall 0.6 m": {
+    "psnr": 27.33,
+    "ssim": 0.8865,
+    "lpips": 0.2594,
+    "views": 22
+   },
+   "wall at 45\u00b0": {
+    "psnr": 26.44,
+    "ssim": 0.8968,
+    "lpips": 0.2306,
+    "views": 22
+   },
+   "between": {
+    "psnr": 25.27,
+    "ssim": 0.8756,
+    "lpips": 0.198,
+    "views": 26
+   },
+   "spots": {
+    "psnr": 22.62,
+    "ssim": 0.8312,
+    "lpips": 0.1761,
+    "views": 12
+   }
+  }
+ },
+ "variants": [
+  {
+   "variant": "even",
+   "config": {
+    "steps": 30000,
+    "long_side": 1440,
+    "max_gaussians": 1000000,
+    "sh_degree": 3,
+    "shell_snap": 0.025,
+    "shell_thickness": 0.002,
+    "max_anisotropy": 6.0,
+    "floater_radius": 0.3
+   },
+   "stats": {
+    "steps": 30000,
+    "gaussians": 1000000,
+    "trainPsnr": 31.14,
+    "seconds": 712.2,
+    "photos": 665,
+    "longSide": 1440,
+    "strategy": "mcmc",
+    "device": "cuda",
+    "poseShiftCm": 0.19,
+    "unitsPerMeter": 0.34,
+    "exposureModel": "gain",
+    "shellPlanes": 36,
+    "onShell": 744124,
+    "floatersCleared": 55,
+    "visibleAdam": true,
+    "psnrHistory": [
+     [
+      1,
+      18.41
+     ],
+     [
+      601,
+      25.63
+     ],
+     [
+      1201,
+      27.14
+     ],
+     [
+      1801,
+      27.26
+     ],
+     [
+      2401,
+      27.13
+     ],
+     [
+      3001,
+      28.39
+     ],
+     [
+      3601,
+      28.08
+     ],
+     [
+      4201,
+      28.19
+     ],
+     [
+      4801,
+      28.88
+     ],
+     [
+      5401,
+      28.89
+     ],
+     [
+      6001,
+      29.27
+     ],
+     [
+      6601,
+      29.55
+     ],
+     [
+      7201,
+      29.95
+     ],
+     [
+      7801,
+      29.64
+     ],
+     [
+      8401,
+      29.66
+     ],
+     [
+      9001,
+      29.97
+     ],
+     [
+      9601,
+      29.96
+     ],
+     [
+      10201,
+      29.92
+     ],
+     [
+      10801,
+      29.97
+     ],
+     [
+      11401,
+      30.4
+     ],
+     [
+      12001,
+      30.25
+     ],
+     [
+      12601,
+      30.97
+     ],
+     [
+      13201,
+      30.46
+     ],
+     [
+      13801,
+      30.35
+     ],
+     [
+      14401,
+      30.16
+     ],
+     [
+      15001,
+      30.63
+     ],
+     [
+      15601,
+      30.8
+     ],
+     [
+      16201,
+      30.58
+     ],
+     [
+      16801,
+      30.55
+     ],
+     [
+      17401,
+      30.68
+     ],
+     [
+      18001,
+      30.82
+     ],
+     [
+      18601,
+      31.14
+     ],
+     [
+      19201,
+      30.64
+     ],
+     [
+      19801,
+      31.09
+     ],
+     [
+      20401,
+      31.4
+     ],
+     [
+      21001,
+      31.18
+     ],
+     [
+      21601,
+      30.89
+     ],
+     [
+      22201,
+      30.84
+     ],
+     [
+      22801,
+      30.84
+     ],
+     [
+      23401,
+      30.81
+     ],
+     [
+      24001,
+      31.11
+     ],
+     [
+      24601,
+      30.96
+     ],
+     [
+      25201,
+      31.02
+     ],
+     [
+      25801,
+      31.2
+     ],
+     [
+      26401,
+      31.38
+     ],
+     [
+      27001,
+      31.4
+     ],
+     [
+      27601,
+      32.02
+     ],
+     [
+      28201,
+      31.29
+     ],
+     [
+      28801,
+      31.71
+     ],
+     [
+      29401,
+      31.18
+     ],
+     [
+      30000,
+      31.14
+     ]
+    ],
+    "smearPx": {
+     "median": 0.3,
+     "p90": 5.13,
+     "max": 6.0
+    },
+    "blurWeighting": false,
+    "photosLeftToSharper": 0,
+    "evalMinutes": 11.9
+   },
+   "views": [
+    {
+     "file": "000.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 1",
+     "psnr": 20.463,
+     "ssim": 0.9193,
+     "lpips": 0.273
+    },
+    {
+     "file": "001.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 1",
+     "psnr": 32.363,
+     "ssim": 0.9885,
+     "lpips": 0.0411
+    },
+    {
+     "file": "002.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 1",
+     "psnr": 18.782,
+     "ssim": 0.8747,
+     "lpips": 0.3803
+    },
+    {
+     "file": "003.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 2",
+     "psnr": 25.653,
+     "ssim": 0.8835,
+     "lpips": 0.1487
+    },
+    {
+     "file": "004.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 2",
+     "psnr": 24.724,
+     "ssim": 0.8619,
+     "lpips": 0.1687
+    },
+    {
+     "file": "005.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 2",
+     "psnr": 26.432,
+     "ssim": 0.9104,
+     "lpips": 0.1952
+    },
+    {
+     "file": "006.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 3",
+     "psnr": 25.67,
+     "ssim": 0.8952,
+     "lpips": 0.27
+    },
+    {
+     "file": "007.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 3",
+     "psnr": 21.978,
+     "ssim": 0.86,
+     "lpips": 0.3947
+    },
+    {
+     "file": "008.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 3",
+     "psnr": 21.275,
+     "ssim": 0.8055,
+     "lpips": 0.3384
+    },
+    {
+     "file": "009.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 4",
+     "psnr": 17.124,
+     "ssim": 0.7259,
+     "lpips": 0.5908
+    },
+    {
+     "file": "010.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 4",
+     "psnr": 16.047,
+     "ssim": 0.7399,
+     "lpips": 0.7752
+    },
+    {
+     "file": "011.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 4",
+     "psnr": 20.508,
+     "ssim": 0.8662,
+     "lpips": 0.3792
+    },
+    {
+     "file": "012.png",
+     "kind": "wall 1.2 m",
+     "name": "Kitchen, wall 1",
+     "psnr": 18.131,
+     "ssim": 0.8366,
+     "lpips": 0.4551
+    },
+    {
+     "file": "013.png",
+     "kind": "wall 0.6 m",
+     "name": "Kitchen, wall 1",
+     "psnr": 12.546,
+     "ssim": 0.733,
+     "lpips": 0.7379
+    },
+    {
+     "file": "014.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Kitchen, wall 1",
+     "psnr": 17.327,
+     "ssim": 0.885,
+     "lpips": 0.3293
+    },
+    {
+     "file": "015.png",
+     "kind": "wall 1.2 m",
+     "name": "Kitchen, wall 2",
+     "psnr": 22.418,
+     "ssim": 0.6449,
+     "lpips": 0.4443
+    },
+    {
+     "file": "016.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Kitchen, wall 2",
+     "psnr": 21.03,
+     "ssim": 0.7214,
+     "lpips": 0.3627
+    },
+    {
+     "file": "017.png",
+     "kind": "wall 1.2 m",
+     "name": "Kitchen, wall 3",
+     "psnr": 44.005,
+     "ssim": 0.9929,
+     "lpips": 0.0622
+    },
+    {
+     "file": "018.png",
+     "kind": "wall 0.6 m",
+     "name": "Kitchen, wall 3",
+     "psnr": 43.275,
+     "ssim": 0.9959,
+     "lpips": 0.0269
+    },
+    {
+     "file": "019.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Kitchen, wall 3",
+     "psnr": 26.02,
+     "ssim": 0.943,
+     "lpips": 0.1256
+    },
+    {
+     "file": "020.png",
+     "kind": "wall 0.6 m",
+     "name": "Kitchen, wall 4",
+     "psnr": 25.015,
+     "ssim": 0.8581,
+     "lpips": 0.1115
+    },
+    {
+     "file": "021.png",
+     "kind": "wall 1.2 m",
+     "name": "Hallway, wall 1",
+     "psnr": 13.976,
+     "ssim": 0.8002,
+     "lpips": 0.3296
+    },
+    {
+     "file": "022.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 1",
+     "psnr": 10.362,
+     "ssim": 0.7276,
+     "lpips": 0.4037
+    },
+    {
+     "file": "023.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 1",
+     "psnr": 22.663,
+     "ssim": 0.8838,
+     "lpips": 0.1929
+    },
+    {
+     "file": "024.png",
+     "kind": "wall 1.2 m",
+     "name": "Hallway, wall 2",
+     "psnr": 23.701,
+     "ssim": 0.9143,
+     "lpips": 0.1814
+    },
+    {
+     "file": "025.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 2",
+     "psnr": 25.567,
+     "ssim": 0.9766,
+     "lpips": 0.0405
+    },
+    {
+     "file": "026.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 2",
+     "psnr": 33.938,
+     "ssim": 0.9835,
+     "lpips": 0.0825
+    },
+    {
+     "file": "027.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 3",
+     "psnr": 40.761,
+     "ssim": 0.9945,
+     "lpips": 0.05
+    },
+    {
+     "file": "028.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 3",
+     "psnr": 28.402,
+     "ssim": 0.9199,
+     "lpips": 0.1922
+    },
+    {
+     "file": "029.png",
+     "kind": "wall 1.2 m",
+     "name": "Hallway, wall 4",
+     "psnr": 29.841,
+     "ssim": 0.9044,
+     "lpips": 0.171
+    },
+    {
+     "file": "030.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 4",
+     "psnr": 29.376,
+     "ssim": 0.9166,
+     "lpips": 0.1564
+    },
+    {
+     "file": "031.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 4",
+     "psnr": 31.85,
+     "ssim": 0.9496,
+     "lpips": 0.1116
+    },
+    {
+     "file": "032.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 1",
+     "psnr": 34.799,
+     "ssim": 0.9767,
+     "lpips": 0.1306
+    },
+    {
+     "file": "033.png",
+     "kind": "wall 0.6 m",
+     "name": "Bedroom, wall 1",
+     "psnr": 44.517,
+     "ssim": 0.9952,
+     "lpips": 0.0454
+    },
+    {
+     "file": "034.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bedroom, wall 1",
+     "psnr": 44.904,
+     "ssim": 0.9893,
+     "lpips": 0.0664
+    },
+    {
+     "file": "035.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 2",
+     "psnr": 36.003,
+     "ssim": 0.9839,
+     "lpips": 0.11
+    },
+    {
+     "file": "036.png",
+     "kind": "wall 0.6 m",
+     "name": "Bedroom, wall 2",
+     "psnr": 42.542,
+     "ssim": 0.995,
+     "lpips": 0.0421
+    },
+    {
+     "file": "037.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bedroom, wall 2",
+     "psnr": 29.446,
+     "ssim": 0.9376,
+     "lpips": 0.1416
+    },
+    {
+     "file": "038.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 3",
+     "psnr": 17.827,
+     "ssim": 0.8333,
+     "lpips": 0.5822
+    },
+    {
+     "file": "039.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 4",
+     "psnr": 27.218,
+     "ssim": 0.9206,
+     "lpips": 0.2036
+    },
+    {
+     "file": "040.png",
+     "kind": "wall 0.6 m",
+     "name": "Bedroom, wall 4",
+     "psnr": 22.082,
+     "ssim": 0.8212,
+     "lpips": 0.4281
+    },
+    {
+     "file": "041.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bedroom, wall 4",
+     "psnr": 22.852,
+     "ssim": 0.8639,
+     "lpips": 0.3041
+    },
+    {
+     "file": "042.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 1",
+     "psnr": 29.291,
+     "ssim": 0.9313,
+     "lpips": 0.1559
+    },
+    {
+     "file": "043.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 1",
+     "psnr": 27.387,
+     "ssim": 0.9114,
+     "lpips": 0.2318
+    },
+    {
+     "file": "044.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 1",
+     "psnr": 29.037,
+     "ssim": 0.9398,
+     "lpips": 0.2128
+    },
+    {
+     "file": "045.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 2",
+     "psnr": 37.594,
+     "ssim": 0.9667,
+     "lpips": 0.193
+    },
+    {
+     "file": "046.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 2",
+     "psnr": 42.337,
+     "ssim": 0.9952,
+     "lpips": 0.0418
+    },
+    {
+     "file": "047.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 2",
+     "psnr": 25.861,
+     "ssim": 0.9633,
+     "lpips": 0.253
+    },
+    {
+     "file": "048.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 3",
+     "psnr": 30.654,
+     "ssim": 0.9312,
+     "lpips": 0.2383
+    },
+    {
+     "file": "049.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 3",
+     "psnr": 28.309,
+     "ssim": 0.9286,
+     "lpips": 0.3619
+    },
+    {
+     "file": "050.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 3",
+     "psnr": 35.662,
+     "ssim": 0.9534,
+     "lpips": 0.1816
+    },
+    {
+     "file": "051.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 4",
+     "psnr": 31.861,
+     "ssim": 0.9521,
+     "lpips": 0.1606
+    },
+    {
+     "file": "052.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 4",
+     "psnr": 32.594,
+     "ssim": 0.9877,
+     "lpips": 0.0765
+    },
+    {
+     "file": "053.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 4",
+     "psnr": 40.89,
+     "ssim": 0.9734,
+     "lpips": 0.1406
+    },
+    {
+     "file": "054.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 1",
+     "psnr": 21.864,
+     "ssim": 0.8881,
+     "lpips": 0.2862
+    },
+    {
+     "file": "055.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 1",
+     "psnr": 18.542,
+     "ssim": 0.8659,
+     "lpips": 0.2952
+    },
+    {
+     "file": "056.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 1",
+     "psnr": 20.552,
+     "ssim": 0.8837,
+     "lpips": 0.2708
+    },
+    {
+     "file": "057.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 2",
+     "psnr": 15.118,
+     "ssim": 0.6487,
+     "lpips": 0.6309
+    },
+    {
+     "file": "058.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 2",
+     "psnr": 13.707,
+     "ssim": 0.6755,
+     "lpips": 0.7959
+    },
+    {
+     "file": "059.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 2",
+     "psnr": 16.566,
+     "ssim": 0.821,
+     "lpips": 0.5331
+    },
+    {
+     "file": "060.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 3",
+     "psnr": 16.277,
+     "ssim": 0.6791,
+     "lpips": 0.4887
+    },
+    {
+     "file": "061.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 3",
+     "psnr": 14.908,
+     "ssim": 0.7125,
+     "lpips": 0.5486
+    },
+    {
+     "file": "062.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 3",
+     "psnr": 18.295,
+     "ssim": 0.7558,
+     "lpips": 0.3865
+    },
+    {
+     "file": "063.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 4",
+     "psnr": 40.452,
+     "ssim": 0.9901,
+     "lpips": 0.1098
+    },
+    {
+     "file": "064.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 4",
+     "psnr": 40.934,
+     "ssim": 0.9943,
+     "lpips": 0.0395
+    },
+    {
+     "file": "065.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 4",
+     "psnr": 29.345,
+     "ssim": 0.9406,
+     "lpips": 0.1456
+    },
+    {
+     "file": "066.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 2, left",
+     "psnr": 19.889,
+     "ssim": 0.9033,
+     "lpips": 0.2936
+    },
+    {
+     "file": "067.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 2, right",
+     "psnr": 29.648,
+     "ssim": 0.9079,
+     "lpips": 0.1681
+    },
+    {
+     "file": "068.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 4, left",
+     "psnr": 25.855,
+     "ssim": 0.89,
+     "lpips": 0.1091
+    },
+    {
+     "file": "069.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 4, right",
+     "psnr": 19.251,
+     "ssim": 0.7955,
+     "lpips": 0.4122
+    },
+    {
+     "file": "070.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 3, left",
+     "psnr": 24.79,
+     "ssim": 0.89,
+     "lpips": 0.198
+    },
+    {
+     "file": "071.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 3, right",
+     "psnr": 25.22,
+     "ssim": 0.8666,
+     "lpips": 0.147
+    },
+    {
+     "file": "072.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 4, left",
+     "psnr": 27.686,
+     "ssim": 0.9041,
+     "lpips": 0.1698
+    },
+    {
+     "file": "073.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 4, right",
+     "psnr": 19.94,
+     "ssim": 0.841,
+     "lpips": 0.2585
+    },
+    {
+     "file": "074.png",
+     "kind": "between",
+     "name": "Living Room, between spots 3 and 4, left",
+     "psnr": 23.935,
+     "ssim": 0.8432,
+     "lpips": 0.311
+    },
+    {
+     "file": "075.png",
+     "kind": "between",
+     "name": "Living Room, between spots 3 and 4, right",
+     "psnr": 21.233,
+     "ssim": 0.8575,
+     "lpips": 0.193
+    },
+    {
+     "file": "076.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 6 and 7, left",
+     "psnr": 21.886,
+     "ssim": 0.6441,
+     "lpips": 0.459
+    },
+    {
+     "file": "077.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 6 and 7, right",
+     "psnr": 20.879,
+     "ssim": 0.8193,
+     "lpips": 0.2467
+    },
+    {
+     "file": "078.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 7 and 8, left",
+     "psnr": 45.01,
+     "ssim": 0.9955,
+     "lpips": 0.0282
+    },
+    {
+     "file": "079.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 7 and 8, right",
+     "psnr": 23.709,
+     "ssim": 0.8152,
+     "lpips": 0.2146
+    },
+    {
+     "file": "080.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 10, left",
+     "psnr": 17.226,
+     "ssim": 0.9145,
+     "lpips": 0.1812
+    },
+    {
+     "file": "081.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 10, right",
+     "psnr": 34.546,
+     "ssim": 0.9841,
+     "lpips": 0.1085
+    },
+    {
+     "file": "082.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 11, left",
+     "psnr": 10.142,
+     "ssim": 0.7051,
+     "lpips": 0.4504
+    },
+    {
+     "file": "083.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 11, right",
+     "psnr": 42.175,
+     "ssim": 0.995,
+     "lpips": 0.0427
+    },
+    {
+     "file": "084.png",
+     "kind": "between",
+     "name": "Hallway, between spots 10 and 11, left",
+     "psnr": 18.489,
+     "ssim": 0.8856,
+     "lpips": 0.2609
+    },
+    {
+     "file": "085.png",
+     "kind": "between",
+     "name": "Hallway, between spots 10 and 11, right",
+     "psnr": 22.66,
+     "ssim": 0.7947,
+     "lpips": 0.2365
+    },
+    {
+     "file": "086.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 13, left",
+     "psnr": 42.972,
+     "ssim": 0.996,
+     "lpips": 0.0375
+    },
+    {
+     "file": "087.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 13, right",
+     "psnr": 30.32,
+     "ssim": 0.943,
+     "lpips": 0.085
+    },
+    {
+     "file": "088.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 14, left",
+     "psnr": 30.389,
+     "ssim": 0.9752,
+     "lpips": 0.1356
+    },
+    {
+     "file": "089.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 14, right",
+     "psnr": 29.913,
+     "ssim": 0.9466,
+     "lpips": 0.1302
+    },
+    {
+     "file": "090.png",
+     "kind": "between",
+     "name": "Primary Bedroom, between spots 17 and 18, left",
+     "psnr": 20.895,
+     "ssim": 0.8899,
+     "lpips": 0.2395
+    },
+    {
+     "file": "091.png",
+     "kind": "between",
+     "name": "Primary Bedroom, between spots 17 and 18, right",
+     "psnr": 20.528,
+     "ssim": 0.7969,
+     "lpips": 0.2317
+    },
+    {
+     "file": "092.png",
+     "kind": "spots",
+     "name": "Living room: sofa and rug",
+     "psnr": 27.397,
+     "ssim": 0.9107,
+     "lpips": 0.1092
+    },
+    {
+     "file": "093.png",
+     "kind": "spots",
+     "name": "Living room from the hallway door",
+     "psnr": 21.499,
+     "ssim": 0.824,
+     "lpips": 0.1672
+    },
+    {
+     "file": "094.png",
+     "kind": "spots",
+     "name": "Living room: TV wall and window",
+     "psnr": 21.48,
+     "ssim": 0.8617,
+     "lpips": 0.1787
+    },
+    {
+     "file": "095.png",
+     "kind": "spots",
+     "name": "Living room seen from the kitchen",
+     "psnr": 25.149,
+     "ssim": 0.8514,
+     "lpips": 0.1141
+    },
+    {
+     "file": "096.png",
+     "kind": "spots",
+     "name": "Kitchen: table and cabinets",
+     "psnr": 22.997,
+     "ssim": 0.7641,
+     "lpips": 0.1881
+    },
+    {
+     "file": "097.png",
+     "kind": "spots",
+     "name": "Kitchen: counter and fridge",
+     "psnr": 20.418,
+     "ssim": 0.7223,
+     "lpips": 0.1955
+    },
+    {
+     "file": "098.png",
+     "kind": "spots",
+     "name": "Kitchen: glossy floor",
+     "psnr": 21.397,
+     "ssim": 0.7748,
+     "lpips": 0.2655
+    },
+    {
+     "file": "099.png",
+     "kind": "spots",
+     "name": "Hallway mirror",
+     "psnr": 15.335,
+     "ssim": 0.8051,
+     "lpips": 0.2769
+    },
+    {
+     "file": "100.png",
+     "kind": "spots",
+     "name": "Hallway toward the front door",
+     "psnr": 23.567,
+     "ssim": 0.8962,
+     "lpips": 0.1126
+    },
+    {
+     "file": "101.png",
+     "kind": "spots",
+     "name": "Bedroom",
+     "psnr": 23.548,
+     "ssim": 0.899,
+     "lpips": 0.1583
+    },
+    {
+     "file": "102.png",
+     "kind": "spots",
+     "name": "Bathroom mirror",
+     "psnr": 29.493,
+     "ssim": 0.9349,
+     "lpips": 0.2091
+    },
+    {
+     "file": "103.png",
+     "kind": "spots",
+     "name": "Primary bedroom",
+     "psnr": 21.01,
+     "ssim": 0.7631,
+     "lpips": 0.261
+    }
+   ]
+  },
+  {
+   "variant": "priors",
+   "config": {
+    "steps": 30000,
+    "long_side": 1440,
+    "max_gaussians": 1000000,
+    "sh_degree": 3,
+    "shell_snap": 0.025,
+    "shell_thickness": 0.002,
+    "max_anisotropy": 6.0,
+    "floater_radius": 0.3
+   },
+   "stats": {
+    "steps": 30000,
+    "gaussians": 1000000,
+    "trainPsnr": 32.07,
+    "seconds": 699.4,
+    "photos": 665,
+    "longSide": 1440,
+    "strategy": "mcmc",
+    "device": "cuda",
+    "poseShiftCm": 0.16,
+    "unitsPerMeter": 0.34,
+    "exposureModel": "gain",
+    "shellPlanes": 36,
+    "onShell": 732755,
+    "floatersCleared": 55,
+    "visibleAdam": true,
+    "psnrHistory": [
+     [
+      1,
+      16.49
+     ],
+     [
+      601,
+      26.4
+     ],
+     [
+      1201,
+      27.33
+     ],
+     [
+      1801,
+      27.64
+     ],
+     [
+      2401,
+      27.53
+     ],
+     [
+      3001,
+      28.61
+     ],
+     [
+      3601,
+      28.68
+     ],
+     [
+      4201,
+      28.76
+     ],
+     [
+      4801,
+      29.5
+     ],
+     [
+      5401,
+      29.96
+     ],
+     [
+      6001,
+      30.04
+     ],
+     [
+      6601,
+      29.91
+     ],
+     [
+      7201,
+      30.05
+     ],
+     [
+      7801,
+      30.5
+     ],
+     [
+      8401,
+      30.43
+     ],
+     [
+      9001,
+      30.34
+     ],
+     [
+      9601,
+      31.03
+     ],
+     [
+      10201,
+      30.67
+     ],
+     [
+      10801,
+      31.02
+     ],
+     [
+      11401,
+      30.95
+     ],
+     [
+      12001,
+      30.81
+     ],
+     [
+      12601,
+      31.23
+     ],
+     [
+      13201,
+      31.01
+     ],
+     [
+      13801,
+      31.56
+     ],
+     [
+      14401,
+      30.9
+     ],
+     [
+      15001,
+      31.1
+     ],
+     [
+      15601,
+      31.42
+     ],
+     [
+      16201,
+      30.97
+     ],
+     [
+      16801,
+      31.31
+     ],
+     [
+      17401,
+      31.19
+     ],
+     [
+      18001,
+      31.71
+     ],
+     [
+      18601,
+      31.89
+     ],
+     [
+      19201,
+      31.48
+     ],
+     [
+      19801,
+      31.99
+     ],
+     [
+      20401,
+      31.66
+     ],
+     [
+      21001,
+      31.99
+     ],
+     [
+      21601,
+      31.8
+     ],
+     [
+      22201,
+      31.13
+     ],
+     [
+      22801,
+      31.85
+     ],
+     [
+      23401,
+      32.26
+     ],
+     [
+      24001,
+      31.79
+     ],
+     [
+      24601,
+      32.38
+     ],
+     [
+      25201,
+      31.73
+     ],
+     [
+      25801,
+      31.44
+     ],
+     [
+      26401,
+      32.5
+     ],
+     [
+      27001,
+      32.41
+     ],
+     [
+      27601,
+      32.23
+     ],
+     [
+      28201,
+      32.09
+     ],
+     [
+      28801,
+      32.37
+     ],
+     [
+      29401,
+      31.77
+     ],
+     [
+      30000,
+      32.07
+     ]
+    ],
+    "smearPx": {
+     "median": 0.3,
+     "p90": 5.13,
+     "max": 6.0
+    },
+    "blurWeighting": true,
+    "photosLeftToSharper": 287,
+    "evalMinutes": 11.7
+   },
+   "views": [
+    {
+     "file": "000.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 1",
+     "psnr": 19.913,
+     "ssim": 0.9063,
+     "lpips": 0.2738
+    },
+    {
+     "file": "001.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 1",
+     "psnr": 27.232,
+     "ssim": 0.9824,
+     "lpips": 0.0502
+    },
+    {
+     "file": "002.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 1",
+     "psnr": 18.441,
+     "ssim": 0.8611,
+     "lpips": 0.3644
+    },
+    {
+     "file": "003.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 2",
+     "psnr": 25.816,
+     "ssim": 0.8832,
+     "lpips": 0.133
+    },
+    {
+     "file": "004.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 2",
+     "psnr": 24.735,
+     "ssim": 0.8614,
+     "lpips": 0.1476
+    },
+    {
+     "file": "005.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 2",
+     "psnr": 26.398,
+     "ssim": 0.9031,
+     "lpips": 0.1805
+    },
+    {
+     "file": "006.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 3",
+     "psnr": 24.195,
+     "ssim": 0.8795,
+     "lpips": 0.2321
+    },
+    {
+     "file": "007.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 3",
+     "psnr": 20.605,
+     "ssim": 0.8367,
+     "lpips": 0.3339
+    },
+    {
+     "file": "008.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 3",
+     "psnr": 20.455,
+     "ssim": 0.7844,
+     "lpips": 0.2591
+    },
+    {
+     "file": "009.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 4",
+     "psnr": 16.938,
+     "ssim": 0.7012,
+     "lpips": 0.5588
+    },
+    {
+     "file": "010.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 4",
+     "psnr": 15.788,
+     "ssim": 0.7304,
+     "lpips": 0.7485
+    },
+    {
+     "file": "011.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 4",
+     "psnr": 20.868,
+     "ssim": 0.8577,
+     "lpips": 0.3497
+    },
+    {
+     "file": "012.png",
+     "kind": "wall 1.2 m",
+     "name": "Kitchen, wall 1",
+     "psnr": 18.137,
+     "ssim": 0.8301,
+     "lpips": 0.4303
+    },
+    {
+     "file": "013.png",
+     "kind": "wall 0.6 m",
+     "name": "Kitchen, wall 1",
+     "psnr": 12.667,
+     "ssim": 0.732,
+     "lpips": 0.7334
+    },
+    {
+     "file": "014.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Kitchen, wall 1",
+     "psnr": 17.543,
+     "ssim": 0.8833,
+     "lpips": 0.3233
+    },
+    {
+     "file": "015.png",
+     "kind": "wall 1.2 m",
+     "name": "Kitchen, wall 2",
+     "psnr": 22.274,
+     "ssim": 0.6533,
+     "lpips": 0.4262
+    },
+    {
+     "file": "016.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Kitchen, wall 2",
+     "psnr": 20.513,
+     "ssim": 0.709,
+     "lpips": 0.3401
+    },
+    {
+     "file": "017.png",
+     "kind": "wall 1.2 m",
+     "name": "Kitchen, wall 3",
+     "psnr": 42.061,
+     "ssim": 0.9929,
+     "lpips": 0.0647
+    },
+    {
+     "file": "018.png",
+     "kind": "wall 0.6 m",
+     "name": "Kitchen, wall 3",
+     "psnr": 40.531,
+     "ssim": 0.9958,
+     "lpips": 0.0271
+    },
+    {
+     "file": "019.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Kitchen, wall 3",
+     "psnr": 26.003,
+     "ssim": 0.9381,
+     "lpips": 0.1183
+    },
+    {
+     "file": "020.png",
+     "kind": "wall 0.6 m",
+     "name": "Kitchen, wall 4",
+     "psnr": 24.418,
+     "ssim": 0.8488,
+     "lpips": 0.1024
+    },
+    {
+     "file": "021.png",
+     "kind": "wall 1.2 m",
+     "name": "Hallway, wall 1",
+     "psnr": 14.636,
+     "ssim": 0.7993,
+     "lpips": 0.3381
+    },
+    {
+     "file": "022.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 1",
+     "psnr": 10.486,
+     "ssim": 0.727,
+     "lpips": 0.4077
+    },
+    {
+     "file": "023.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 1",
+     "psnr": 23.057,
+     "ssim": 0.8824,
+     "lpips": 0.1633
+    },
+    {
+     "file": "024.png",
+     "kind": "wall 1.2 m",
+     "name": "Hallway, wall 2",
+     "psnr": 24.486,
+     "ssim": 0.9205,
+     "lpips": 0.156
+    },
+    {
+     "file": "025.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 2",
+     "psnr": 26.827,
+     "ssim": 0.9824,
+     "lpips": 0.0381
+    },
+    {
+     "file": "026.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 2",
+     "psnr": 36.353,
+     "ssim": 0.9873,
+     "lpips": 0.0625
+    },
+    {
+     "file": "027.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 3",
+     "psnr": 41.363,
+     "ssim": 0.9946,
+     "lpips": 0.042
+    },
+    {
+     "file": "028.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 3",
+     "psnr": 27.759,
+     "ssim": 0.9173,
+     "lpips": 0.1788
+    },
+    {
+     "file": "029.png",
+     "kind": "wall 1.2 m",
+     "name": "Hallway, wall 4",
+     "psnr": 29.915,
+     "ssim": 0.9028,
+     "lpips": 0.1439
+    },
+    {
+     "file": "030.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 4",
+     "psnr": 28.996,
+     "ssim": 0.914,
+     "lpips": 0.1516
+    },
+    {
+     "file": "031.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 4",
+     "psnr": 31.286,
+     "ssim": 0.9442,
+     "lpips": 0.1069
+    },
+    {
+     "file": "032.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 1",
+     "psnr": 34.584,
+     "ssim": 0.9757,
+     "lpips": 0.1278
+    },
+    {
+     "file": "033.png",
+     "kind": "wall 0.6 m",
+     "name": "Bedroom, wall 1",
+     "psnr": 45.814,
+     "ssim": 0.9952,
+     "lpips": 0.0382
+    },
+    {
+     "file": "034.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bedroom, wall 1",
+     "psnr": 44.379,
+     "ssim": 0.9879,
+     "lpips": 0.0661
+    },
+    {
+     "file": "035.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 2",
+     "psnr": 37.085,
+     "ssim": 0.9862,
+     "lpips": 0.108
+    },
+    {
+     "file": "036.png",
+     "kind": "wall 0.6 m",
+     "name": "Bedroom, wall 2",
+     "psnr": 41.892,
+     "ssim": 0.9944,
+     "lpips": 0.0486
+    },
+    {
+     "file": "037.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bedroom, wall 2",
+     "psnr": 29.546,
+     "ssim": 0.9385,
+     "lpips": 0.1298
+    },
+    {
+     "file": "038.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 3",
+     "psnr": 17.579,
+     "ssim": 0.817,
+     "lpips": 0.5504
+    },
+    {
+     "file": "039.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 4",
+     "psnr": 27.045,
+     "ssim": 0.9174,
+     "lpips": 0.1803
+    },
+    {
+     "file": "040.png",
+     "kind": "wall 0.6 m",
+     "name": "Bedroom, wall 4",
+     "psnr": 22.46,
+     "ssim": 0.8293,
+     "lpips": 0.3755
+    },
+    {
+     "file": "041.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bedroom, wall 4",
+     "psnr": 22.696,
+     "ssim": 0.8687,
+     "lpips": 0.3016
+    },
+    {
+     "file": "042.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 1",
+     "psnr": 26.41,
+     "ssim": 0.9195,
+     "lpips": 0.1509
+    },
+    {
+     "file": "043.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 1",
+     "psnr": 24.586,
+     "ssim": 0.8993,
+     "lpips": 0.2422
+    },
+    {
+     "file": "044.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 1",
+     "psnr": 25.328,
+     "ssim": 0.9254,
+     "lpips": 0.2553
+    },
+    {
+     "file": "045.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 2",
+     "psnr": 36.958,
+     "ssim": 0.9642,
+     "lpips": 0.1804
+    },
+    {
+     "file": "046.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 2",
+     "psnr": 40.971,
+     "ssim": 0.9942,
+     "lpips": 0.0569
+    },
+    {
+     "file": "047.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 2",
+     "psnr": 26.261,
+     "ssim": 0.9612,
+     "lpips": 0.2147
+    },
+    {
+     "file": "048.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 3",
+     "psnr": 29.404,
+     "ssim": 0.9212,
+     "lpips": 0.1639
+    },
+    {
+     "file": "049.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 3",
+     "psnr": 28.523,
+     "ssim": 0.9328,
+     "lpips": 0.3401
+    },
+    {
+     "file": "050.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 3",
+     "psnr": 35.373,
+     "ssim": 0.9473,
+     "lpips": 0.1105
+    },
+    {
+     "file": "051.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 4",
+     "psnr": 31.977,
+     "ssim": 0.9506,
+     "lpips": 0.1526
+    },
+    {
+     "file": "052.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 4",
+     "psnr": 33.061,
+     "ssim": 0.9881,
+     "lpips": 0.0709
+    },
+    {
+     "file": "053.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 4",
+     "psnr": 41.315,
+     "ssim": 0.9746,
+     "lpips": 0.1245
+    },
+    {
+     "file": "054.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 1",
+     "psnr": 21.628,
+     "ssim": 0.88,
+     "lpips": 0.2808
+    },
+    {
+     "file": "055.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 1",
+     "psnr": 18.604,
+     "ssim": 0.8598,
+     "lpips": 0.3258
+    },
+    {
+     "file": "056.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 1",
+     "psnr": 20.654,
+     "ssim": 0.8798,
+     "lpips": 0.2724
+    },
+    {
+     "file": "057.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 2",
+     "psnr": 15.134,
+     "ssim": 0.6526,
+     "lpips": 0.5956
+    },
+    {
+     "file": "058.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 2",
+     "psnr": 12.823,
+     "ssim": 0.6485,
+     "lpips": 0.7762
+    },
+    {
+     "file": "059.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 2",
+     "psnr": 17.638,
+     "ssim": 0.8305,
+     "lpips": 0.514
+    },
+    {
+     "file": "060.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 3",
+     "psnr": 15.445,
+     "ssim": 0.6675,
+     "lpips": 0.4411
+    },
+    {
+     "file": "061.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 3",
+     "psnr": 14.619,
+     "ssim": 0.7092,
+     "lpips": 0.519
+    },
+    {
+     "file": "062.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 3",
+     "psnr": 18.186,
+     "ssim": 0.767,
+     "lpips": 0.346
+    },
+    {
+     "file": "063.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 4",
+     "psnr": 40.676,
+     "ssim": 0.9897,
+     "lpips": 0.0985
+    },
+    {
+     "file": "064.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 4",
+     "psnr": 40.411,
+     "ssim": 0.9941,
+     "lpips": 0.0465
+    },
+    {
+     "file": "065.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 4",
+     "psnr": 27.948,
+     "ssim": 0.9363,
+     "lpips": 0.1332
+    },
+    {
+     "file": "066.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 2, left",
+     "psnr": 19.11,
+     "ssim": 0.8901,
+     "lpips": 0.2925
+    },
+    {
+     "file": "067.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 2, right",
+     "psnr": 28.726,
+     "ssim": 0.8975,
+     "lpips": 0.1441
+    },
+    {
+     "file": "068.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 4, left",
+     "psnr": 25.603,
+     "ssim": 0.8866,
+     "lpips": 0.0987
+    },
+    {
+     "file": "069.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 4, right",
+     "psnr": 18.971,
+     "ssim": 0.7834,
+     "lpips": 0.3971
+    },
+    {
+     "file": "070.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 3, left",
+     "psnr": 24.822,
+     "ssim": 0.8864,
+     "lpips": 0.1647
+    },
+    {
+     "file": "071.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 3, right",
+     "psnr": 24.705,
+     "ssim": 0.8669,
+     "lpips": 0.1274
+    },
+    {
+     "file": "072.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 4, left",
+     "psnr": 26.748,
+     "ssim": 0.889,
+     "lpips": 0.1502
+    },
+    {
+     "file": "073.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 4, right",
+     "psnr": 19.689,
+     "ssim": 0.8332,
+     "lpips": 0.2386
+    },
+    {
+     "file": "074.png",
+     "kind": "between",
+     "name": "Living Room, between spots 3 and 4, left",
+     "psnr": 22.847,
+     "ssim": 0.8259,
+     "lpips": 0.2681
+    },
+    {
+     "file": "075.png",
+     "kind": "between",
+     "name": "Living Room, between spots 3 and 4, right",
+     "psnr": 20.7,
+     "ssim": 0.8489,
+     "lpips": 0.1753
+    },
+    {
+     "file": "076.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 6 and 7, left",
+     "psnr": 21.609,
+     "ssim": 0.6535,
+     "lpips": 0.4293
+    },
+    {
+     "file": "077.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 6 and 7, right",
+     "psnr": 20.943,
+     "ssim": 0.8188,
+     "lpips": 0.2295
+    },
+    {
+     "file": "078.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 7 and 8, left",
+     "psnr": 41.731,
+     "ssim": 0.9954,
+     "lpips": 0.0312
+    },
+    {
+     "file": "079.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 7 and 8, right",
+     "psnr": 23.773,
+     "ssim": 0.8176,
+     "lpips": 0.1992
+    },
+    {
+     "file": "080.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 10, left",
+     "psnr": 17.349,
+     "ssim": 0.9101,
+     "lpips": 0.1669
+    },
+    {
+     "file": "081.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 10, right",
+     "psnr": 33.684,
+     "ssim": 0.982,
+     "lpips": 0.1154
+    },
+    {
+     "file": "082.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 11, left",
+     "psnr": 10.261,
+     "ssim": 0.7059,
+     "lpips": 0.4561
+    },
+    {
+     "file": "083.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 11, right",
+     "psnr": 42.501,
+     "ssim": 0.9953,
+     "lpips": 0.0324
+    },
+    {
+     "file": "084.png",
+     "kind": "between",
+     "name": "Hallway, between spots 10 and 11, left",
+     "psnr": 18.581,
+     "ssim": 0.8802,
+     "lpips": 0.3057
+    },
+    {
+     "file": "085.png",
+     "kind": "between",
+     "name": "Hallway, between spots 10 and 11, right",
+     "psnr": 22.619,
+     "ssim": 0.8003,
+     "lpips": 0.2232
+    },
+    {
+     "file": "086.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 13, left",
+     "psnr": 40.621,
+     "ssim": 0.996,
+     "lpips": 0.0344
+    },
+    {
+     "file": "087.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 13, right",
+     "psnr": 30.35,
+     "ssim": 0.9436,
+     "lpips": 0.0824
+    },
+    {
+     "file": "088.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 14, left",
+     "psnr": 30.057,
+     "ssim": 0.9729,
+     "lpips": 0.1407
+    },
+    {
+     "file": "089.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 14, right",
+     "psnr": 29.328,
+     "ssim": 0.9423,
+     "lpips": 0.1013
+    },
+    {
+     "file": "090.png",
+     "kind": "between",
+     "name": "Primary Bedroom, between spots 17 and 18, left",
+     "psnr": 20.948,
+     "ssim": 0.8868,
+     "lpips": 0.2786
+    },
+    {
+     "file": "091.png",
+     "kind": "between",
+     "name": "Primary Bedroom, between spots 17 and 18, right",
+     "psnr": 21.202,
+     "ssim": 0.7955,
+     "lpips": 0.1749
+    },
+    {
+     "file": "092.png",
+     "kind": "spots",
+     "name": "Living room: sofa and rug",
+     "psnr": 26.798,
+     "ssim": 0.8987,
+     "lpips": 0.0898
+    },
+    {
+     "file": "093.png",
+     "kind": "spots",
+     "name": "Living room from the hallway door",
+     "psnr": 22.052,
+     "ssim": 0.8289,
+     "lpips": 0.1376
+    },
+    {
+     "file": "094.png",
+     "kind": "spots",
+     "name": "Living room: TV wall and window",
+     "psnr": 21.777,
+     "ssim": 0.8619,
+     "lpips": 0.1521
+    },
+    {
+     "file": "095.png",
+     "kind": "spots",
+     "name": "Living room seen from the kitchen",
+     "psnr": 24.65,
+     "ssim": 0.8452,
+     "lpips": 0.1009
+    },
+    {
+     "file": "096.png",
+     "kind": "spots",
+     "name": "Kitchen: table and cabinets",
+     "psnr": 22.484,
+     "ssim": 0.7579,
+     "lpips": 0.1843
+    },
+    {
+     "file": "097.png",
+     "kind": "spots",
+     "name": "Kitchen: counter and fridge",
+     "psnr": 20.036,
+     "ssim": 0.7052,
+     "lpips": 0.2013
+    },
+    {
+     "file": "098.png",
+     "kind": "spots",
+     "name": "Kitchen: glossy floor",
+     "psnr": 20.459,
+     "ssim": 0.7534,
+     "lpips": 0.2428
+    },
+    {
+     "file": "099.png",
+     "kind": "spots",
+     "name": "Hallway mirror",
+     "psnr": 15.466,
+     "ssim": 0.7961,
+     "lpips": 0.2837
+    },
+    {
+     "file": "100.png",
+     "kind": "spots",
+     "name": "Hallway toward the front door",
+     "psnr": 23.624,
+     "ssim": 0.8949,
+     "lpips": 0.1019
+    },
+    {
+     "file": "101.png",
+     "kind": "spots",
+     "name": "Bedroom",
+     "psnr": 23.379,
+     "ssim": 0.9083,
+     "lpips": 0.1334
+    },
+    {
+     "file": "102.png",
+     "kind": "spots",
+     "name": "Bathroom mirror",
+     "psnr": 28.893,
+     "ssim": 0.9305,
+     "lpips": 0.2108
+    },
+    {
+     "file": "103.png",
+     "kind": "spots",
+     "name": "Primary bedroom",
+     "psnr": 20.838,
+     "ssim": 0.7585,
+     "lpips": 0.2311
+    }
+   ]
+  },
+  {
+   "variant": "blur-p1",
+   "config": {
+    "steps": 30000,
+    "long_side": 1440,
+    "max_gaussians": 1000000,
+    "sh_degree": 3,
+    "shell_snap": 0.025,
+    "shell_thickness": 0.002,
+    "max_anisotropy": 6.0,
+    "floater_radius": 0.3
+   },
+   "stats": {
+    "steps": 30000,
+    "gaussians": 1000000,
+    "trainPsnr": 31.07,
+    "seconds": 708.8,
+    "photos": 665,
+    "longSide": 1440,
+    "strategy": "mcmc",
+    "device": "cuda",
+    "poseShiftCm": 0.17,
+    "unitsPerMeter": 0.34,
+    "exposureModel": "gain",
+    "shellPlanes": 36,
+    "onShell": 736142,
+    "floatersCleared": 55,
+    "visibleAdam": true,
+    "psnrHistory": [
+     [
+      1,
+      20.7
+     ],
+     [
+      601,
+      25.77
+     ],
+     [
+      1201,
+      27.04
+     ],
+     [
+      1801,
+      28.36
+     ],
+     [
+      2401,
+      27.91
+     ],
+     [
+      3001,
+      28.06
+     ],
+     [
+      3601,
+      28.21
+     ],
+     [
+      4201,
+      28.49
+     ],
+     [
+      4801,
+      28.65
+     ],
+     [
+      5401,
+      29.68
+     ],
+     [
+      6001,
+      29.25
+     ],
+     [
+      6601,
+      29.75
+     ],
+     [
+      7201,
+      29.97
+     ],
+     [
+      7801,
+      29.37
+     ],
+     [
+      8401,
+      30.23
+     ],
+     [
+      9001,
+      29.69
+     ],
+     [
+      9601,
+      30.41
+     ],
+     [
+      10201,
+      29.94
+     ],
+     [
+      10801,
+      30.11
+     ],
+     [
+      11401,
+      30.14
+     ],
+     [
+      12001,
+      29.94
+     ],
+     [
+      12601,
+      30.97
+     ],
+     [
+      13201,
+      30.86
+     ],
+     [
+      13801,
+      31.04
+     ],
+     [
+      14401,
+      30.71
+     ],
+     [
+      15001,
+      30.35
+     ],
+     [
+      15601,
+      30.69
+     ],
+     [
+      16201,
+      30.98
+     ],
+     [
+      16801,
+      30.98
+     ],
+     [
+      17401,
+      31.18
+     ],
+     [
+      18001,
+      31.45
+     ],
+     [
+      18601,
+      30.77
+     ],
+     [
+      19201,
+      31.37
+     ],
+     [
+      19801,
+      30.98
+     ],
+     [
+      20401,
+      31.16
+     ],
+     [
+      21001,
+      31.16
+     ],
+     [
+      21601,
+      31.21
+     ],
+     [
+      22201,
+      30.82
+     ],
+     [
+      22801,
+      31.27
+     ],
+     [
+      23401,
+      31.33
+     ],
+     [
+      24001,
+      31.54
+     ],
+     [
+      24601,
+      31.03
+     ],
+     [
+      25201,
+      31.28
+     ],
+     [
+      25801,
+      31.05
+     ],
+     [
+      26401,
+      31.66
+     ],
+     [
+      27001,
+      31.39
+     ],
+     [
+      27601,
+      31.71
+     ],
+     [
+      28201,
+      31.74
+     ],
+     [
+      28801,
+      31.55
+     ],
+     [
+      29401,
+      31.55
+     ],
+     [
+      30000,
+      31.07
+     ]
+    ],
+    "smearPx": {
+     "median": 0.3,
+     "p90": 5.13,
+     "max": 6.0
+    },
+    "blurWeighting": true,
+    "photosLeftToSharper": 287,
+    "evalMinutes": 11.9
+   },
+   "views": [
+    {
+     "file": "000.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 1",
+     "psnr": 20.129,
+     "ssim": 0.9162,
+     "lpips": 0.2686
+    },
+    {
+     "file": "001.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 1",
+     "psnr": 28.561,
+     "ssim": 0.9847,
+     "lpips": 0.0457
+    },
+    {
+     "file": "002.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 1",
+     "psnr": 19.019,
+     "ssim": 0.8716,
+     "lpips": 0.354
+    },
+    {
+     "file": "003.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 2",
+     "psnr": 25.896,
+     "ssim": 0.8853,
+     "lpips": 0.136
+    },
+    {
+     "file": "004.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 2",
+     "psnr": 24.839,
+     "ssim": 0.8669,
+     "lpips": 0.1571
+    },
+    {
+     "file": "005.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 2",
+     "psnr": 26.645,
+     "ssim": 0.9087,
+     "lpips": 0.1797
+    },
+    {
+     "file": "006.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 3",
+     "psnr": 24.802,
+     "ssim": 0.8868,
+     "lpips": 0.2401
+    },
+    {
+     "file": "007.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 3",
+     "psnr": 21.287,
+     "ssim": 0.8515,
+     "lpips": 0.3657
+    },
+    {
+     "file": "008.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 3",
+     "psnr": 20.87,
+     "ssim": 0.7956,
+     "lpips": 0.2958
+    },
+    {
+     "file": "009.png",
+     "kind": "wall 1.2 m",
+     "name": "Living Room, wall 4",
+     "psnr": 17.321,
+     "ssim": 0.715,
+     "lpips": 0.5745
+    },
+    {
+     "file": "010.png",
+     "kind": "wall 0.6 m",
+     "name": "Living Room, wall 4",
+     "psnr": 15.837,
+     "ssim": 0.7396,
+     "lpips": 0.764
+    },
+    {
+     "file": "011.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Living Room, wall 4",
+     "psnr": 21.55,
+     "ssim": 0.8555,
+     "lpips": 0.3493
+    },
+    {
+     "file": "012.png",
+     "kind": "wall 1.2 m",
+     "name": "Kitchen, wall 1",
+     "psnr": 18.062,
+     "ssim": 0.8362,
+     "lpips": 0.4306
+    },
+    {
+     "file": "013.png",
+     "kind": "wall 0.6 m",
+     "name": "Kitchen, wall 1",
+     "psnr": 12.777,
+     "ssim": 0.7341,
+     "lpips": 0.7223
+    },
+    {
+     "file": "014.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Kitchen, wall 1",
+     "psnr": 17.675,
+     "ssim": 0.8846,
+     "lpips": 0.3355
+    },
+    {
+     "file": "015.png",
+     "kind": "wall 1.2 m",
+     "name": "Kitchen, wall 2",
+     "psnr": 22.347,
+     "ssim": 0.6499,
+     "lpips": 0.4294
+    },
+    {
+     "file": "016.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Kitchen, wall 2",
+     "psnr": 20.362,
+     "ssim": 0.7141,
+     "lpips": 0.3547
+    },
+    {
+     "file": "017.png",
+     "kind": "wall 1.2 m",
+     "name": "Kitchen, wall 3",
+     "psnr": 41.94,
+     "ssim": 0.9929,
+     "lpips": 0.0588
+    },
+    {
+     "file": "018.png",
+     "kind": "wall 0.6 m",
+     "name": "Kitchen, wall 3",
+     "psnr": 41.641,
+     "ssim": 0.9957,
+     "lpips": 0.0304
+    },
+    {
+     "file": "019.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Kitchen, wall 3",
+     "psnr": 25.3,
+     "ssim": 0.9412,
+     "lpips": 0.1306
+    },
+    {
+     "file": "020.png",
+     "kind": "wall 0.6 m",
+     "name": "Kitchen, wall 4",
+     "psnr": 24.688,
+     "ssim": 0.8518,
+     "lpips": 0.1061
+    },
+    {
+     "file": "021.png",
+     "kind": "wall 1.2 m",
+     "name": "Hallway, wall 1",
+     "psnr": 13.349,
+     "ssim": 0.7954,
+     "lpips": 0.3344
+    },
+    {
+     "file": "022.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 1",
+     "psnr": 10.431,
+     "ssim": 0.7268,
+     "lpips": 0.3889
+    },
+    {
+     "file": "023.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 1",
+     "psnr": 23.288,
+     "ssim": 0.8837,
+     "lpips": 0.1687
+    },
+    {
+     "file": "024.png",
+     "kind": "wall 1.2 m",
+     "name": "Hallway, wall 2",
+     "psnr": 23.342,
+     "ssim": 0.9139,
+     "lpips": 0.1671
+    },
+    {
+     "file": "025.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 2",
+     "psnr": 26.967,
+     "ssim": 0.9813,
+     "lpips": 0.039
+    },
+    {
+     "file": "026.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 2",
+     "psnr": 36.252,
+     "ssim": 0.9863,
+     "lpips": 0.0643
+    },
+    {
+     "file": "027.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 3",
+     "psnr": 39.697,
+     "ssim": 0.9935,
+     "lpips": 0.0601
+    },
+    {
+     "file": "028.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 3",
+     "psnr": 28.128,
+     "ssim": 0.9147,
+     "lpips": 0.1856
+    },
+    {
+     "file": "029.png",
+     "kind": "wall 1.2 m",
+     "name": "Hallway, wall 4",
+     "psnr": 30.3,
+     "ssim": 0.9048,
+     "lpips": 0.1496
+    },
+    {
+     "file": "030.png",
+     "kind": "wall 0.6 m",
+     "name": "Hallway, wall 4",
+     "psnr": 29.448,
+     "ssim": 0.9161,
+     "lpips": 0.1514
+    },
+    {
+     "file": "031.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Hallway, wall 4",
+     "psnr": 31.997,
+     "ssim": 0.9474,
+     "lpips": 0.0998
+    },
+    {
+     "file": "032.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 1",
+     "psnr": 34.457,
+     "ssim": 0.9752,
+     "lpips": 0.1282
+    },
+    {
+     "file": "033.png",
+     "kind": "wall 0.6 m",
+     "name": "Bedroom, wall 1",
+     "psnr": 43.603,
+     "ssim": 0.9952,
+     "lpips": 0.0407
+    },
+    {
+     "file": "034.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bedroom, wall 1",
+     "psnr": 44.81,
+     "ssim": 0.9887,
+     "lpips": 0.0664
+    },
+    {
+     "file": "035.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 2",
+     "psnr": 36.552,
+     "ssim": 0.986,
+     "lpips": 0.1151
+    },
+    {
+     "file": "036.png",
+     "kind": "wall 0.6 m",
+     "name": "Bedroom, wall 2",
+     "psnr": 39.478,
+     "ssim": 0.995,
+     "lpips": 0.041
+    },
+    {
+     "file": "037.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bedroom, wall 2",
+     "psnr": 29.122,
+     "ssim": 0.9381,
+     "lpips": 0.1354
+    },
+    {
+     "file": "038.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 3",
+     "psnr": 18.344,
+     "ssim": 0.8459,
+     "lpips": 0.5615
+    },
+    {
+     "file": "039.png",
+     "kind": "wall 1.2 m",
+     "name": "Bedroom, wall 4",
+     "psnr": 26.77,
+     "ssim": 0.9155,
+     "lpips": 0.1997
+    },
+    {
+     "file": "040.png",
+     "kind": "wall 0.6 m",
+     "name": "Bedroom, wall 4",
+     "psnr": 21.35,
+     "ssim": 0.8213,
+     "lpips": 0.3993
+    },
+    {
+     "file": "041.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bedroom, wall 4",
+     "psnr": 22.908,
+     "ssim": 0.8694,
+     "lpips": 0.3026
+    },
+    {
+     "file": "042.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 1",
+     "psnr": 27.407,
+     "ssim": 0.9263,
+     "lpips": 0.1501
+    },
+    {
+     "file": "043.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 1",
+     "psnr": 25.728,
+     "ssim": 0.9079,
+     "lpips": 0.2427
+    },
+    {
+     "file": "044.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 1",
+     "psnr": 26.428,
+     "ssim": 0.9301,
+     "lpips": 0.2175
+    },
+    {
+     "file": "045.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 2",
+     "psnr": 38.667,
+     "ssim": 0.9676,
+     "lpips": 0.1609
+    },
+    {
+     "file": "046.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 2",
+     "psnr": 45.972,
+     "ssim": 0.9956,
+     "lpips": 0.0314
+    },
+    {
+     "file": "047.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 2",
+     "psnr": 26.028,
+     "ssim": 0.9623,
+     "lpips": 0.215
+    },
+    {
+     "file": "048.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 3",
+     "psnr": 30.136,
+     "ssim": 0.928,
+     "lpips": 0.1941
+    },
+    {
+     "file": "049.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 3",
+     "psnr": 28.604,
+     "ssim": 0.933,
+     "lpips": 0.3571
+    },
+    {
+     "file": "050.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 3",
+     "psnr": 35.985,
+     "ssim": 0.9501,
+     "lpips": 0.1445
+    },
+    {
+     "file": "051.png",
+     "kind": "wall 1.2 m",
+     "name": "Bathroom, wall 4",
+     "psnr": 31.765,
+     "ssim": 0.9491,
+     "lpips": 0.1613
+    },
+    {
+     "file": "052.png",
+     "kind": "wall 0.6 m",
+     "name": "Bathroom, wall 4",
+     "psnr": 32.96,
+     "ssim": 0.9883,
+     "lpips": 0.0703
+    },
+    {
+     "file": "053.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Bathroom, wall 4",
+     "psnr": 41.493,
+     "ssim": 0.9743,
+     "lpips": 0.1536
+    },
+    {
+     "file": "054.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 1",
+     "psnr": 21.817,
+     "ssim": 0.8849,
+     "lpips": 0.2729
+    },
+    {
+     "file": "055.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 1",
+     "psnr": 18.478,
+     "ssim": 0.8626,
+     "lpips": 0.3131
+    },
+    {
+     "file": "056.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 1",
+     "psnr": 20.383,
+     "ssim": 0.8821,
+     "lpips": 0.2612
+    },
+    {
+     "file": "057.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 2",
+     "psnr": 15.738,
+     "ssim": 0.6486,
+     "lpips": 0.6063
+    },
+    {
+     "file": "058.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 2",
+     "psnr": 14.074,
+     "ssim": 0.6644,
+     "lpips": 0.8098
+    },
+    {
+     "file": "059.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 2",
+     "psnr": 16.776,
+     "ssim": 0.826,
+     "lpips": 0.5338
+    },
+    {
+     "file": "060.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 3",
+     "psnr": 16.19,
+     "ssim": 0.675,
+     "lpips": 0.4471
+    },
+    {
+     "file": "061.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 3",
+     "psnr": 14.474,
+     "ssim": 0.7041,
+     "lpips": 0.5295
+    },
+    {
+     "file": "062.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 3",
+     "psnr": 18.545,
+     "ssim": 0.7692,
+     "lpips": 0.3854
+    },
+    {
+     "file": "063.png",
+     "kind": "wall 1.2 m",
+     "name": "Primary Bedroom, wall 4",
+     "psnr": 39.943,
+     "ssim": 0.9894,
+     "lpips": 0.113
+    },
+    {
+     "file": "064.png",
+     "kind": "wall 0.6 m",
+     "name": "Primary Bedroom, wall 4",
+     "psnr": 40.408,
+     "ssim": 0.9945,
+     "lpips": 0.041
+    },
+    {
+     "file": "065.png",
+     "kind": "wall at 45\u00b0",
+     "name": "Primary Bedroom, wall 4",
+     "psnr": 28.205,
+     "ssim": 0.9355,
+     "lpips": 0.1392
+    },
+    {
+     "file": "066.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 2, left",
+     "psnr": 19.353,
+     "ssim": 0.8983,
+     "lpips": 0.2957
+    },
+    {
+     "file": "067.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 2, right",
+     "psnr": 29.121,
+     "ssim": 0.9038,
+     "lpips": 0.1581
+    },
+    {
+     "file": "068.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 4, left",
+     "psnr": 25.577,
+     "ssim": 0.8892,
+     "lpips": 0.0979
+    },
+    {
+     "file": "069.png",
+     "kind": "between",
+     "name": "Living Room, between spots 1 and 4, right",
+     "psnr": 19.281,
+     "ssim": 0.7902,
+     "lpips": 0.4084
+    },
+    {
+     "file": "070.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 3, left",
+     "psnr": 24.848,
+     "ssim": 0.8905,
+     "lpips": 0.1721
+    },
+    {
+     "file": "071.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 3, right",
+     "psnr": 24.962,
+     "ssim": 0.8651,
+     "lpips": 0.1383
+    },
+    {
+     "file": "072.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 4, left",
+     "psnr": 27.127,
+     "ssim": 0.8994,
+     "lpips": 0.1444
+    },
+    {
+     "file": "073.png",
+     "kind": "between",
+     "name": "Living Room, between spots 2 and 4, right",
+     "psnr": 19.717,
+     "ssim": 0.8396,
+     "lpips": 0.254
+    },
+    {
+     "file": "074.png",
+     "kind": "between",
+     "name": "Living Room, between spots 3 and 4, left",
+     "psnr": 23.275,
+     "ssim": 0.8373,
+     "lpips": 0.2809
+    },
+    {
+     "file": "075.png",
+     "kind": "between",
+     "name": "Living Room, between spots 3 and 4, right",
+     "psnr": 20.918,
+     "ssim": 0.8562,
+     "lpips": 0.1805
+    },
+    {
+     "file": "076.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 6 and 7, left",
+     "psnr": 21.881,
+     "ssim": 0.6551,
+     "lpips": 0.445
+    },
+    {
+     "file": "077.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 6 and 7, right",
+     "psnr": 21.008,
+     "ssim": 0.824,
+     "lpips": 0.2342
+    },
+    {
+     "file": "078.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 7 and 8, left",
+     "psnr": 43.48,
+     "ssim": 0.9955,
+     "lpips": 0.0296
+    },
+    {
+     "file": "079.png",
+     "kind": "between",
+     "name": "Kitchen, between spots 7 and 8, right",
+     "psnr": 23.818,
+     "ssim": 0.8154,
+     "lpips": 0.2188
+    },
+    {
+     "file": "080.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 10, left",
+     "psnr": 17.552,
+     "ssim": 0.9109,
+     "lpips": 0.1456
+    },
+    {
+     "file": "081.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 10, right",
+     "psnr": 33.409,
+     "ssim": 0.9845,
+     "lpips": 0.1148
+    },
+    {
+     "file": "082.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 11, left",
+     "psnr": 10.231,
+     "ssim": 0.7067,
+     "lpips": 0.4352
+    },
+    {
+     "file": "083.png",
+     "kind": "between",
+     "name": "Hallway, between spots 9 and 11, right",
+     "psnr": 41.033,
+     "ssim": 0.9948,
+     "lpips": 0.0409
+    },
+    {
+     "file": "084.png",
+     "kind": "between",
+     "name": "Hallway, between spots 10 and 11, left",
+     "psnr": 18.437,
+     "ssim": 0.8788,
+     "lpips": 0.2814
+    },
+    {
+     "file": "085.png",
+     "kind": "between",
+     "name": "Hallway, between spots 10 and 11, right",
+     "psnr": 22.717,
+     "ssim": 0.7993,
+     "lpips": 0.2232
+    },
+    {
+     "file": "086.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 13, left",
+     "psnr": 40.181,
+     "ssim": 0.9963,
+     "lpips": 0.0327
+    },
+    {
+     "file": "087.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 13, right",
+     "psnr": 30.271,
+     "ssim": 0.9439,
+     "lpips": 0.0878
+    },
+    {
+     "file": "088.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 14, left",
+     "psnr": 29.418,
+     "ssim": 0.9736,
+     "lpips": 0.1407
+    },
+    {
+     "file": "089.png",
+     "kind": "between",
+     "name": "Bedroom, between spots 12 and 14, right",
+     "psnr": 29.315,
+     "ssim": 0.9448,
+     "lpips": 0.1167
+    },
+    {
+     "file": "090.png",
+     "kind": "between",
+     "name": "Primary Bedroom, between spots 17 and 18, left",
+     "psnr": 20.741,
+     "ssim": 0.8854,
+     "lpips": 0.2701
+    },
+    {
+     "file": "091.png",
+     "kind": "between",
+     "name": "Primary Bedroom, between spots 17 and 18, right",
+     "psnr": 19.348,
+     "ssim": 0.7866,
+     "lpips": 0.2008
+    },
+    {
+     "file": "092.png",
+     "kind": "spots",
+     "name": "Living room: sofa and rug",
+     "psnr": 27.141,
+     "ssim": 0.9062,
+     "lpips": 0.0915
+    },
+    {
+     "file": "093.png",
+     "kind": "spots",
+     "name": "Living room from the hallway door",
+     "psnr": 21.822,
+     "ssim": 0.8264,
+     "lpips": 0.1473
+    },
+    {
+     "file": "094.png",
+     "kind": "spots",
+     "name": "Living room: TV wall and window",
+     "psnr": 21.757,
+     "ssim": 0.8633,
+     "lpips": 0.1616
+    },
+    {
+     "file": "095.png",
+     "kind": "spots",
+     "name": "Living room seen from the kitchen",
+     "psnr": 24.86,
+     "ssim": 0.8458,
+     "lpips": 0.1077
+    },
+    {
+     "file": "096.png",
+     "kind": "spots",
+     "name": "Kitchen: table and cabinets",
+     "psnr": 22.438,
+     "ssim": 0.7586,
+     "lpips": 0.1905
+    },
+    {
+     "file": "097.png",
+     "kind": "spots",
+     "name": "Kitchen: counter and fridge",
+     "psnr": 20.335,
+     "ssim": 0.716,
+     "lpips": 0.1943
+    },
+    {
+     "file": "098.png",
+     "kind": "spots",
+     "name": "Kitchen: glossy floor",
+     "psnr": 20.954,
+     "ssim": 0.7627,
+     "lpips": 0.2538
+    },
+    {
+     "file": "099.png",
+     "kind": "spots",
+     "name": "Hallway mirror",
+     "psnr": 15.458,
+     "ssim": 0.7992,
+     "lpips": 0.2587
+    },
+    {
+     "file": "100.png",
+     "kind": "spots",
+     "name": "Hallway toward the front door",
+     "psnr": 23.593,
+     "ssim": 0.897,
+     "lpips": 0.1089
+    },
+    {
+     "file": "101.png",
+     "kind": "spots",
+     "name": "Bedroom",
+     "psnr": 23.586,
+     "ssim": 0.907,
+     "lpips": 0.1478
+    },
+    {
+     "file": "102.png",
+     "kind": "spots",
+     "name": "Bathroom mirror",
+     "psnr": 29.018,
+     "ssim": 0.9311,
+     "lpips": 0.2019
+    },
+    {
+     "file": "103.png",
+     "kind": "spots",
+     "name": "Primary bedroom",
+     "psnr": 20.522,
+     "ssim": 0.7605,
+     "lpips": 0.2496
+    }
+   ]
+  }
+ ]
+}
