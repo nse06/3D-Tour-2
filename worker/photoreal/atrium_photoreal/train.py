@@ -5,6 +5,8 @@ GPU), adapted to phone scans of homes:
 * each photo gets an exposure and white-balance correction (a gain and an offset per color channel,
   averaging to none over the photos), so the phone's auto-exposure doesn't end up baked into the splats;
 * each photo's pose is refined a little (the phone's tracking drifts);
+* the details come from the sharpest photos: a photo smeared by the phone turning counts less where
+  sharper photos saw the same surfaces (sharpness.py);
 * pixels showing people are left out;
 * splats wandering far outside the rooms are dropped (window views may sit a few meters out);
 * a random background behind the splats, so nothing stays see-through;
@@ -16,7 +18,6 @@ GPU), adapted to phone scans of homes:
 from __future__ import annotations
 
 import math
-import random
 import time
 from dataclasses import dataclass, field
 from typing import Callable
@@ -26,14 +27,16 @@ import torch
 import torch.nn.functional as F
 
 from . import shell as room_shell
-from .capture import Capture, load_photo
+from .capture import Capture, load_photo, training_size
 from .render import psnr, rasterize, rgb_to_sh, ssim
+from .sharpness import photo_weights
 
 
 @dataclass
 class TrainConfig:
     steps: int = 30_000
-    long_side: int = 1440
+    # The phone's photos are 1920 px across: trained at full size, the splats keep their detail.
+    long_side: int = 1920
     max_gaussians: int = 1_000_000
     sh_degree: int = 3
     sh_degree_interval: int = 1000
@@ -79,6 +82,14 @@ class TrainConfig:
     shell_thickness: float = 0.002
     max_anisotropy: float = 6.0
     floater_radius: float = 0.3
+    # Photos smeared by the phone turning (sharpness.py): each photo's say is how close it comes to the
+    # sharpest photo of the same surfaces, a smear of `blur_half_px` px (at training size) more than
+    # theirs roughly halving it, and photos are drawn in proportion to say ** `blur_power`, at least
+    # `blur_floor` (so none is dropped outright). False: every photo equally, as before.
+    blur_weighting: bool = True
+    blur_half_px: float = 1.0
+    blur_power: float = 2.0
+    blur_floor: float = 0.02
     # Every nth photo is left out of training and scored at the end (0: train on all).
     holdout_every: int = 0
     strategy: str = "auto"  # "mcmc" (needs CUDA), "default", or "auto"
@@ -206,7 +217,6 @@ def train(
 ) -> Result:
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     started = time.time()
-    random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)
     rng = np.random.default_rng(cfg.seed)
 
@@ -226,6 +236,19 @@ def train(
     camtoworlds = torch.tensor(np.stack([c.camtoworld for c in cams]), dtype=torch.float32, device=device)
     test_ids = [i for i in range(len(cams)) if cfg.holdout_every and i % cfg.holdout_every == cfg.holdout_every // 2]
     train_ids = [i for i in range(len(cams)) if i not in set(test_ids)]
+
+    # The order photos are drawn in: sharp photos more often where blurrier ones saw the same surfaces.
+    say, smear = photo_weights(cams, [training_size(c, cfg.long_side)[2] for c in cams], capture.seeds_xyz, cfg.blur_half_px, seed=cfg.seed)
+    if not cfg.blur_weighting:
+        say = np.ones(len(cams))
+    draw = np.maximum(say[train_ids] ** cfg.blur_power, cfg.blur_floor)
+    order = rng.choice(np.asarray(train_ids), size=cfg.steps, p=draw / draw.sum())
+    if not np.isnan(smear).all():
+        known = smear[~np.isnan(smear)]
+        log(
+            f"photo smear: median {np.median(known):.1f} px, 90% under {np.percentile(known, 90):.1f} px; "
+            f"{int((say[train_ids] < 0.5).sum())} of {len(train_ids)} photos mostly left to sharper ones"
+        )
 
     # The spread of the cameras sets the step size for positions (gsplat's scene scale).
     centers = camtoworlds[:, :3, 3]
@@ -291,7 +314,7 @@ def train(
     history_every = max(1, cfg.steps // 50)
     log(f"training {len(train_ids)} photos ({len(test_ids)} held out) at {cfg.long_side} px, {len(splats['means'])} splats to start, {kind} on {device}")
     for step in range(cfg.steps):
-        i = random.choice(train_ids)
+        i = int(order[step])
         image = photos[i].to(device).float() / 255.0
         height, width = image.shape[:2]
         c2w = pose(camtoworlds[i], i)
@@ -382,6 +405,11 @@ def train(
         "visibleAdam": selective,
         "psnrHistory": history,
     }
+    if not np.isnan(smear).all():
+        known = smear[~np.isnan(smear)]
+        stats["smearPx"] = {"median": round(float(np.median(known)), 2), "p90": round(float(np.percentile(known, 90)), 2), "max": round(float(known.max()), 2)}
+        stats["blurWeighting"] = cfg.blur_weighting
+        stats["photosLeftToSharper"] = int((say[train_ids] < 0.5).sum()) if cfg.blur_weighting else 0
     if test_ids:
         scores = []
         with torch.no_grad():

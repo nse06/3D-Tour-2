@@ -2,7 +2,7 @@
 
     {"jobId": "...", "callback": "https://<site>/api/photoreal/jobs/<id>",
      "files": [{"name": "cameras.json", "url": "<signed download URL>"}, ...],
-     "options": {"steps": 30000, "longSide": 1440, "maxGaussians": 1000000, "maxMB": 45}}
+     "options": {"steps": 30000, "longSide": 1920, "maxGaussians": 1000000, "maxMB": 45}}
 
 Downloads the capture, trains, writes the splats as .spz, asks the callback where to upload them,
 uploads, and reports back. Every call to the callback carries the shared worker secret
@@ -133,10 +133,11 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-photo
         reporter.progress("training", 0, f"{len(capture.cameras)} photos, {received / 1e6:.0f} MB", force=True)
 
         options = payload.get("options") or {}
+        defaults = TrainConfig()
         cfg = TrainConfig(
-            steps=int(options.get("steps", 30_000)),
-            long_side=int(options.get("longSide", 1440)),
-            max_gaussians=int(options.get("maxGaussians", 1_000_000)),
+            steps=int(options.get("steps", defaults.steps)),
+            long_side=int(options.get("longSide", defaults.long_side)),
+            max_gaussians=int(options.get("maxGaussians", defaults.max_gaussians)),
         )
         result = train(capture, cfg, progress=lambda value, message: reporter.progress("training", value, message))
 

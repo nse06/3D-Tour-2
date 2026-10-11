@@ -1,7 +1,7 @@
 """Trains a capture folder on this machine and writes splats.spz and stats.json: a GPU for real runs,
 the CPU for tiny ones (small photos, few seeds, few steps).
 
-    python run_local.py <capture folder> <out folder> [--steps 30000] [--long-side 1440]
+    python run_local.py <capture folder> <out folder> [--steps 30000] [--long-side 1920]
                         [--max-gaussians 1000000] [--seeds N] [--holdout N] [--cpu]
 """
 
@@ -22,7 +22,7 @@ def main():
     p.add_argument("capture", type=Path)
     p.add_argument("out", type=Path)
     p.add_argument("--steps", type=int, default=30_000)
-    p.add_argument("--long-side", type=int, default=1440)
+    p.add_argument("--long-side", type=int, default=1920)
     p.add_argument("--max-gaussians", type=int, default=1_000_000)
     p.add_argument("--seeds", type=int, default=0, help="start from this many of the seeds (0: all)")
     p.add_argument("--holdout", type=int, default=0, help="leave every nth photo out and score it")

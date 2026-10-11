@@ -325,7 +325,10 @@ function SplatLayer({
       try {
         const { SparkRenderer, SplatMesh } = await import("@sparkjsdev/spark");
         if (disposed) return;
-        const spark = new SparkRenderer({ renderer: gl, maxStdDev: 3, preBlurAmount: 0.3 });
+        // The worker trains in gsplat's classic mode, which widens every splat by 0.3 px² and nothing
+        // more: Spark's preBlurAmount. Its blurAmount (0.3 by default, for anti-aliased training)
+        // would widen them again and dim the smallest, softening fine texture.
+        const spark = new SparkRenderer({ renderer: gl, maxStdDev: 3, preBlurAmount: 0.3, blurAmount: 0 });
         const splats = new SplatMesh({ url });
         created = { spark, splats };
         await splats.initialized;

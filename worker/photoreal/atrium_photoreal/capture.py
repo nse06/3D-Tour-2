@@ -34,6 +34,10 @@ class Camera:
     # Intrinsics at the photo's full size, and the pose (camera-to-world, OpenCV axes).
     K: np.ndarray
     camtoworld: np.ndarray
+    # How fast the phone was turning (rad/s) and the exposure time (s) when it took the photo, if it
+    # recorded them: how smeared the photo is (sharpness.py).
+    turn_rate: float | None = None
+    exposure: float | None = None
 
 
 @dataclass
@@ -46,6 +50,10 @@ class Capture:
     bounds_min: np.ndarray
     bounds_max: np.ndarray
     rooms: list[dict]
+
+
+def _number(value) -> float | None:
+    return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else None
 
 
 def opencv_camtoworld(pose: list[float]) -> np.ndarray:
@@ -83,7 +91,19 @@ def load(folder: Path) -> Capture:
             continue
         mask = folder / "masks" / f"{name}.png"
         K = np.array([[f["fx"], 0, f["cx"]], [0, f["fy"], f["cy"]], [0, 0, 1]], dtype=np.float64)
-        cameras.append(Camera(name, image, mask if mask.exists() else None, int(f["width"]), int(f["height"]), K, opencv_camtoworld(f["pose"])))
+        cameras.append(
+            Camera(
+                name,
+                image,
+                mask if mask.exists() else None,
+                int(f["width"]),
+                int(f["height"]),
+                K,
+                opencv_camtoworld(f["pose"]),
+                _number(f.get("turnRate")),
+                _number(f.get("exposure")),
+            )
+        )
     if not cameras:
         raise ValueError("no photos in the capture")
     xyz, normal, rgb = read_seeds(folder / doc.get("seeds", {}).get("file", "seeds.ply"))

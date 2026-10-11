@@ -63,8 +63,9 @@ old model finishes without attaching them). Make the new scan photoreal again.
 
 ## 3. Training (`worker/photoreal`)
 
-gsplat 1.5.3's recipe: MCMC on the GPU (up to 1,000,000 splats), 30,000 steps on photos 1440 pixels on their long
-side, loss 0.8 L1 + 0.2 (1 − SSIM), spherical harmonics up to degree 3. Splats start as flat discs on the seeds, facing
+gsplat 1.5.3's recipe: MCMC on the GPU (up to 1,000,000 splats), 30,000 steps on the photos at full size (1920 pixels
+on their long side, as the phone saves them; the first workers trained at 1440 and lost a quarter of the detail),
+loss 0.8 L1 + 0.2 (1 − SSIM), spherical harmonics up to degree 3. Splats start as flat discs on the seeds, facing
 the surface. gsplat tunes MCMC for scenes scaled so the cameras sit about a unit from their center; homes are in
 meters, so its position noise (which grows with the square of the unit) and scale penalty are sized to the capture
 (`TrainConfig.normalize`). Adam moves only the splats the current photo shows (gsplat's `SelectiveAdam`,
@@ -94,6 +95,17 @@ needle or a blob hanging off a wall. Training keeps three rules on top of the re
 
 `stats` adds `shellPlanes`, `onShell` (splats on them at the end) and `floatersCleared`.
 
+**Sharp photos first** (`sharpness.py`). A photo taken while the phone turns is smeared by about turn rate ×
+exposure × focal length pixels: in evening light (1/30 s) a slow 0.2 rad/s turn smears 9 px across a 1920 px photo,
+and the app also takes photos while the phone keeps moving. Trained on every photo equally, the splats average the
+smeared photos in and come out soft, while the painted model takes each spot from its sharpest photo. So each photo
+gets a say: the median, over the surface points it sees (seeds in front of it, not behind nearer ones), of (sharpest
+smear there + 1 px) / (its smear + 1 px). A photo that is the best view of its surfaces keeps a full say however
+smeared, and one 3 px blurrier than another photo of the same surfaces drops to about a quarter. Photos are drawn in
+proportion to say², at least 2% (`TrainConfig.blur_*`). The phone records the turn rate and exposure with every photo
+(`cameras.json`: `turnRate`, `exposure`). `stats` adds `smearPx` (median, 90th percentile, largest, at training size)
+and `photosLeftToSharper` (photos with less than half a say).
+
 ## 4. In the walkthrough
 
 Splats are at their best near where the photos were taken, so the viewer shows them there and the painted model
@@ -103,6 +115,10 @@ camera looking within 70° of the same way, the splats fade out over a third of 
 shows; they come back from 1.15 m, or within 1.05 m and 55° of a photo spot. The first time, a hint says why
 ("Up close: the photos painted on the model"), and the Photoreal button's ring dims while it waits. Tours made
 before the spots were reported go by distance alone.
+
+Spark draws the splats as the trainer drew them: gsplat's classic mode widens each splat by 0.3 px² on screen
+(Spark's `preBlurAmount`), and nothing more (`blurAmount` 0; Spark's default of 0.3 is for anti-aliased training and
+would widen them a second time and dim the smallest, softening fine texture).
 
 ## 5. Set it up
 
@@ -163,8 +179,8 @@ readable only through the signed links the GPU gets, and are deleted when the sp
 
 ## 6. Costs and sizes
 
-* **GPU**: 20–35 minutes on an A10G (about $1.10 an hour on Modal): roughly $0.40–0.70 per home. Nothing runs
-  between jobs.
+* **GPU**: 30–50 minutes on an A10G at full-size photos (about $1.10 an hour on Modal): roughly $0.55–0.90 per
+  home. Nothing runs between jobs.
 * **Upload from the phone**: the photos, 100–400 MB for a home (best on Wi-Fi). They are deleted from storage once
   the splats exist.
 * **Download for buyers**: the `.spz`, at most 45 MB, only when they switch to Photoreal (or start in it).

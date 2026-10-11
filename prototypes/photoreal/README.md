@@ -122,6 +122,17 @@ python tools/eval_splats.py eval-data/capture-rough eval-data/views /tmp/smoke -
 `eval_modal.py` trains every variant at once, an A10G each (the worker's GPU), from the Modal volume
 `atrium-photoreal-eval`, and writes `results.json`, `summary.md`, the renders and `sheet-*.jpg` into `--out`.
 
+Phone photos taken while turning are smeared, and the worker learns details from the sharpest photos of each
+surface (`worker/photoreal/atrium_photoreal/sharpness.py`). `eval-data/capture-rough-blur` is the rough capture
+with half its photos smeared that way (`tools/blur_capture.py`: runs of photos, 1–6 px at 480 px across, about
+4–24 px on a phone's photo, with the turn rate in `cameras.json`). `--variants even,priors,blur-p1` compares every
+photo counting the same with the defaults:
+
+```sh
+modal run tools/eval_modal.py --capture eval-data/capture-rough-blur --views eval-data/views --out eval-data/results-blur \
+    --variants even,priors,blur-p1
+```
+
 ## How the splats are trained
 
 `splat/rasterize.cpp` is a CPU tile rasterizer (16 × 16 tiles, depth-sorted, early termination) with

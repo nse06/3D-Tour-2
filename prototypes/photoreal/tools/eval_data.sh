@@ -5,6 +5,7 @@
 #   data-rough/      the same capture as rough as a real scan (tools/roughen.py)
 #   capture-clean/   what the phone would upload for each (scanproc paint --photoreal, tools/rgb_frames.py):
 #   capture-rough/   cameras.json, seeds.ply, frames/
+#   capture-rough-blur/  the rough capture with half its photos smeared by the phone turning (tools/blur_capture.py)
 #   views/           the real apartment from the evaluation viewpoints (tools/eval_views.py, scene/render_views.mjs)
 #
 #   tools/eval_data.sh [out]
@@ -51,6 +52,8 @@ for kind in clean rough; do
   fi
   $PY tools/rgb_frames.py "$src/rgb" "$OUT/capture-$kind"
 done
+
+[ -f "$OUT/capture-rough-blur/cameras.json" ] || $PY tools/blur_capture.py "$OUT/capture-rough" "$OUT/capture-rough-blur"
 
 if [ ! -f "$OUT/views/views.json" ]; then
   $PY tools/eval_views.py "$OUT/data" "$OUT/capture-rough" "$OUT/views.json"
