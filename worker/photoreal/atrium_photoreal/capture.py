@@ -34,10 +34,11 @@ class Camera:
     # Intrinsics at the photo's full size, and the pose (camera-to-world, OpenCV axes).
     K: np.ndarray
     camtoworld: np.ndarray
-    # How fast the phone was turning (rad/s) and the exposure time (s) when it took the photo, if it
-    # recorded them: how smeared the photo is (sharpness.py).
+    # How fast the phone was turning (rad/s), the exposure time (s) and how fast it was moving (m/s)
+    # when it took the photo, if it recorded them: how smeared the photo is (sharpness.py).
     turn_rate: float | None = None
     exposure: float | None = None
+    speed: float | None = None
 
 
 @dataclass
@@ -102,6 +103,7 @@ def load(folder: Path) -> Capture:
                 opencv_camtoworld(f["pose"]),
                 _number(f.get("turnRate")),
                 _number(f.get("exposure")),
+                _number(f.get("speed")),
             )
         )
     if not cameras:

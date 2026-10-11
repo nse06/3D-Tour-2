@@ -1,7 +1,8 @@
 """Which photos the splats learn the details from (docs/photoreal.md §3).
 
 A photo taken while the phone turns is smeared by about turn rate × exposure time × focal length
-pixels: indoors in the evening (1/30 s) even a slow 0.2 rad/s turn smears 9 px across a 1920 px photo.
+pixels: indoors the camera runs at its longest exposure (1/60 s), where even a slow 0.2 rad/s turn
+smears 5 px across a 1920 px photo.
 Trained on every photo equally, the splats average the smeared photos in and come out soft wherever
 a sharp photo saw the same thing. The painted model doesn't have this problem: it takes each spot
 from its sharpest photo (ScanCore's PhotoTexturing scores photos by the same turn rate × exposure).
@@ -21,15 +22,21 @@ from .capture import Camera
 
 # ScanCore's guess when a photo has no exposure time (PhotoTexturing: 1/50 s).
 DEFAULT_EXPOSURE = 0.02
+# How far away what's in view is taken to be for the smear of walking (ScanCore's PhotoSharpness).
+ASSUMED_DISTANCE = 1.5
 
 
 def smear_px(camera: Camera, scale: float = 1.0) -> float | None:
-    """How far a photo is smeared by the phone turning, in pixels at `scale` times its size; None if
-    the phone didn't record how fast it was turning."""
+    """How far a photo is smeared by the phone turning and moving, in pixels at `scale` times its
+    size (as ScanCore's PhotoSharpness predicts it on the phone); None if the phone didn't record how
+    fast it was turning."""
     if camera.turn_rate is None or not np.isfinite(camera.turn_rate):
         return None
     exposure = camera.exposure if camera.exposure is not None and 0 < camera.exposure < 1 else DEFAULT_EXPOSURE
-    return float(max(0.0, camera.turn_rate) * exposure * camera.K[0, 0] * scale)
+    fx = camera.K[0, 0] * scale
+    turn = max(0.0, camera.turn_rate) * exposure * fx
+    walk = max(0.0, camera.speed) * exposure * fx / ASSUMED_DISTANCE if camera.speed is not None else 0.0
+    return float(np.hypot(turn, walk))
 
 
 def visible_seeds(cameras: list[Camera], points: np.ndarray, grid: tuple[int, int] = (64, 48), max_depth: float = 8.0) -> np.ndarray:

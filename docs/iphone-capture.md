@@ -343,11 +343,15 @@ roomplan/mesh-run-N.bin   build 7 on: ARKit's LiDAR mesh when RoomPlan run N end
 frames/frames.json   [{ file, t, transform[16], intrinsics[9], width, height, imageWidth, imageHeight, segment }]
                      (raw: each pose in its run's frame; images in sensor orientation; intrinsics refer to
                      width × height; scan.json has the same photos in the shared frame; build 5 on also records
-                     angularSpeed and exposureDuration)
-frames/000123.jpg    RGB keyframes for photo texturing: full resolution (≤1920 px), taken when the phone is
-                     steady (turning < 0.2 rad/s, moving < 0.3 m/s, limits relaxing while it keeps moving), at
-                     most every 0.8 s, up to 600. Kept on the phone: package.zip leaves the JPEGs out (the
-                     walkthrough carries the painted photos); older builds took one every 1.5 s at ≤1280 px
+                     angularSpeed and exposureDuration, build 11 on linearSpeed)
+frames/000123.jpg    RGB keyframes for photo texturing: full resolution (≤1920 px), at most every 0.8 s, up to
+                     600, taken when the phone moves slowly enough for a sharp photo (build 11 on, ScanCore's
+                     PhotoSharpness): predicted smear = turn rate × exposure × focal length, with walking added
+                     as speed × exposure × focal length ÷ 1.5 m, at most 3 px; after 4 s without such a
+                     moment, 6 px (a "soft" photo, weak on the coverage map). Builds 5–10 took them while
+                     turning < 0.2 rad/s and moving < 0.3 m/s, limits growing up to elevenfold while the phone
+                     kept moving. Kept on the phone: package.zip leaves the JPEGs out (the walkthrough carries
+                     the painted photos); older builds took one every 1.5 s at ≤1280 px
 alignment.json       AlignmentReport: how each room was placed (§1.1)
 info.json            app / device / capture metadata, pipeline version, alignment summary, photosWithPeople,
                      lidarMesh / lidarMeshRooms (the session's mesh setting, rooms with a mesh file),
@@ -378,8 +382,9 @@ info.json            app / device / capture metadata, pipeline version, alignmen
    at every angle), with every 25 cm of wall (three heights), every 30 cm of floor and every piece of furniture (its
    top below 1.4 m and its sides, a spot every 30 cm, 60 cm up the sides; a piece takes the level at least half of
    what shows of it reaches) in green where a photo already covers it well (within 60° of head-on, 4.5 m and away from
-   the photo's edges), amber where only weakly (from the side, far away, the edge of the frame) and red where no photo
-   has yet — by the painting's own rules, walls and furniture boxes hiding what's behind them, with this run's photos.
+   the photo's edges), amber where only weakly (from the side, far away, the edge of the frame, or a soft photo) and
+   red where no photo has yet — by the painting's own rules, walls and furniture boxes hiding what's behind them, with
+   this run's photos. A photo smeared more than 3 px covers weakly at best, more than 6 px not at all (build 11 on).
    What furniture stands right in front of needs no photo and doesn't count: the wall behind a wardrobe or a
    headboard (a thin gray line on the map), the side of a cabinet against the next one. Below the map, the shares
    covered well: walls, floor, furniture (by surface); tapping folds the map away. Recomputed off the main thread

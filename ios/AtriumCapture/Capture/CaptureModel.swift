@@ -37,6 +37,8 @@ final class CaptureModel: ObservableObject {
     /// Photos taken so far, and whether the phone is moving too fast for sharp ones.
     @Published private(set) var photoCount = 0
     @Published private(set) var movingFast = false
+    /// A photo is due and the phone hasn't held still enough for a sharp one.
+    @Published private(set) var holdStill = false
     /// What the photos of the room being scanned cover so far (nil until RoomPlan sees a room), and
     /// the phone on that map: where it is and which way it looks (plan x, z).
     @Published private(set) var coverage: CaptureCoverage?
@@ -130,14 +132,16 @@ final class CaptureModel: ObservableObject {
         controller?.stopTracking()
     }
 
-    /// After each recorded AR frame: publishes the photo count and the "slow down" hint when they change.
+    /// After each recorded AR frame: publishes the photo count and the "slow down" and "hold still"
+    /// hints when they change.
     func updatePhotoStatus() {
-        let count = recorder.keyframes.count, fast = recorder.movingFast
+        let count = recorder.keyframes.count, fast = recorder.movingFast, still = recorder.waitingForSteady
         if photoCount != count {
             photoCount = count
             refreshCoverage()
         }
         if movingFast != fast { movingFast = fast }
+        if holdStill != still { holdStill = still }
     }
 
     /// The phone on the coverage map (a few times a second is plenty).

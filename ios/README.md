@@ -94,17 +94,21 @@ you want to look good and look at it from a couple of sides. If scanning ever mi
 (the camera view freezing, the phone overheating quickly), turn the switch off and scan again.
 
 For good photos, take your time — a slow scan looks much better than a quick one. The app takes
-a full-resolution photo whenever the phone is still (at most about one a second), so pause for
-a moment on each stretch of wall, then on the floor and ceiling, rather than sweeping
-continuously. The scan screen counts the photos and says **Slow down for sharp photos** when
-you're moving too fast for them. Get close-ish (1–3 m) to furniture and look at it straight on
-from a couple of sides. Surfaces no photo saw are filled in from their surroundings; the scan's
-page says how much your photos covered.
+a full-resolution photo whenever the phone is still enough for it to come out sharp (at most
+about one a second), so pause for a moment on each stretch of wall, then on the floor and
+ceiling, rather than sweeping continuously. The scan screen counts the photos, says **Slow down
+for sharp photos** when you're moving too fast, and **Hold still a moment for a sharp photo** when
+it has been waiting for a steady moment (build 11 on: it only keeps photos it expects to be sharp;
+if you never stop, it settles for a slightly soft one after a few seconds and the map keeps that
+spot amber). Turn the lights on and open the curtains: indoors the camera already uses its
+longest exposure, so in dim light every movement smears. Get close-ish (1–3 m) to furniture and
+look at it straight on from a couple of sides. Surfaces no photo saw are filled in from their
+surroundings; the scan's page says how much your photos covered.
 
 The **map** in the top right corner (build 8 on) shows what your photos cover so far: the room
 from above, turned the way you're facing (red on the map's left is the wall on your left), with
-walls, floor and furniture in green where a photo covers them well, amber where only from the
-side or far away, and red where none does yet. Before **Done with this room**, turn toward the red
+walls, floor and furniture in green where a sharp photo covers them well, amber where only from
+the side, far away or with a slightly soft photo, and red where none does yet. Before **Done with this room**, turn toward the red
 until it goes green — the floor near where you stand usually needs a slow look down; a bed or table
 turns green once you've looked down at it from a step or two away, from more than one side. Walls
 hidden behind a wardrobe or headboard show as a thin gray line: nothing to photograph there. The

@@ -99,19 +99,23 @@ struct CaptureScreen: View {
         }
     }
 
-    /// Photos are taken whenever the phone is steady; moving slowly gives more, sharper ones.
+    /// Why no photo is being taken right now, if the phone is moving too much for a sharp one.
+    private var photoHint: (icon: String, text: String)? {
+        if model.movingFast { return ("tortoise.fill", "Slow down for sharp photos") }
+        if model.holdStill { return ("hand.raised.fill", "Hold still a moment for a sharp photo") }
+        return nil
+    }
+
+    /// Photos are taken whenever the phone is steady enough for a sharp one; moving slowly gives more.
     private var photoStatus: some View {
-        HStack(spacing: 6) {
-            Image(systemName: model.movingFast ? "tortoise.fill" : "camera.fill")
-            if model.movingFast {
-                Text("Slow down for sharp photos")
-            } else {
-                Text("\(model.photoCount) photo\(model.photoCount == 1 ? "" : "s") · pause on each wall")
-            }
+        let hint = photoHint
+        return HStack(spacing: 6) {
+            Image(systemName: hint?.icon ?? "camera.fill")
+            Text(hint?.text ?? "\(model.photoCount) photo\(model.photoCount == 1 ? "" : "s") · pause on each wall")
         }
-        .font(.footnote.weight(model.movingFast ? .semibold : .regular))
-        .foregroundStyle(model.movingFast ? Color.orange : Color.secondary)
-        .animation(.easeInOut(duration: 0.2), value: model.movingFast)
+        .font(.footnote.weight(hint != nil ? .semibold : .regular))
+        .foregroundStyle(hint != nil ? Color.orange : Color.secondary)
+        .animation(.easeInOut(duration: 0.2), value: hint?.text)
     }
 
     @ViewBuilder

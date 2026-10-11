@@ -7,10 +7,12 @@ import simd
 
 /// Records the phone's path and full-resolution photos while the AR session
 /// runs — between rooms too, so the path links the rooms. A photo is taken as
-/// soon as the phone is steady (at most every 0.8 s); the longer it keeps
-/// moving, the less steady it needs to be, so a fast walk still gets photos.
-/// Each photo records how fast the phone was turning and its exposure time, so
-/// texturing can prefer the sharp ones.
+/// soon as the phone moves slowly enough for it to come out sharp (ScanCore's
+/// PhotoSharpness: under 3 px of motion smear), at most every 0.8 s. After 4 s
+/// without such a moment it settles for 6 px, which the coverage map counts as
+/// weak, and "hold still" shows. Each photo records how fast the phone was
+/// turning and moving and its exposure time, so painting and photoreal training
+/// can prefer the sharpest.
 ///
 /// RoomPlan moves the AR world origin to the phone each time a room capture
 /// starts, so every sample and photo is tagged with the run ("segment") it was
@@ -25,10 +27,14 @@ final class MotionRecorder {
     private(set) var segment = -1
     /// Moving too fast for sharp photos (smoothed: on after half a second, off after a second).
     private(set) var movingFast = false
+    /// A photo is due but the phone hasn't been steady enough for a sharp one for a while.
+    private(set) var waitingForSteady = false
     let framesDirectory: URL
 
     private var startTime: TimeInterval?
     private var lastKeyframe: TimeInterval = -.infinity
+    /// When the next photo became due (seconds since the start), while waiting for a steady moment.
+    private var photoDue: TimeInterval?
     private var encoding = false
     /// Dense sampling until this ARFrame time (set on the first frame after a run starts).
     private var denseUntil: TimeInterval = -.infinity
@@ -42,12 +48,10 @@ final class MotionRecorder {
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let queue = DispatchQueue(label: "atrium.keyframes", qos: .utility)
 
-    /// Photos are at least this far apart...
+    /// Photos are at least this far apart, and sharp (PhotoSharpness).
     static let keyframeInterval: TimeInterval = 0.8
-    /// ...and taken while the phone turns and moves slower than this. The limits grow by
-    /// their own size for every second spent waiting.
-    static let steadyTurnRate: Float = 0.2
-    static let steadySpeed: Float = 0.3
+    /// "Hold still" after waiting this long for a sharp moment.
+    static let holdStillAfter: TimeInterval = 1.5
     /// "Slow down" above these.
     static let fastTurnRate: Float = 0.7
     static let fastSpeed: Float = 0.8
@@ -86,10 +90,15 @@ final class MotionRecorder {
         let elapsed = t - (startTime ?? t)
 
         if !encoding, keyframes.count < Self.maxKeyframes, elapsed - lastKeyframe >= Self.keyframeInterval {
-            let relax = 1 + Float(min(10, elapsed - lastKeyframe - Self.keyframeInterval))
-            if turnRate <= Self.steadyTurnRate * relax && speed <= Self.steadySpeed * relax {
+            let due = photoDue ?? elapsed
+            photoDue = due
+            if PhotoSharpness.decide(smear: predictedSmear(frame), waited: elapsed - due) != nil {
                 lastKeyframe = elapsed
+                photoDue = nil
+                waitingForSteady = false
                 saveKeyframe(frame, elapsed: elapsed)
+            } else {
+                waitingForSteady = elapsed - due >= Self.holdStillAfter
             }
         }
 
@@ -126,6 +135,14 @@ final class MotionRecorder {
         if movingFast, let since = slowSince, t - since > 1 { movingFast = false }
     }
 
+    /// How smeared a photo taken now would come out, in pixels on the saved photo.
+    private func predictedSmear(_ frame: ARFrame) -> Float {
+        let resolution = frame.camera.imageResolution
+        let scale = min(1, Self.maxImageSide / max(resolution.width, resolution.height))
+        let fx = frame.camera.intrinsics.columns.0.x * Float(scale)
+        return PhotoSharpness.smear(turnRate: turnRate, speed: speed, exposure: frame.camera.exposureDuration, fx: fx)
+    }
+
     private func saveKeyframe(_ frame: ARFrame, elapsed: Double) {
         let index = keyframes.count
         let name = String(format: "%06d.jpg", index)
@@ -137,7 +154,7 @@ final class MotionRecorder {
             file: "frames/\(name)", t: elapsed, transform: Transform(m),
             intrinsics: [k.columns.0, k.columns.1, k.columns.2].flatMap { [$0.x, $0.y, $0.z] },
             width: Int(resolution.width), height: Int(resolution.height), imageWidth: 0, imageHeight: 0, segment: max(segment, 0),
-            angularSpeed: turnRate, exposureDuration: frame.camera.exposureDuration)
+            angularSpeed: turnRate, exposureDuration: frame.camera.exposureDuration, linearSpeed: speed)
 
         // Encode off the main thread; one frame at a time so ARKit's buffers are released quickly.
         let image = CIImage(cvPixelBuffer: frame.capturedImage)

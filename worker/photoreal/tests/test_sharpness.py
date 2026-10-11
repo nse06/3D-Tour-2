@@ -15,12 +15,12 @@ from . import scene
 W, H, F = 640, 480, 500.0
 
 
-def camera(x=0.0, z=0.0, facing=1.0, turn=None, exposure=1 / 30):
+def camera(x=0.0, z=0.0, facing=1.0, turn=None, exposure=1 / 30, speed=None):
     """An OpenCV camera at (x, 0, z) looking along +z (facing 1) or -z (facing -1)."""
     c2w = np.diag([facing, 1.0, facing, 1.0])
     c2w[:3, 3] = [x, 0.0, z]
     K = np.array([[F, 0, W / 2], [0, F, H / 2], [0, 0, 1]])
-    return Camera("c", Path("c.jpg"), None, W, H, K, c2w, turn, exposure)
+    return Camera("c", Path("c.jpg"), None, W, H, K, c2w, turn, exposure, speed)
 
 
 def wall(z, half=2.0, step=0.05):
@@ -36,6 +36,10 @@ def test_smear_is_turn_rate_times_exposure_times_focal_length():
     # No exposure time recorded: ScanCore's 1/50 s.
     assert abs(smear_px(camera(turn=0.2, exposure=None)) - 0.2 * 0.02 * F) < 1e-9
     assert smear_px(camera(turn=None)) is None
+    # Walking at 0.3 m/s past things 1.5 m away smears like turning at 0.2 rad/s; both add up like a
+    # vector's sides (build 11 records the speed).
+    assert abs(smear_px(camera(turn=0.0, speed=0.3)) - 0.2 / 30 * F) < 1e-9
+    assert abs(smear_px(camera(turn=0.2, speed=0.3)) - 0.2 / 30 * F * np.sqrt(2)) < 1e-9
 
 
 def test_a_smeared_photo_defers_to_sharper_photos_of_the_same_wall():

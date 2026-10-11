@@ -154,10 +154,12 @@ public struct CameraFrame: Codable, Sendable, Equatable {
     public var angularSpeed: Float?
     /// The photo's exposure time, seconds.
     public var exposureDuration: Double?
+    /// How fast the phone was moving, meters per second (motion blur too; build 11 on).
+    public var linearSpeed: Float?
 
     public init(
         file: String, t: Double, transform: Transform, intrinsics: [Float], width: Int, height: Int, imageWidth: Int, imageHeight: Int,
-        segment: Int? = nil, angularSpeed: Float? = nil, exposureDuration: Double? = nil
+        segment: Int? = nil, angularSpeed: Float? = nil, exposureDuration: Double? = nil, linearSpeed: Float? = nil
     ) {
         self.file = file
         self.t = t
@@ -170,6 +172,7 @@ public struct CameraFrame: Codable, Sendable, Equatable {
         self.segment = segment
         self.angularSpeed = angularSpeed
         self.exposureDuration = exposureDuration
+        self.linearSpeed = linearSpeed
     }
 }
 
