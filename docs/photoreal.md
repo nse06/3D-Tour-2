@@ -95,16 +95,22 @@ needle or a blob hanging off a wall. Training keeps three rules on top of the re
 
 `stats` adds `shellPlanes`, `onShell` (splats on them at the end) and `floatersCleared`.
 
-**Sharp photos first** (`sharpness.py`). A photo taken while the phone turns is smeared by about turn rate ×
-exposure × focal length pixels: indoors the camera runs at its longest exposure (1/60 s), where a slow 0.2 rad/s turn
-smears 5 px across a 1920 px photo, and builds before 11 also took photos while the phone kept moving. Trained on every photo equally, the splats average the
-smeared photos in and come out soft, while the painted model takes each spot from its sharpest photo. So each photo
-gets a say: the median, over the surface points it sees (seeds in front of it, not behind nearer ones), of (sharpest
-smear there + 1 px) / (its smear + 1 px). A photo that is the best view of its surfaces keeps a full say however
-smeared, and one 3 px blurrier than another photo of the same surfaces drops to about a quarter. Photos are drawn in
-proportion to say², at least 2% (`TrainConfig.blur_*`). The phone records the turn rate and exposure with every photo
-(`cameras.json`: `turnRate`, `exposure`). `stats` adds `smearPx` (median, 90th percentile, largest, at training size)
-and `photosLeftToSharper` (photos with less than half a say).
+**Smeared photos** (`sharpness.py`). A photo taken while the phone turns is smeared by about turn rate × exposure ×
+focal length pixels (plus speed × exposure × focal length ÷ 1.5 m for walking): indoors the camera runs at its longest
+exposure (1/60 s), where a slow 0.2 rad/s turn smears 5 px across a 1920 px photo, and builds before 11 also took
+photos while the phone kept moving. Trained on every photo as it is, the splats average the smeared photos in and come
+out soft, while the painted model takes each spot from its sharpest photo. So a photo smeared 1 px or more (at training
+size, from `cameras.json`'s `turnRate`, `speed` and `exposure`) is compared with the render smeared the same way: a
+line as long as its smear, in the direction that matches it best, found by trying twelve at steps 4,000 and 12,000
+(before that the splats are still taking shape, and the photo is used as it is). A smeared photo still says where
+things are and what color they are, but no longer pulls the splats soft (`TrainConfig.blur_model = "kernel"`).
+
+The first attempt drew smeared photos less often where sharper photos saw the same surfaces (`blur_model = "sample"`:
+a say of (sharpest smear there + 1 px) / (its smear + 1 px), photos drawn in proportion to say²). On the synthetic
+apartment with half its photos smeared (round 4, `prototypes/photoreal/results/round-4/`) that was a little crisper
+(LPIPS 0.01–0.02 better) but lost 0.2–0.6 dB, and edges seen from few sides, with fewer photos holding them, ghosted (a
+door frame). `stats` adds `smearPx` (median, 90th percentile, largest, at training size), `blurModel`,
+`smearedPhotosMatched` and, with "sample", `photosLeftToSharper`.
 
 ## 4. In the walkthrough
 

@@ -44,9 +44,10 @@ VARIANTS = {
     "base-meters": {**OFF, "normalize": False},  # ... the exposure fix only
     "shell": {**OFF, "shell_snap": 0.025},  # splats on walls, floors and ceilings kept flat
     "shell+aniso": {"floater_radius": 0.0},  # ... and no needles
-    "priors": {},  # ... and floaters in front of the cameras cleared, sharp photos favored: the defaults
-    "even": {"blur_weighting": False},  # ... every photo counting the same (worker b8c7d79)
-    "blur-p1": {"blur_power": 1.0},  # sharp photos favored less
+    "priors": {},  # ... and floaters in front of the cameras cleared, smeared photos matched: the defaults
+    "even": {"blur_model": "off"},  # ... smeared photos taken as they are (worker b8c7d79)
+    "sample": {"blur_model": "sample"},  # ... sharp photos drawn more often instead (round 4's "priors")
+    "blur-p1": {"blur_model": "sample", "blur_power": 1.0},  # ... less so
     "priors-aniso3": {"max_anisotropy": 3.0},
     "priors-sh1": {"sh_degree": 1},  # less view-dependent color to overfit with
     "priors-500k": {"max_gaussians": 500_000},

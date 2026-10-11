@@ -125,12 +125,12 @@ python tools/eval_splats.py eval-data/capture-rough eval-data/views /tmp/smoke -
 Phone photos taken while turning are smeared, and the worker learns details from the sharpest photos of each
 surface (`worker/photoreal/atrium_photoreal/sharpness.py`). `eval-data/capture-rough-blur` is the rough capture
 with half its photos smeared that way (`tools/blur_capture.py`: runs of photos, 1–6 px at 480 px across, about
-4–24 px on a phone's photo, with the turn rate in `cameras.json`). `--variants even,priors,blur-p1` compares every
-photo counting the same with the defaults:
+4–24 px on a phone's photo, with the turn rate in `cameras.json`). `--variants even,priors,sample` compares taking
+the smeared photos as they are, matching them with a smeared render (the default) and drawing them less often:
 
 ```sh
 modal run tools/eval_modal.py --capture eval-data/capture-rough-blur --views eval-data/views --out eval-data/results-blur \
-    --variants even,priors,blur-p1
+    --variants even,priors,sample
 ```
 
 ## How the splats are trained

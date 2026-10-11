@@ -5,8 +5,8 @@ GPU), adapted to phone scans of homes:
 * each photo gets an exposure and white-balance correction (a gain and an offset per color channel,
   averaging to none over the photos), so the phone's auto-exposure doesn't end up baked into the splats;
 * each photo's pose is refined a little (the phone's tracking drifts);
-* the details come from the sharpest photos: a photo smeared by the phone turning counts less where
-  sharper photos saw the same surfaces (sharpness.py);
+* photos smeared by the phone moving are compared with the render smeared the same way, so they hold
+  the shape without pulling the splats soft (sharpness.py);
 * pixels showing people are left out;
 * splats wandering far outside the rooms are dropped (window views may sit a few meters out);
 * a random background behind the splats, so nothing stays see-through;
@@ -29,7 +29,7 @@ import torch.nn.functional as F
 from . import shell as room_shell
 from .capture import Capture, load_photo, training_size
 from .render import psnr, rasterize, rgb_to_sh, ssim
-from .sharpness import photo_weights
+from .sharpness import find_direction, line_kernel, photo_weights, smear_image
 
 
 @dataclass
@@ -82,11 +82,19 @@ class TrainConfig:
     shell_thickness: float = 0.002
     max_anisotropy: float = 6.0
     floater_radius: float = 0.3
-    # Photos smeared by the phone turning (sharpness.py): each photo's say is how close it comes to the
-    # sharpest photo of the same surfaces, a smear of `blur_half_px` px (at training size) more than
-    # theirs roughly halving it, and photos are drawn in proportion to say ** `blur_power`, at least
-    # `blur_floor` (so none is dropped outright). False: every photo equally, as before.
-    blur_weighting: bool = True
+    # Photos smeared by the phone moving (sharpness.py). "kernel": a photo smeared `blur_min_px` px or
+    # more (at training size, from its turn rate, speed and exposure) is compared with the render
+    # smeared the same way, along the direction (of `blur_angles` tried) that matches it best, found
+    # at each of `blur_direction_steps` (none before the first: the splats take shape first). Smears
+    # are capped at `blur_max_px`. "sample": each photo's say is how close it comes to the sharpest
+    # photo of the same surfaces, a smear of `blur_half_px` px more than theirs roughly halving it,
+    # and photos are drawn in proportion to say ** `blur_power`, at least `blur_floor`. "off": every
+    # photo as it is, equally (the trainer before both).
+    blur_model: str = "kernel"
+    blur_min_px: float = 1.0
+    blur_max_px: float = 48.0
+    blur_angles: int = 12
+    blur_direction_steps: tuple[int, ...] = (4000, 12000)
     blur_half_px: float = 1.0
     blur_power: float = 2.0
     blur_floor: float = 0.02
@@ -237,17 +245,21 @@ def train(
     test_ids = [i for i in range(len(cams)) if cfg.holdout_every and i % cfg.holdout_every == cfg.holdout_every // 2]
     train_ids = [i for i in range(len(cams)) if i not in set(test_ids)]
 
-    # The order photos are drawn in: sharp photos more often where blurrier ones saw the same surfaces.
+    # How smeared each photo is, and the order photos are drawn in (sharp ones more often with "sample").
     say, smear = photo_weights(cams, [training_size(c, cfg.long_side)[2] for c in cams], capture.seeds_xyz, cfg.blur_half_px, seed=cfg.seed)
-    if not cfg.blur_weighting:
+    if cfg.blur_model != "sample":
         say = np.ones(len(cams))
     draw = np.maximum(say[train_ids] ** cfg.blur_power, cfg.blur_floor)
     order = rng.choice(np.asarray(train_ids), size=cfg.steps, p=draw / draw.sum())
+    # With "kernel": the smeared photos, and each one's smear kernel once its direction is known.
+    smeared = [i for i in train_ids if cfg.blur_model == "kernel" and np.isfinite(smear[i]) and smear[i] >= cfg.blur_min_px]
+    kernels: dict[int, torch.Tensor] = {}
     if not np.isnan(smear).all():
         known = smear[~np.isnan(smear)]
         log(
             f"photo smear: median {np.median(known):.1f} px, 90% under {np.percentile(known, 90):.1f} px; "
-            f"{int((say[train_ids] < 0.5).sum())} of {len(train_ids)} photos mostly left to sharper ones"
+            + (f"{len(smeared)} photos compared with the render smeared alike" if cfg.blur_model == "kernel" else "")
+            + (f"{int((say[train_ids] < 0.5).sum())} of {len(train_ids)} photos mostly left to sharper ones" if cfg.blur_model == "sample" else "")
         )
 
     # The spread of the cameras sets the step size for positions (gsplat's scene scale).
@@ -314,6 +326,15 @@ def train(
     history_every = max(1, cfg.steps // 50)
     log(f"training {len(train_ids)} photos ({len(test_ids)} held out) at {cfg.long_side} px, {len(splats['means'])} splats to start, {kind} on {device}")
     for step in range(cfg.steps):
+        if smeared and step in cfg.blur_direction_steps:
+            # Which way each smeared photo is smeared: the direction that makes the render look most like it.
+            with torch.no_grad():
+                for j in smeared:
+                    photo = photos[j].to(device).float() / 255.0
+                    shown, _, _ = rasterize(splats, torch.linalg.inv(pose(camtoworlds[j], j)), Ks[j], photo.shape[1], photo.shape[0], min(step // cfg.sh_degree_interval, cfg.sh_degree))
+                    keep = None if people[j] is None else (~people[j].to(device)).float()[..., None]
+                    length = float(min(smear[j], cfg.blur_max_px))
+                    kernels[j] = line_kernel(length, find_direction(exposure(shown[0], j), photo, length, cfg.blur_angles, keep), device)
         i = int(order[step])
         image = photos[i].to(device).float() / 255.0
         height, width = image.shape[:2]
@@ -324,6 +345,8 @@ def train(
         render, alpha, info = rasterize(splats, viewmat, Ks[i], width, height, degree, background=background)
         strategy.step_pre_backward(splats, optimizers, state, step, info)
         predicted = exposure(render[0], i)
+        if i in kernels:
+            predicted = smear_image(predicted, kernels[i])
 
         mask = people[i]
         if mask is not None:
@@ -408,8 +431,9 @@ def train(
     if not np.isnan(smear).all():
         known = smear[~np.isnan(smear)]
         stats["smearPx"] = {"median": round(float(np.median(known)), 2), "p90": round(float(np.percentile(known, 90)), 2), "max": round(float(known.max()), 2)}
-        stats["blurWeighting"] = cfg.blur_weighting
-        stats["photosLeftToSharper"] = int((say[train_ids] < 0.5).sum()) if cfg.blur_weighting else 0
+        stats["blurModel"] = cfg.blur_model
+        stats["smearedPhotosMatched"] = len(kernels)
+        stats["photosLeftToSharper"] = int((say[train_ids] < 0.5).sum()) if cfg.blur_model == "sample" else 0
     if test_ids:
         scores = []
         with torch.no_grad():

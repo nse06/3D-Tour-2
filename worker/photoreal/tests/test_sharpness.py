@@ -4,10 +4,13 @@
 import json
 from pathlib import Path
 
+import math
+
 import numpy as np
+import torch
 
 from atrium_photoreal.capture import Camera, load
-from atrium_photoreal.sharpness import photo_weights, smear_px, visible_seeds
+from atrium_photoreal.sharpness import find_direction, line_kernel, photo_weights, smear_image, smear_px, visible_seeds
 from atrium_photoreal.train import TrainConfig, train
 
 from . import scene
@@ -78,16 +81,51 @@ def test_without_turn_rates_every_photo_counts():
     assert np.isnan(smear).all() and np.allclose(weights, 1.0)
 
 
-def test_training_reports_the_smear(tmp_path):
+def test_a_line_kernel_smears_along_its_direction():
+    k = line_kernel(6.0, 0.0)
+    assert abs(float(k.sum()) - 1) < 1e-6 and torch.allclose(k, k.flip(0).flip(1), atol=1e-6), "normalized and symmetric"
+    # Horizontal: all of it on the middle row (and the rows next to it only by rounding).
+    assert float(k[k.shape[0] // 2].sum()) > 0.99
+    dot = torch.zeros(21, 21, 3)
+    dot[10, 10] = 1.0
+    out = smear_image(dot, line_kernel(8.0, math.pi / 2))
+    assert float(out[:, 10].sum()) > 0.99 * 3 and abs(float(out.sum()) - 3) < 1e-4, "vertical smear stays in its column"
+
+
+def test_the_smear_direction_is_found_from_the_render():
+    rng = np.random.default_rng(3)
+    sharp = torch.from_numpy(rng.random((48, 64, 3)).astype(np.float32))
+    sharp = smear_image(sharp, torch.ones(3, 3) / 9)  # some texture, not pixel noise
+    for angle in (0.0, math.pi / 3, 3 * math.pi / 4):
+        photo = smear_image(sharp, line_kernel(7.0, angle))
+        found = find_direction(sharp, photo, 7.0, angles=12)
+        # The nearest of the twelve directions tried (a line has no front or back).
+        miss = min(abs(found - angle), math.pi - abs(found - angle))
+        assert miss < math.pi / 24 + 1e-6, (angle, found)
+
+
+def smeared_capture(tmp_path):
+    """The tiny scene with every other photo smeared 2.8 px at 32 px across (as cameras.json says)."""
     folder = scene.write(tmp_path / "capture")
     doc = json.loads((folder / "cameras.json").read_text())
     for k, frame in enumerate(doc["frames"]):
         frame["turnRate"], frame["exposure"] = (0.02 if k % 2 else 3.0), 1 / 30
     (folder / "cameras.json").write_text(json.dumps(doc))
-    capture = load(folder)
+    return load(folder)
+
+
+def test_training_matches_smeared_photos_with_a_smeared_render(tmp_path):
+    capture = smeared_capture(tmp_path)
     assert capture.cameras[0].turn_rate == 3.0 and abs(capture.cameras[0].exposure - 1 / 30) < 1e-12
-    result = train(capture, TrainConfig(steps=20, long_side=32, sh_degree=0, progress_every=10), device="cpu", log=lambda _: None)
+    cfg = TrainConfig(steps=20, long_side=32, sh_degree=0, progress_every=10, blur_direction_steps=(5,))
+    result = train(capture, cfg, device="cpu", log=lambda _: None)
     smear = result.stats["smearPx"]
-    assert smear["max"] > smear["median"] > 0 and result.stats["blurWeighting"] is True
-    # Every other photo is smeared 2.8 px (at 32 px across) and its neighbors saw the same floor sharp.
-    assert result.stats["photosLeftToSharper"] == 6
+    assert smear["max"] > smear["median"] > 0 and result.stats["blurModel"] == "kernel"
+    assert result.stats["smearedPhotosMatched"] == 6 and result.stats["photosLeftToSharper"] == 0
+
+
+def test_sampling_leaves_smeared_photos_to_sharper_ones(tmp_path):
+    capture = smeared_capture(tmp_path)
+    result = train(capture, TrainConfig(steps=20, long_side=32, sh_degree=0, progress_every=10, blur_model="sample"), device="cpu", log=lambda _: None)
+    # Every other photo is smeared and its neighbors saw the same floor sharp.
+    assert result.stats["photosLeftToSharper"] == 6 and result.stats["smearedPhotosMatched"] == 0

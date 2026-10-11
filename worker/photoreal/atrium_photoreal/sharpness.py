@@ -7,16 +7,25 @@ Trained on every photo equally, the splats average the smeared photos in and com
 a sharp photo saw the same thing. The painted model doesn't have this problem: it takes each spot
 from its sharpest photo (ScanCore's PhotoTexturing scores photos by the same turn rate × exposure).
 
-So each photo gets a say, 0–1: how close it comes to the sharpest photo of what it shows. A photo
-that is the sharpest view of its surfaces keeps a full say, however smeared (nothing better saw them);
-one that is much blurrier than other photos of the same surfaces hardly counts. Training draws photos
-in proportion (TrainConfig.blur_power), so the details come from the sharp ones and the smeared ones
-still hold the rest in place.
+Two ways out (TrainConfig.blur_model):
+
+* "kernel" (the default): every photo counts, but a smeared photo is compared with the render smeared
+  the same way: a line as long as its smear, in the direction that matches it best (found by trying a
+  dozen once the splats have taken shape). A smeared photo then still says where things are and what
+  color they are, without pulling the splats soft.
+* "sample": each photo gets a say, 0–1, how close it comes to the sharpest photo of what it shows, and
+  training draws photos in proportion. On the synthetic apartment (round 4) that made renders a
+  little crisper but left edges seen from few sides with fewer photos to hold them: ghosting down a
+  door frame.
 """
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
+import torch
+import torch.nn.functional as F
 
 from .capture import Camera
 
@@ -94,3 +103,40 @@ def photo_weights(
         if vis.any():
             weights[i] = float(np.median((sharpest[vis] + half_px) / (known[i] + half_px)))
     return np.clip(weights, 0.0, 1.0), smear
+
+
+def line_kernel(length: float, angle: float, device: torch.device | str | None = None) -> torch.Tensor:
+    """A (k, k) kernel smearing along a line `length` px long at `angle` radians (image x right, y
+    down), normalized and symmetric about its center."""
+    size = int(math.ceil(length)) + 3
+    size += 1 - size % 2
+    c = size // 2
+    t = torch.linspace(-length / 2, length / 2, max(2, int(length * 4)), dtype=torch.float32)
+    x, y = c + t * math.cos(angle), c + t * math.sin(angle)
+    x0, y0 = x.floor(), y.floor()
+    fx, fy = x - x0, y - y0
+    k = torch.zeros(size, size)
+    for dx, dy, w in ((0, 0, (1 - fx) * (1 - fy)), (1, 0, fx * (1 - fy)), (0, 1, (1 - fx) * fy), (1, 1, fx * fy)):
+        k.index_put_(((y0 + dy).long(), (x0 + dx).long()), w, accumulate=True)
+    return (k / k.sum()).to(device)
+
+
+def smear_image(image: torch.Tensor, kernel: torch.Tensor) -> torch.Tensor:
+    """An (H, W, 3) image smeared by `kernel` (edges extended)."""
+    k = kernel.shape[0]
+    x = F.pad(image.permute(2, 0, 1)[None], (k // 2,) * 4, mode="replicate")
+    return F.conv2d(x, kernel.to(image)[None, None].expand(image.shape[2], 1, k, k), groups=image.shape[2])[0].permute(1, 2, 0)
+
+
+@torch.no_grad()
+def find_direction(render: torch.Tensor, photo: torch.Tensor, length: float, angles: int = 12, keep: torch.Tensor | None = None) -> float:
+    """The direction (radians, 0–π) a `length` px smear of `render` must have to look most like `photo`
+    (both (H, W, 3); `keep`, (H, W, 1), weighs the pixels that count)."""
+    best, best_angle = math.inf, 0.0
+    for a in range(angles):
+        angle = math.pi * a / angles
+        diff = (smear_image(render, line_kernel(length, angle, render.device)) - photo).abs()
+        error = float((diff * keep).sum() / keep.sum().clamp(min=1) if keep is not None else diff.mean())
+        if error < best:
+            best, best_angle = error, angle
+    return best_angle
