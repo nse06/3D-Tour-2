@@ -4,5 +4,9 @@ numpy
 scipy
 pillow
 torch
-open3d-cpu  # MIT; ray casting (Embree). Needs libegl1 and libgl1 on Linux.
+open3d-cpu  # MIT; ray casting (Embree). Needs libegl1, libgl1 and libusb-1.0-0 on Linux.
+xatlas  # MIT; UV charts for new shapes
+shapely  # BSD-3; cutting walls around doors and windows
+mapbox-earcut  # ISC; triangulating the cut walls
+transformers  # Apache-2.0; Prompt Depth Anything (GPU only)
 pytest

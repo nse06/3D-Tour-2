@@ -97,3 +97,12 @@ def test_the_job_cleans_up_with_a_layout(tmp_path):
     out, stats = job.remaster(mesh, capture, options, services, "cpu", lambda *a: None, log=lambda _: None, layout=layout.load(tmp_path / "capture"))
     assert stats["layout"] and stats["photosSharpened"] == 2 and stats["tvsOff"] == 1
     assert json.dumps(stats)
+
+
+def test_the_job_sets_the_window_into_its_wall(tmp_path):
+    room.write(tmp_path, layout=room.layout_doc())
+    capture = load(tmp_path / "capture")
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    options = {"steps": 40, "batch": 4, "tile": 256, "levels": 3, "maxMip": 3}
+    out, stats = job.remaster(mesh, capture, options, job.Services(), "cpu", lambda *a: None, log=lambda _: None, layout=layout.load(tmp_path / "capture"))
+    assert stats["recessed"] == 1 and stats["newAtlas"] >= 16 and len(out.atlases) == 2
