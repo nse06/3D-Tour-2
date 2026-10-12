@@ -7,7 +7,7 @@ apartment from the evaluation viewpoints (tools/eval_views.py, scene/render_view
 
 The first variant listed is the reference the "most changed" sheet compares the last one with.
 
-The AI variants ("ai", "ai-strong": the AI-enhanced version, enhance.py) need a fixer: on Modal the
+The AI variants ("ai", "ai-strong", "ai-unlocked": the AI-enhanced version, enhance.py) need a fixer: on Modal the
 real one (tools/eval_modal.py); here only the stand-in (--stand-in-fixer), to check the plumbing. One
 training run gives two results: "<variant>-faithful", the splats before the AI phase, and "<variant>".
 
@@ -62,6 +62,8 @@ AI_VARIANTS = {
     "ai": {"width": 512, "height": 288},
     # The cleaned views count as much as a photo, half the steps, and reach further from the photos.
     "ai-strong": {"width": 512, "height": 288, "view_weight": 1.0, "view_share": 0.5, "max_offset": 1.5},
+    # The fixer's views as they come, without the render's shading put back (round 6's "ai").
+    "ai-unlocked": {"width": 512, "height": 288, "tone_lock": 0.0},
 }
 
 
@@ -94,20 +96,24 @@ def lpips_model(device):
 
 
 class Recording:
-    """A fixer that keeps a few of the views it cleaned up each round, before and after, to look at."""
+    """A fixer that keeps a few of the views of each round to look at: the render, the fixer's view and
+    the view trained on (the fixer's, with the render's shading put back)."""
 
     def __init__(self, fixer, keep: int = 4):
-        self.fixer, self.keep, self.name, self.pairs = fixer, keep, fixer.name, []
+        self.fixer, self.keep, self.name, self.pairs, self.last = fixer, keep, fixer.name, [], []
 
     def prepare(self):
         if hasattr(self.fixer, "prepare"):
             self.fixer.prepare()
 
     def __call__(self, images):
-        fixed = self.fixer(images)
-        every = max(1, len(images) // self.keep)
-        self.pairs += [(_jpeg(images[k]), _jpeg(fixed[k])) for k in range(0, len(images), every)][: self.keep]
-        return fixed
+        self.last = self.fixer(images)
+        return self.last
+
+    def on_round(self, renders, targets):
+        every = max(1, len(renders) // self.keep)
+        picked = list(range(0, len(renders), every))[: self.keep]
+        self.pairs += [(_jpeg(renders[k]), _jpeg(self.last[k]), _jpeg(targets[k])) for k in picked]
 
 
 def _jpeg(image: np.ndarray) -> bytes:
@@ -143,7 +149,7 @@ def run_variant(
         if fixer is None:
             raise ValueError(f"{variant} needs a fixer (tools/eval_modal.py, or --stand-in-fixer)")
         fixer = Recording(fixer)
-        ai = AIVersion(fixer=fixer, config=EnhanceConfig(**{**AI_VARIANTS[variant], **(ai_overrides or {})}), on_main=mains.append)
+        ai = AIVersion(fixer=fixer, config=EnhanceConfig(**{**AI_VARIANTS[variant], **(ai_overrides or {})}), on_main=mains.append, on_round=fixer.on_round)
     capture = load(capture_dir)
     if seeds and seeds < len(capture.seeds_xyz):
         total = len(capture.seeds_xyz)
@@ -251,13 +257,14 @@ def write_results(out: Path, views_dir: Path, results: list[dict]):
             (folder / f.replace(".png", ".jpg")).write_bytes(jpeg)
     for r in results:
         if r.get("pairs"):
-            # What the fixer made of some views, round by round: before | after.
+            # What the fixer made of some views, round by round: render | fixer | trained on.
             first = Image.open(io.BytesIO(r["pairs"][0][0]))
             w, h = first.size
-            canvas = Image.new("RGB", (2 * w, h * len(r["pairs"])), "white")
-            for k, (before, after) in enumerate(r["pairs"]):
-                canvas.paste(Image.open(io.BytesIO(before)).convert("RGB"), (0, k * h))
-                canvas.paste(Image.open(io.BytesIO(after)).convert("RGB"), (w, k * h))
+            columns = len(r["pairs"][0])
+            canvas = Image.new("RGB", (columns * w, h * len(r["pairs"])), "white")
+            for k, row in enumerate(r["pairs"]):
+                for c, jpeg in enumerate(row):
+                    canvas.paste(Image.open(io.BytesIO(jpeg)).convert("RGB"), (c * w, k * h))
             canvas.save(out / f"fixer-{r['variant']}.jpg", quality=88)
     plain = [{k: v for k, v in r.items() if k not in ("renders", "pairs")} for r in results]
     summary = summarize(results)

@@ -32,7 +32,7 @@ import torch.nn.functional as F
 from . import shell as room_shell
 from .capture import Capture, load_photo, training_size
 from .render import psnr, rasterize, rgb_to_sh, ssim
-from .enhance import AIVersion, between, choose_views, intrinsics
+from .enhance import AIVersion, between, choose_views, intrinsics, lock_tone
 from .sharpness import find_direction, line_kernel, photo_weights, smear_image
 
 
@@ -408,18 +408,31 @@ def train(
             # A round: the views a little further from the photos, rendered, cleaned up, trained on.
             r = (step - cfg.steps) // ai.config.steps_per_round
             poses = [between(v, (r + 1) / ai.config.rounds) for v in views]
-            renders = []
+            renders, alphas = [], []
             with torch.no_grad():
                 gray = torch.full((3,), 0.5, device=device)
                 for c2w in poses:
-                    shown, _, _ = rasterize(splats, torch.linalg.inv(torch.tensor(c2w, dtype=torch.float32, device=device)), view_K, ai.config.width, ai.config.height, cfg.sh_degree, background=gray)
+                    shown, alpha, _ = rasterize(splats, torch.linalg.inv(torch.tensor(c2w, dtype=torch.float32, device=device)), view_K, ai.config.width, ai.config.height, cfg.sh_degree, background=gray)
                     renders.append((shown[0].clamp(0, 1) * 255).round().byte().cpu().numpy())
+                    alphas.append((alpha[0].clamp(0, 1) * 255).round().byte())
             fixed = ai.fixer(renders)
-            for c2w, image in zip(poses, fixed):
+            targets = []
+            sigma = ai.config.tone_lock * ai.config.width
+
+            def as_float(a: np.ndarray) -> torch.Tensor:
+                return torch.from_numpy(np.array(a, dtype=np.uint8)).to(device).float() / 255.0
+
+            for c2w, render, alpha, image in zip(poses, renders, alphas, fixed):
                 if image.shape != (ai.config.height, ai.config.width, 3):
                     raise RuntimeError(f"the fixer answered {image.shape} for a {ai.config.width}x{ai.config.height} view")
+                with torch.no_grad():
+                    # The fixer's small-scale clean-up on the render's broad shading (enhance.lock_tone).
+                    target = (lock_tone(as_float(render), as_float(image), alpha.float() / 255.0, sigma) * 255).round().byte()
                 viewmat = torch.linalg.inv(torch.tensor(c2w, dtype=torch.float32, device=device))
-                cleaned_views.append((viewmat, torch.from_numpy(np.array(image, dtype=np.uint8)).to(keep_on)))
+                cleaned_views.append((viewmat, target.to(keep_on)))
+                targets.append(target.cpu().numpy())
+            if ai.on_round:
+                ai.on_round(renders, targets)
             log(f"AI round {r + 1}: {len(poses)} views cleaned up, {len(cleaned_views)} in all")
         if smeared and step in cfg.blur_direction_steps:
             # Which way each smeared photo is smeared: the direction that makes the render look most like it.

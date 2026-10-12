@@ -43,7 +43,7 @@ class FixerModel:
     def _tensor(self, image: np.ndarray):
         if (image.shape[1], image.shape[0]) != SIZE:
             image = np.asarray(Image.fromarray(image).resize(SIZE, Image.BILINEAR))
-        x = self.torch.from_numpy(np.ascontiguousarray(image)).permute(2, 0, 1).float() / 255.0
+        x = self.torch.from_numpy(np.array(image, dtype=np.uint8)).permute(2, 0, 1).float() / 255.0
         return x * 2 - 1
 
     def __call__(self, images: list[np.ndarray]) -> list[np.ndarray]:

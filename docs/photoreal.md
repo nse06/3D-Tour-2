@@ -155,10 +155,20 @@ to fix, so the cleaned views agree with each other). A cleaned view is drawn on 
 much as a photo; dead splats may move again (MCMC relocation) to where the cleaned views want something. The cleaned
 views are compared with the splats' own colors, with no photo's exposure correction or smear.
 
-What it costs and risks: about 10–15 more minutes on the trainer's A10G and a few on the Fixer's (one A10G of its own,
-kept up between rounds, shared by jobs at the same time), about $0.25 a home. Where the photos say nothing, the cleaned
-views make something up: the AI version can tidy a corner that wasn't tidy or invent a little texture. That's why both
-are kept and the realtor picks.
+The Fixer also has its own idea of a wall's tone, a little different in every view. Trained on as they came (round 6,
+`prototypes/photoreal/results/round-6/`), the cleaned views fixed real render glitches (a fridge's mottled side panel
+came out a clean, evenly lit surface; window frames and wall edges straighter) but left faint blotches on plain walls,
+which cost 0.4–1.2 dB against the faithful version where buyers walk (−1 to −2.5 dB with the cleaned views counting as
+much as photos) and nothing elsewhere; LPIPS was flat. So each cleaned view now keeps only what the Fixer changed on a
+small scale, with the render's shading put back above a Gaussian of 1.2% of the view's width (12 px at 1024;
+`EnhanceConfig.tone_lock`, `enhance.lock_tone`), except where the splats showed little (their opacity there, blurred
+and squared, weighs it), so a gap the Fixer filled stays filled.
+
+What it costs and risks: about 5–10 more minutes on the trainer's A10G (3 on the synthetic apartment's small photos)
+and a few on the Fixer's (one A10G of its own, kept up between rounds, shared by jobs at the same time; about a second
+a view), about $0.25 a home. Where the photos say nothing, the cleaned views make something up: the AI version can tidy
+a corner that wasn't tidy or invent a little texture (round 6 redrew the tree outside a window rather than copying it).
+That's why both are kept and the realtor picks.
 
 Flow: the site asks for it (`options.aiVersion`, unless `PHOTOREAL_AI_VERSION=off`); a worker from before it ignores
 the ask. After the faithful splats are `done` with `pending: ["ai"]`, the worker reports `{ event: "progress",
@@ -276,9 +286,10 @@ readable only through the signed links the GPU gets, and kept like in Supabase (
   The earlier trainer's collapse after a few thousand steps is gone. The room-shape rules found 10 walls plus the
   floor and ceiling, and cleared 159 floaters.
 * **The AI-enhanced version** (§3.1) is checked on a CPU with a stand-in for the Fixer (a median filter): views where
-  they belong, the faithful version identical with and without it, the job protocol, the site's panel, choice and
-  preview switch (end to end on a production build). It hasn't run with the real Fixer on a GPU yet: that's the
-  benchmark on the synthetic apartment (`tools/eval_modal.py --variants ai,ai-strong`) and then real homes.
+  they belong, the faithful version identical with and without it, the tone lock, the job protocol, the site's panel,
+  choice and preview switch (end to end on a production build). With the real Fixer on the synthetic apartment (round
+  6) it cleaned render glitches but tinted plain walls, hence the tone lock; round 7 (`--variants ai,ai-unlocked`)
+  checks that. Real homes, with real floaters and smears, are what it's for and the real test.
 * Splats are weakest where no photo looked closely: a spot the phone only saw from far away or from above can show
   haze when a buyer walks right up to it. A scan whose coverage map is green everywhere gives the GPU the most to
   learn from.

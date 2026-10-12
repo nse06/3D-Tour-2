@@ -109,3 +109,37 @@ def test_a_fixer_answering_the_wrong_size_is_caught(tmp_path):
     with pytest.raises(RuntimeError, match="fixer answered"):
         train(capture, TrainConfig(**TINY), device="cpu", log=lambda _: None, ai=AIVersion(fixer=bad, config=EnhanceConfig(**AI), on_main=main.append))
     assert len(main) == 1, "the faithful version was delivered before"
+
+
+def test_the_tone_lock_keeps_small_fixes_and_the_renders_shading():
+    from atrium_photoreal.enhance import gaussian_blur, lock_tone
+
+    rng = np.random.default_rng(0)
+    h, w = 48, 80
+    yy, xx = torch.meshgrid(torch.arange(h, dtype=torch.float32), torch.arange(w, dtype=torch.float32), indexing="ij")
+    wall = (0.5 + 0.2 * xx / w)[..., None].expand(h, w, 3).clone()  # broad shading, as the photos lit it
+    speckle = torch.from_numpy(rng.normal(0, 0.08, (h, w, 1)).astype(np.float32)).expand(h, w, 3)
+    render = (wall + speckle).clamp(0, 1)  # the splats' render: the wall with fine speckle (a glitch)
+    fixed = (wall + 0.06).clamp(0, 1)  # the fixer: speckle gone, but its own, lighter tone
+    alpha = torch.ones(h, w, 1)
+    target = lock_tone(render, fixed, alpha, sigma=4.0)
+    inner = (slice(12, -12), slice(12, -12))
+    # The speckle stays gone, and the tone is the render's again.
+    assert float((target - wall)[inner].abs().mean()) < 0.015 < float((render - wall)[inner].abs().mean())
+    assert float((fixed - wall)[inner].mean()) > 0.05 and abs(float((target - wall)[inner].mean())) < 0.01
+    # Where the splats showed nothing, the fixer's view as it is.
+    assert torch.allclose(lock_tone(render, fixed, torch.zeros(h, w, 1), 4.0), fixed)
+    # Off: the fixer's view as it is.
+    assert torch.equal(lock_tone(render, fixed, alpha, 0.0), fixed)
+    # The blur keeps flat images flat and is normalized.
+    assert torch.allclose(gaussian_blur(torch.full((10, 12, 3), 0.3), 2.0), torch.full((10, 12, 3), 0.3), atol=1e-6)
+
+
+def test_each_round_shows_its_renders_and_the_views_trained_on(tmp_path):
+    capture = load(scene.write(tmp_path / "capture", cameras=6))
+    rounds = []
+    ai = AIVersion(fixer=SmoothingFixer(), config=EnhanceConfig(**AI), on_round=lambda renders, targets: rounds.append((renders, targets)))
+    train(capture, TrainConfig(**TINY), device="cpu", log=lambda _: None, ai=ai)
+    assert len(rounds) == 2
+    renders, targets = rounds[0]
+    assert len(renders) == len(targets) > 0 and all(t.shape == (36, 64, 3) and t.dtype == np.uint8 for t in targets)

@@ -11,6 +11,11 @@ each clean-up only has a little to fix. The faithful version is the splats befor
 The cleaned views make things up where the photos say nothing: the AI version can tidy a corner that
 wasn't tidy or invent a little texture. That's why both versions are kept and the realtor picks.
 
+The fixer also has its own idea of a wall's tone, a little different in every view: trained on as they
+come, the cleaned views left faint blotches on plain walls (round 6, prototypes/photoreal/results). So
+each cleaned view keeps only what the fixer changed on a small scale (smears, mottling, ragged edges),
+with the render's broad shading put back (lock_tone), except where the splats showed little.
+
 train() runs this after its main steps when given an AIVersion (train.py).
 """
 
@@ -23,6 +28,7 @@ from typing import Any, Callable, Protocol
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from PIL import Image, ImageFilter
 
 from . import shell as room_shell
@@ -59,6 +65,9 @@ class EnhanceConfig:
     # The cleaned views: their share of the steps, and their loss's weight against a photo's.
     view_share: float = 0.3
     view_weight: float = 0.5
+    # The render's shading put back on scales above this fraction of the view's width (a Gaussian's
+    # sigma: 12 px at 1024; 0: the fixer's views as they are), see lock_tone.
+    tone_lock: float = 0.012
     seed: int = 1
 
     @property
@@ -69,11 +78,13 @@ class EnhanceConfig:
 @dataclass
 class AIVersion:
     """What train() needs for the AI-enhanced version: the fixer, how to use it, and what to do with
-    the faithful version as soon as it's ready (`on_main`, given train's Result)."""
+    the faithful version as soon as it's ready (`on_main`, given train's Result). `on_round` sees each
+    round's renders and the views trained on (uint8 arrays), to look at."""
 
     fixer: Fixer
     config: EnhanceConfig = field(default_factory=EnhanceConfig)
     on_main: Callable[[Any], None] | None = None
+    on_round: Callable[[list[np.ndarray], list[np.ndarray]], None] | None = None
 
 
 @dataclass
@@ -190,6 +201,30 @@ def choose_views(capture: Capture, cfg: EnhanceConfig, rng: np.random.Generator,
             if per_photo[i] and len(chosen) < cfg.views:
                 chosen.append(per_photo[i].pop(0))
     return chosen
+
+
+def gaussian_blur(image: torch.Tensor, sigma: float) -> torch.Tensor:
+    """An (H, W, C) image blurred by a Gaussian of `sigma` pixels (edges extended)."""
+    radius = max(1, int(math.ceil(3 * sigma)))
+    x = torch.arange(-radius, radius + 1, dtype=image.dtype, device=image.device)
+    g = torch.exp(-(x * x) / (2 * sigma * sigma))
+    g = g / g.sum()
+    c = image.shape[2]
+    t = F.pad(image.permute(2, 0, 1)[None], (radius, radius, radius, radius), mode="replicate")
+    t = F.conv2d(t, g.view(1, 1, 1, -1).expand(c, 1, 1, -1), groups=c)
+    t = F.conv2d(t, g.view(1, 1, -1, 1).expand(c, 1, -1, 1), groups=c)
+    return t[0].permute(1, 2, 0)
+
+
+def lock_tone(render: torch.Tensor, fixed: torch.Tensor, alpha: torch.Tensor, sigma: float) -> torch.Tensor:
+    """The fixer's view with the render's broad shading put back: what the fixer changed on scales
+    below `sigma` pixels stays (smears, mottling, ragged edges), its tone above that goes. Where the
+    splats showed little (`alpha` low: a gap the fixer filled), its view stays as it is. Floats 0-1:
+    render and fixed (H, W, 3), alpha (H, W, 1)."""
+    if sigma <= 0:
+        return fixed
+    weight = gaussian_blur(alpha, sigma).clamp(0, 1) ** 2
+    return (fixed + weight * (gaussian_blur(render, sigma) - gaussian_blur(fixed, sigma))).clamp(0, 1)
 
 
 def to_jpeg(image: np.ndarray, quality: int = 95) -> bytes:

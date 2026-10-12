@@ -10,11 +10,11 @@ Uploads the capture and the views to the Modal volume "atrium-photoreal-eval", t
 once on an A10G each (the worker's GPU), and writes what tools/eval_splats.py writes into --out. The
 synthetic photos are 480 x 360, so a variant takes about 10-15 minutes, roughly $0.20-0.30.
 
-The AI variants ("ai", "ai-strong") also use NVIDIA's Fixer, on an A10G of its own shared by the
+The AI variants ("ai", "ai-strong", "ai-unlocked") also use NVIDIA's Fixer, on an A10G of its own shared by the
 variants (the same class as the worker's, atrium_photoreal/remote.py). Building its image the first
 time takes a while (Cosmos-Predict2 and 5.5 GB of weights); a variant adds about 5 minutes of training
 and a few of the Fixer's GPU. Each gives "<variant>-faithful" and "<variant>", and fixer-<variant>.jpg:
-some of the views the Fixer cleaned up, before | after.
+some of the views of each round, render | Fixer | trained on.
 """
 
 import hashlib
