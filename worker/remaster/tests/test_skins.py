@@ -101,3 +101,30 @@ def test_cleaned_views_where_buyers_walk_feed_the_skins(tmp_path):
     assert result.stats["extraRounds"] == 2 and 0 < result.stats["extraViews"] <= 6
     assert result.stats["skinViews"] == len(capture.cameras), "the photos alone count as seen"
     assert held_out_error(truth, result.mesh) < 0.8 * held_out_error(truth, mesh)
+
+
+def test_coverage_counts_each_pixels_bilinear_taps():
+    """The coverage count (one view at a time, no autograd) is what grid_sample's gradient says: the
+    skins' bilinear taps of every pixel that says something, weighted by its view."""
+    import torch
+    import torch.nn.functional as F
+
+    rng = np.random.default_rng(0)
+    sizes = [64, 32]
+    views_ = []
+    for k in range(4):
+        h, w = 30, 40
+        uv = rng.uniform(-0.05, 1.05, size=(h, w, 2)).astype(np.float32)
+        atlas = rng.integers(-1, 2, size=(h, w)).astype(np.int16)
+        valid = (atlas >= 0) & (rng.uniform(size=(h, w)) > 0.2)
+        views_.append(skins.View(f"v{k}", torch.zeros(h, w, 3, dtype=torch.uint8), torch.from_numpy(valid), torch.from_numpy(atlas), torch.from_numpy(uv), torch.zeros(h, w, dtype=torch.int8), weight=0.5 + k))
+    seen = [torch.zeros(1, 1, s, s, requires_grad=True) for s in sizes]
+    total = torch.zeros(())
+    for v in views_:
+        atlas, uv = v.atlas[v.valid].long(), v.uv[v.valid]
+        for a, image in enumerate(seen):
+            grid = (uv[atlas == a] * 2 - 1).view(1, 1, -1, 2)
+            total = total + v.weight * F.grid_sample(image + 1, grid, mode="bilinear", padding_mode="border", align_corners=False).sum()
+    total.backward()
+    for got, want in zip(skins.coverage(views_, sizes), seen):
+        assert np.allclose(got, want.grad[0, 0].numpy(), atol=1e-4)

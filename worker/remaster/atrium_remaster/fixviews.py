@@ -38,8 +38,11 @@ class FixerViewsConfig:
     seed: int = 3
 
 
-def fixer_views(mesh: Mesh, capture: Capture, skin_cfg: SkinConfig, cfg: FixerViewsConfig, fixer: Fixer, device: str = "cpu", log=print) -> ExtraViews:
-    """The rounds of cleaned views for skins.train."""
+def fixer_views(
+    mesh: Mesh, capture: Capture, skin_cfg: SkinConfig, cfg: FixerViewsConfig, fixer: Fixer, device: str = "cpu", log=print, store: str | None = None
+) -> ExtraViews:
+    """The rounds of cleaned views for skins.train, kept on `store` (the training device by default)."""
+    store = store or device
     enhance_cfg = EnhanceConfig(views=cfg.views, width=cfg.width, height=cfg.height, fov=cfg.fov, seed=cfg.seed)
     walks = choose_views(capture, enhance_cfg, np.random.default_rng(cfg.seed))
     K = intrinsics(enhance_cfg)
@@ -57,7 +60,7 @@ def fixer_views(mesh: Mesh, capture: Capture, skin_cfg: SkinConfig, cfg: FixerVi
         made: list[View] = []
         for k, walk in enumerate(walks):
             blank = np.zeros((cfg.height, cfg.width, 3), np.float32)
-            view = prepare_view(mesh, caster, blank, K, between(walk, t), skin_cfg, sizes, texel, normals, None, f"walk{k:03d}", device)
+            view = prepare_view(mesh, caster, blank, K, between(walk, t), skin_cfg, sizes, texel, normals, None, f"walk{k:03d}", store)
             if not bool(view.valid.any()):
                 continue
             made.append(view)
@@ -71,7 +74,7 @@ def fixer_views(mesh: Mesh, capture: Capture, skin_cfg: SkinConfig, cfg: FixerVi
                 raise RuntimeError(f"the fixer answered {clean.shape} for {rendered.shape}")
             alpha = view.valid.float().cpu()[..., None]
             target = lock_tone(torch.from_numpy(rendered), torch.from_numpy(clean.astype(np.float32) / 255), alpha, sigma)
-            view.image = target.to(view.valid.device)
+            view.image = (target.clamp(0, 1) * 255 + 0.5).to(torch.uint8).to(view.valid.device)
             view.learn_color = False
             view.weight = cfg.weight
         log(f"fixer views: round {round_index + 1}, {len(made)} views {t:.0%} of the way from the photos ({fixer.name})")

@@ -194,9 +194,16 @@ def remaster(
     depths = None  # a few hundred MB
     quiet = cleanup_mod.screen_faces(mesh, layout.objects_of("television")) if clean_cfg.tv_off else None
     report("skins", 0.0, "lining up the photos with the model")
+    # Hundreds of photos at full size can outgrow the GPU: then they wait in memory (skins.storage).
+    fixer_pixels = 0
+    if services.fixer is not None and options.get("fixerViews", True):
+        d = fixviews.FixerViewsConfig()
+        fixer_pixels = int(options.get("fixerRounds", d.rounds)) * int(options.get("fixerViewCount", d.views)) * int(options.get("fixerWidth", d.width)) * int(options.get("fixerHeight", d.height))
+    store = skins.storage(capture, cfg, device, fixer_pixels)
     views = skins.prepare_photos(
-        mesh, capture, cfg, device=device, log=log, photos=sharpened, residual=clean_cfg.residual, quiet_faces=quiet, disagree=disagree
+        mesh, capture, cfg, device=device, log=log, photos=sharpened, residual=clean_cfg.residual, quiet_faces=quiet, disagree=disagree, store=store
     )
+    stats["skinViewsOn"] = "memory" if store == "cpu" and str(device) != "cpu" else "gpu" if str(device).startswith("cuda") else "cpu"
     report("skins", 0.02, f"{len(views)} photos")
     extra = None
     if services.fixer is not None and options.get("fixerViews", True):
@@ -210,12 +217,17 @@ def remaster(
             share=float(options.get("fixerShare", d.share)),
             tone_lock=float(options.get("fixerToneLock", d.tone_lock)),
         )
-        extra = fixviews.fixer_views(mesh, capture, cfg, fix_cfg, services.fixer, device=device, log=log)
+        extra = fixviews.fixer_views(mesh, capture, cfg, fix_cfg, services.fixer, device=device, log=log, store=store)
         prepare = services.fixer.prepare if hasattr(services.fixer, "prepare") else None
         if prepare:
             prepare()  # its GPU starts while the skins train
     result = skins.train(mesh, views, cfg, device=device, log=log, progress=lambda p: report("skins", 0.02 + 0.9 * p, ""), extra=extra)
     stats.update(result.stats)
+    views = extra = None  # the GPU's room goes to what's left (the photo spots)
+    if str(device).startswith("cuda"):
+        import torch
+
+        torch.cuda.empty_cache()
     out = result.mesh
     if not layout.empty:
         out, tidy_stats = cleanup_mod.tidy_skins(out, layout, clean_cfg, log=log)

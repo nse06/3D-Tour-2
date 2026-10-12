@@ -65,14 +65,16 @@ class SkinConfig:
 
 @dataclass
 class View:
-    """A photo (or a cleaned-up view, enhance.py) as training uses it, at training size."""
+    """A photo (or a cleaned-up view, enhance.py) as training uses it, at training size. Kept small
+    (15 bytes a pixel), on the training device or, when hundreds of photos wouldn't fit there, in
+    memory, each step taking only the pieces it trains on to the device."""
 
     name: str
-    image: torch.Tensor  # (H, W, 3) float 0-1
+    image: torch.Tensor  # (H, W, 3) uint8
     valid: torch.Tensor  # (H, W) bool: the pixels that say something
-    atlas: torch.Tensor  # (H, W) int64: the atlas each pixel sees (-1: none)
+    atlas: torch.Tensor  # (H, W) int16: the atlas each pixel sees (-1: none)
     uv: torch.Tensor  # (H, W, 2) float: where in it
-    level: torch.Tensor  # (H, W) int64: the mipmap its footprint covers
+    level: torch.Tensor  # (H, W) int8: the mipmap its footprint covers
     smear: float = 0.0  # pixels, at training size
     angle: float = 0.0  # radians, the smear's direction (found once the skins take shape)
     weight: float = 1.0
@@ -81,6 +83,41 @@ class View:
     @property
     def shape(self) -> tuple[int, int]:
         return tuple(self.valid.shape)
+
+    def photo(self, device, box=None) -> torch.Tensor:
+        """The image (or its `box`) as floats 0-1 on `device`."""
+        image = self.image if box is None else self.image[box]
+        return image.to(device, non_blocking=True).float() / 255
+
+    def piece(self, device, box=None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """valid, atlas, uv and level (over `box`) on `device`."""
+        return tuple((t if box is None else t[box]).to(device, non_blocking=True) for t in (self.valid, self.atlas, self.uv, self.level))
+
+    def region(self, device, box: tuple[int, int, int, int], margin: int) -> tuple[torch.Tensor, tuple[int, int]]:
+        """The image around `box` (y0, x0, h, w), `margin` pixels wider each way (within the photo),
+        as floats on `device`, and where it starts."""
+        y0, x0, h, w = box
+        H, W = self.shape
+        oy, ox = max(0, y0 - margin), max(0, x0 - margin)
+        return self.photo(device, (slice(oy, min(H, y0 + h + margin)), slice(ox, min(W, x0 + w + margin)))), (oy, ox)
+
+
+def to_uint8(image) -> np.ndarray:
+    image = np.asarray(image)
+    return image if image.dtype == np.uint8 else (np.clip(image, 0, 1) * 255 + 0.5).astype(np.uint8)
+
+
+def storage(capture: Capture, cfg: "SkinConfig", device: str, extra_pixels: int = 0) -> str:
+    """Where the views are kept: on the training device if they take under 40% of its free memory,
+    else in memory."""
+    if not str(device).startswith("cuda") or not torch.cuda.is_available():
+        return device
+    pixels = extra_pixels
+    for cam in capture.cameras:
+        s = min(1.0, cfg.long_side / max(cam.width, cam.height))
+        pixels += int(cam.width * s) * int(cam.height * s)
+    free, _ = torch.cuda.mem_get_info()
+    return device if pixels * 15 < 0.4 * free else "cpu"
 
 
 @dataclass
@@ -175,15 +212,21 @@ def prepare_view(
         phone_size = np.array([a.shape[0] for a in mesh.atlases] + [1])[np.where(atlas >= 0, atlas, len(sizes))]
         texel_trained = texel[face] * phone_size / atlas_size
         texels = np.where(valid, footprint / texel_trained, 1.0)
-    level = np.clip(np.round(np.log2(np.maximum(texels, 1.0))), 0, cfg.max_mip).astype(np.int64)
-    t = lambda x, dtype: torch.as_tensor(np.ascontiguousarray(x), dtype=dtype, device=device)
+    level = np.clip(np.round(np.log2(np.maximum(texels, 1.0))), 0, cfg.max_mip).astype(np.int8)
+    pin = str(device) == "cpu" and torch.cuda.is_available()
+
+    def t(x, dtype):
+        x = np.ascontiguousarray(x)
+        out = torch.as_tensor(x if x.flags.writeable else x.copy(), dtype=dtype, device=device)
+        return out.pin_memory() if pin else out
+
     return View(
         name=name,
-        image=t(image, torch.float32),
+        image=t(to_uint8(image), torch.uint8),
         valid=t(valid, torch.bool),
-        atlas=t(atlas, torch.int64),
+        atlas=t(np.where(atlas >= 0, atlas, -1).astype(np.int16), torch.int16),
         uv=t(uv, torch.float32),
-        level=t(level, torch.int64),
+        level=t(level, torch.int8),
     )
 
 
@@ -197,11 +240,14 @@ def prepare_photos(
     residual: float = 1.0,
     quiet_faces: np.ndarray | None = None,
     disagree: dict[str, np.ndarray] | None = None,
+    store: str | None = None,
 ) -> list[View]:
     """Every photo of the capture as a training view. `photos`: sharpened copies by camera name
     (cleanup.py), used in place of the files, whose smear counts `residual` times; `quiet_faces`: (F,)
     triangles no photo says anything about (a TV's screen); `disagree`: per photo, where its depth
-    disagrees with the model's shapes (depth.py), any size: those pixels say nothing."""
+    disagrees with the model's shapes (depth.py), any size: those pixels say nothing; `store`: where
+    the views are kept (storage(); the training device by default)."""
+    store = store or device
     caster = Caster.of(mesh)
     sizes = trained_size(mesh, cfg)
     texel = mesh.texel_size()
@@ -215,7 +261,7 @@ def prepare_photos(
             if clean.shape[:2] != rgb.shape[:2]:
                 clean = np.asarray(Image.fromarray(clean).resize((rgb.shape[1], rgb.shape[0]), Image.LANCZOS))
             rgb = clean
-        view = prepare_view(mesh, caster, rgb.astype(np.float32) / 255.0, K, cam.camtoworld, cfg, sizes, texel, normals, people, cam.name, device, quiet_faces)
+        view = prepare_view(mesh, caster, rgb, K, cam.camtoworld, cfg, sizes, texel, normals, people, cam.name, store, quiet_faces)
         view.smear = (smear_px(cam, rgb.shape[1] / cam.width) or 0.0) * (residual if sharpened else 1.0)
         if disagree is not None and cam.name in disagree:
             mask = disagree[cam.name]
@@ -279,11 +325,14 @@ def lookup(mips: list[list[torch.Tensor]], atlas: torch.Tensor, uv: torch.Tensor
     return out
 
 
-def warp_image(image: torch.Tensor, warp: torch.Tensor, box: tuple[int, int, int, int], full: tuple[int, int]) -> torch.Tensor:
+def warp_image(image: torch.Tensor, warp: torch.Tensor, box: tuple[int, int, int, int], full: tuple[int, int], origin: tuple[int, int] = (0, 0)) -> torch.Tensor:
     """The (H, W, 3) photo resampled over `box` (y0, x0, h, w) after a small shift (pixels at 1920),
-    turn and zoom about its center: what the photo shows where the model expects it."""
+    turn and zoom about its center: what the photo shows where the model expects it. `image` may be
+    a piece of the photo starting at `origin` (y, x), wide enough for the warp."""
     y0, x0, h, w = box
     fh, fw = full
+    oy, ox = origin
+    ch, cw = image.shape[:2]
     s = max(fh, fw) / 1920.0
     yy, xx = torch.meshgrid(
         torch.arange(y0, y0 + h, device=image.device, dtype=image.dtype) + 0.5,
@@ -295,7 +344,7 @@ def warp_image(image: torch.Tensor, warp: torch.Tensor, box: tuple[int, int, int
     c, sn = torch.cos(turn), torch.sin(turn)
     px = cx + (1 + zoom) * (c * (xx - cx) - sn * (yy - cy)) + dx
     py = cy + (1 + zoom) * (sn * (xx - cx) + c * (yy - cy)) + dy
-    grid = torch.stack([px / fw * 2 - 1, py / fh * 2 - 1], -1)[None]
+    grid = torch.stack([(px - ox) / cw * 2 - 1, (py - oy) / ch * 2 - 1], -1)[None]
     return F.grid_sample(image.permute(2, 0, 1)[None], grid, mode="bilinear", padding_mode="border", align_corners=False)[0].permute(1, 2, 0)
 
 
@@ -337,8 +386,8 @@ def train(
             for v in views:
                 if v.smear < cfg.blur_min_px:
                     continue
-                render = render_view(mips, v)
-                v.angle = find_direction(render, v.image, v.smear, keep=v.valid[..., None].float())
+                render = render_view(mips, v, device)
+                v.angle = find_direction(render, v.photo(device), v.smear, keep=v.valid.to(device)[..., None].float())
 
     for step in range(cfg.steps):
         if step in (cfg.steps // 5, cfg.steps // 2):
@@ -346,7 +395,7 @@ def train(
         if step in rounds:
             with torch.no_grad():
                 current = [model.mips(a, cfg.max_mip) for a in range(len(sizes))]
-                extras = extra.make(lambda v: render_view(current, v).clamp(0, 1).cpu().numpy(), rounds[step])
+                extras = extra.make(lambda v: render_view(current, v, device).clamp(0, 1).cpu().numpy(), rounds[step])
             ew = np.array([v.weight * max(1, int(v.valid.sum())) for v in extras], dtype=np.float64)
             extra_probs = ew / ew.sum() if len(extras) and ew.sum() > 0 else None
             log(f"skins: round {rounds[step] + 1} of {len(rounds)}, {len(extras)} views where buyers walk")
@@ -362,11 +411,15 @@ def train(
             th, tw = min(cfg.tile, h), min(cfg.tile, w)
             y0, x0 = int(rng.integers(0, h - th + 1)), int(rng.integers(0, w - tw + 1))
             box = (slice(y0, y0 + th), slice(x0, x0 + tw))
-            valid = v.valid[box]
+            valid, atlas, uv, level = v.piece(device, box)
             if not bool(valid.any()):
                 continue
-            target = warp_image(v.image, model.warp[i], (y0, x0, th, tw), (h, w)) if cfg.align and is_photo else v.image[box]
-            colors = lookup(mips, v.atlas[box][valid], v.uv[box][valid], v.level[box][valid])
+            if cfg.align and is_photo:
+                region, origin = v.region(device, (y0, x0, th, tw), 64)
+                target = warp_image(region, model.warp[i], (y0, x0, th, tw), (h, w), origin)
+            else:
+                target = v.photo(device, box)
+            colors = lookup(mips, atlas[valid], uv[valid], level[valid])
             colors = colors @ model.color[i].T + model.offset[i] if is_photo and v.learn_color else colors
             if v.smear >= cfg.blur_min_px and step >= cfg.steps // 5:
                 # Smear the render like the photo: the tile's other pixels from the photo itself.
@@ -407,6 +460,12 @@ def train(
 
     with torch.no_grad():
         atlases = [model.texture(a)[0].permute(1, 2, 0).clamp(0, 1).cpu().numpy() for a in range(len(sizes))]
+    color, offset, warp = (t.detach().cpu().numpy() for t in (model.color, model.offset, model.warp))
+    shift = round(float(np.linalg.norm(warp[:, :2], axis=1).mean()), 2) if len(views) else 0.0
+    # The model and its optimizer's state go before the coverage count needs the room.
+    opt = model = mips = loss = total = texture_params = current = None  # noqa: F841
+    if str(device).startswith("cuda"):
+        torch.cuda.empty_cache()
     seen = coverage(views, sizes, device)
     trained = Mesh(mesh.vertices, mesh.uvs, mesh.faces, mesh.face_atlas, mesh.face_color, atlases, mesh.extras)
     stats = {
@@ -416,37 +475,43 @@ def train(
         "skinAtlases": sizes,
         "skinViews": len(views),
         "skinSeenShare": round(float(np.mean([(s > 0).mean() for s in seen])) if seen else 0.0, 4),
-        "photoShiftPx": round(float(model.warp.detach()[:, :2].norm(dim=1).mean()), 2) if len(views) else 0.0,
+        "photoShiftPx": shift,
     }
     if extra:
         stats["extraViews"] = len(extras)
         stats["extraRounds"] = len(rounds)
-    color, offset, warp = (t.detach().cpu().numpy() for t in (model.color, model.offset, model.warp))
     fixes = {v.name: (color[i], offset[i], warp[i] if cfg.align else np.zeros(4, np.float32)) for i, v in enumerate(views) if v.learn_color}
     return Result(trained, seen, stats, fixes)
 
 
-def render_view(mips: list[list[torch.Tensor]], v: View) -> torch.Tensor:
+def render_view(mips: list[list[torch.Tensor]], v: View, device: str) -> torch.Tensor:
     """The view's pixels as the skins show them (the photo's own where they say nothing)."""
-    out = v.image.clone()
-    out[v.valid] = lookup(mips, v.atlas[v.valid], v.uv[v.valid], v.level[v.valid])
+    out = v.photo(device)
+    valid, atlas, uv, level = v.piece(device)
+    out[valid] = lookup(mips, atlas[valid], uv[valid], level[valid])
     return out
 
 
 def coverage(views: list[View], sizes: list[int], device: str = "cpu") -> list[np.ndarray]:
-    """Per atlas, how much pixel weight landed on each texel (bilinear, at the finest level): 0 where no
-    view says anything."""
-    seen = [torch.zeros(1, 1, s, s, device=device, requires_grad=True) for s in sizes]
-    total = torch.zeros((), device=device)
-    for v in views:
-        if not bool(v.valid.any()):
-            continue
-        atlas, uv = v.atlas[v.valid], v.uv[v.valid]
-        for a, image in enumerate(seen):
-            sel = atlas == a
-            if bool(sel.any()):
-                grid = (uv[sel] * 2 - 1).view(1, 1, -1, 2)
-                total = total + v.weight * F.grid_sample(image + 1, grid, mode="bilinear", padding_mode="border", align_corners=False).sum()
-    if total.requires_grad:
-        total.backward()
-    return [(s.grad[0, 0].cpu().numpy() if s.grad is not None else np.zeros((s.shape[2], s.shape[3]))) for s in seen]
+    """Per atlas, how much pixel weight landed on each texel (bilinear, at the finest level, as the
+    skins read them): 0 where no view says anything. One view at a time, straight into the counts."""
+    seen = [torch.zeros(s * s, device=device) for s in sizes]
+    with torch.no_grad():
+        for v in views:
+            valid, atlas, uv, _ = v.piece(device)
+            if not bool(valid.any()):
+                continue
+            atlas, uv = atlas[valid], uv[valid]
+            for a, s in enumerate(sizes):
+                sel = atlas == a
+                if not bool(sel.any()):
+                    continue
+                # grid_sample's bilinear taps (align_corners=False, border padding) for these pixels.
+                p = (uv[sel] * s - 0.5).clamp(0, s - 1)
+                x0, y0 = p[:, 0].floor(), p[:, 1].floor()
+                fx, fy = p[:, 0] - x0, p[:, 1] - y0
+                x0, y0 = x0.long(), y0.long()
+                x1, y1 = (x0 + 1).clamp(max=s - 1), (y0 + 1).clamp(max=s - 1)
+                for xi, yi, w in ((x0, y0, (1 - fx) * (1 - fy)), (x1, y0, fx * (1 - fy)), (x0, y1, (1 - fx) * fy), (x1, y1, fx * fy)):
+                    seen[a].index_add_(0, yi * s + xi, v.weight * w)
+    return [c.view(s, s).cpu().numpy() for c, s in zip(seen, sizes)]

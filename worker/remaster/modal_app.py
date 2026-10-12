@@ -22,13 +22,22 @@ On a capture folder and its painted model, without the site (writes <out>/remast
 import hmac
 import os
 import re
+import sys
+from pathlib import Path
 
 import modal
 from fastapi import Header, HTTPException
 
-from atrium_photoreal.remote import RemoteFixer, fixer_image
-from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL, PROMPT_DEPTH, SAM2
-from atrium_remaster.triposg import TRIPOSG_COMMIT, TRIPOSG_PATH, TRIPOSG_REPO, TRIPOSG_REVISION, TRIPOSG_WEIGHTS
+# Deployed from the repository, this worker's package sits here and the photoreal worker's next door
+# (worker/photoreal); in the containers both are in place already.
+_here = Path(__file__).resolve().parent
+for _folder, _package in ((_here.parent / "photoreal", "atrium_photoreal"), (_here, "atrium_remaster")):
+    if (_folder / _package).is_dir() and str(_folder) not in sys.path:
+        sys.path.insert(0, str(_folder))
+
+from atrium_photoreal.remote import RemoteFixer, fixer_image  # noqa: E402
+from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL, PROMPT_DEPTH, SAM2  # noqa: E402
+from atrium_remaster.triposg import TRIPOSG_COMMIT, TRIPOSG_PATH, TRIPOSG_REPO, TRIPOSG_REVISION, TRIPOSG_WEIGHTS  # noqa: E402
 
 GPU = os.environ.get("REMASTER_GPU", "A10G")
 FIXER_GPU = os.environ.get("REMASTER_FIXER_GPU", "A10G")
