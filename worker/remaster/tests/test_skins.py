@@ -76,3 +76,29 @@ def test_the_trained_size_respects_the_texel_budget():
     assert skins.trained_size(mesh, skins.SkinConfig(scale=2.0, max_texels=10**9)) == [4096] * 4
     sizes = skins.trained_size(mesh, skins.SkinConfig(scale=2.0, max_texels=40_000_000))
     assert all(s % 16 == 0 for s in sizes) and 4 * sizes[0] ** 2 <= 40_000_000 * 1.01 and sizes[0] > 2048
+
+
+def test_cleaned_views_where_buyers_walk_feed_the_skins(tmp_path):
+    from atrium_photoreal.enhance import SmoothingFixer
+
+    from atrium_remaster import fixviews
+
+    truth = room.write(tmp_path)
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    capture = load(tmp_path / "capture")
+    cfg = skins.SkinConfig(**FAST)
+    views_ = skins.prepare_photos(mesh, capture, cfg, log=lambda _: None)
+    seen = []
+
+    class Counting(SmoothingFixer):
+        def __call__(self, images):
+            seen.append([im.shape for im in images])
+            return super().__call__(images)
+
+    fix_cfg = fixviews.FixerViewsConfig(rounds=2, views=6, width=96, height=54)
+    extra = fixviews.fixer_views(mesh, capture, cfg, fix_cfg, Counting(), log=lambda _: None)
+    result = skins.train(mesh, views_, cfg, log=lambda _: None, extra=extra)
+    assert len(seen) == 2 and all(shape == (54, 96, 3) for round_ in seen for shape in round_), "two rounds of the views, at the fixer's size"
+    assert result.stats["extraRounds"] == 2 and 0 < result.stats["extraViews"] <= 6
+    assert result.stats["skinViews"] == len(capture.cameras), "the photos alone count as seen"
+    assert held_out_error(truth, result.mesh) < 0.8 * held_out_error(truth, mesh)

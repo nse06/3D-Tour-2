@@ -42,12 +42,19 @@ VARIANTS: dict[str, dict | None] = {
     "painted": None,
     "skins": {"fill": False, "deblur": False},  # skins trained on every photo, twice the texels
     "skins+fill": {"deblur": False},  # ... and the unseen spots filled
-    "full": {},  # ... and the smeared photos sharpened first: the job's defaults
-    "full-residual0": {"deblurResidual": 0.0},  # ... counting the sharpened photos as sharp
+    "full": {"fixerViews": False},  # ... and the smeared photos sharpened first
+    "full-residual0": {"fixerViews": False, "deblurResidual": 0.0},  # ... counting the sharpened photos as sharp
+    "full+fixer": {},  # ... and the Fixer's cleaned views where buyers walk: the job's defaults
     "skins-1x": {"fill": False, "deblur": False, "scale": 1.0},  # skins at the phone's texel size
     "skins-noalign": {"fill": False, "deblur": False, "align": False},  # ... without each photo's shift, turn and zoom
     "skins-long": {"fill": False, "deblur": False, "steps": 6000},  # ... twice the steps
 }
+
+
+def uses_fixer(variant: str) -> bool:
+    """Whether a variant learns from the Fixer's views (then it needs the Fixer on a GPU)."""
+    config = VARIANTS.get(variant)
+    return config is not None and config.get("fixerViews", True) is not False and "fixer" in variant
 
 
 def render_views(mesh, views: list[dict], views_dir: Path, eval_scale: float):

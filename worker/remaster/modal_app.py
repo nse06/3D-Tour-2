@@ -1,7 +1,7 @@
 """Atrium's remaster worker on Modal (https://modal.com), separate from the photoreal one
 (worker/photoreal): a GPU function that rebuilds one photo scan's painted model (atrium_remaster), and
 a web endpoint the Atrium site calls to start it (REMASTER_GPU_URL on the site). It shares the
-photoreal worker's secret.
+photoreal worker's secret. NVIDIA's Fixer runs on a GPU of its own (the photoreal worker's image).
 
 Setup (once; see docs/remaster.md):
 
@@ -25,9 +25,11 @@ import re
 import modal
 from fastapi import Header, HTTPException
 
+from atrium_photoreal.remote import RemoteFixer, fixer_image
 from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL
 
 GPU = os.environ.get("REMASTER_GPU", "A10G")
+FIXER_GPU = os.environ.get("REMASTER_FIXER_GPU", "A10G")
 
 app = modal.App("atrium-remaster")
 
@@ -52,11 +54,33 @@ secrets = [modal.Secret.from_name("atrium-photoreal")]
 FILE = re.compile(r"^(cameras\.json|seeds\.ply|frames/[A-Za-z0-9_-]+\.(jpg|jpeg|png)|masks/[A-Za-z0-9_-]+\.png)$")
 
 
+@app.cls(image=fixer_image(modal).add_local_python_source("atrium_remaster"), gpu=FIXER_GPU, timeout=1800, memory=32768, scaledown_window=300, max_containers=1)
+class Fixer:
+    """NVIDIA Fixer (atrium_photoreal/fixer.py), as the photoreal worker runs it, on a GPU of this app's
+    own: cleans up the views where buyers walk (atrium_remaster/fixviews.py)."""
+
+    @modal.enter()
+    def load(self):
+        from atrium_photoreal.fixer import FixerModel
+
+        self.model = FixerModel()
+
+    @modal.method()
+    def warm(self) -> bool:
+        return True
+
+    @modal.method()
+    def fix(self, jpegs: list[bytes]) -> list[bytes]:
+        from atrium_photoreal.fixer import fix_jpegs
+
+        return fix_jpegs(self.model, jpegs)
+
+
 def services():
     from atrium_remaster.job import Services
     from atrium_remaster.models import LaMa, NAFNetCleaner
 
-    return Services(inpainter=LaMa(), cleaner=NAFNetCleaner())
+    return Services(inpainter=LaMa(), cleaner=NAFNetCleaner(), fixer=RemoteFixer(Fixer()))
 
 
 @app.function(image=gpu_image, gpu=GPU, cpu=8, timeout=3 * 3600, memory=49152, secrets=secrets)

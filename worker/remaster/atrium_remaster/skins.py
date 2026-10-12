@@ -84,6 +84,17 @@ class View:
 
 
 @dataclass
+class ExtraViews:
+    """Views made during training from the skins themselves (fixviews.py): at each fraction of the
+    steps in `at`, `make(render, round)` returns new views (in place of the last round's), which then
+    make up `share` of what each step draws. `render(view)` is the view as the skins show it then."""
+
+    at: list[float]
+    share: float
+    make: Callable[[Callable[[View], np.ndarray], int], list[View]]
+
+
+@dataclass
 class Result:
     mesh: Mesh  # the model with the trained atlases
     seen: list[np.ndarray]  # per atlas (S, S) float: how much photo weight landed on each texel
@@ -285,8 +296,9 @@ def train(
     device: str = "cpu",
     log: Callable[[str], None] = print,
     progress: Callable[[float], None] | None = None,
+    extra: ExtraViews | None = None,
 ) -> Result:
-    """Learns the atlases from the views (prepare_photos, plus any cleaned-up views)."""
+    """Learns the atlases from the views (prepare_photos), and from `extra`'s views once they're made."""
     torch.manual_seed(cfg.seed)
     rng = np.random.default_rng(cfg.seed)
     sizes = trained_size(mesh, cfg)
@@ -305,6 +317,9 @@ def train(
     probs = weights / weights.sum()
     t0 = time.time()
     loss_ema = None
+    extras: list[View] = []
+    extra_probs = None
+    rounds = {min(cfg.steps - 1, max(0, int(round(f * cfg.steps)))): k for k, f in enumerate(extra.at)} if extra else {}
 
     def find_directions() -> None:
         with torch.no_grad():
@@ -318,11 +333,21 @@ def train(
     for step in range(cfg.steps):
         if step in (cfg.steps // 5, cfg.steps // 2):
             find_directions()
+        if step in rounds:
+            with torch.no_grad():
+                current = [model.mips(a, cfg.max_mip) for a in range(len(sizes))]
+                extras = extra.make(lambda v: render_view(current, v).clamp(0, 1).cpu().numpy(), rounds[step])
+            ew = np.array([v.weight * max(1, int(v.valid.sum())) for v in extras], dtype=np.float64)
+            extra_probs = ew / ew.sum() if len(extras) and ew.sum() > 0 else None
+            log(f"skins: round {rounds[step] + 1} of {len(rounds)}, {len(extras)} views where buyers walk")
         mips = [model.mips(a, cfg.max_mip) for a in range(len(sizes))]
         loss = torch.zeros((), device=device)
         count = 0
-        for i in rng.choice(len(views), size=min(cfg.batch, len(views)), replace=False, p=probs):
-            v = views[i]
+        n_extra = int(rng.binomial(cfg.batch, extra.share)) if extra_probs is not None else 0
+        picks = [(int(i), views[int(i)], True) for i in rng.choice(len(views), size=min(cfg.batch - n_extra, len(views)), replace=False, p=probs)]
+        if n_extra:
+            picks += [(int(j), extras[int(j)], False) for j in rng.choice(len(extras), size=min(n_extra, len(extras)), replace=False, p=extra_probs)]
+        for i, v, is_photo in picks:
             h, w = v.shape
             th, tw = min(cfg.tile, h), min(cfg.tile, w)
             y0, x0 = int(rng.integers(0, h - th + 1)), int(rng.integers(0, w - tw + 1))
@@ -330,9 +355,9 @@ def train(
             valid = v.valid[box]
             if not bool(valid.any()):
                 continue
-            target = warp_image(v.image, model.warp[i], (y0, x0, th, tw), (h, w)) if cfg.align else v.image[box]
+            target = warp_image(v.image, model.warp[i], (y0, x0, th, tw), (h, w)) if cfg.align and is_photo else v.image[box]
             colors = lookup(mips, v.atlas[box][valid], v.uv[box][valid], v.level[box][valid])
-            colors = colors @ model.color[i].T + model.offset[i] if v.learn_color else colors
+            colors = colors @ model.color[i].T + model.offset[i] if is_photo and v.learn_color else colors
             if v.smear >= cfg.blur_min_px and step >= cfg.steps // 5:
                 # Smear the render like the photo: the tile's other pixels from the photo itself.
                 render = target.detach().clone()
@@ -383,6 +408,9 @@ def train(
         "skinSeenShare": round(float(np.mean([(s > 0).mean() for s in seen])) if seen else 0.0, 4),
         "photoShiftPx": round(float(model.warp.detach()[:, :2].norm(dim=1).mean()), 2) if len(views) else 0.0,
     }
+    if extra:
+        stats["extraViews"] = len(extras)
+        stats["extraRounds"] = len(rounds)
     return Result(trained, seen, stats)
 
 

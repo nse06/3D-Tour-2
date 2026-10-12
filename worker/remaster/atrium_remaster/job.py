@@ -31,6 +31,7 @@ from atrium_photoreal.job import Reporter, download, upload
 
 from . import cleanup as cleanup_mod
 from . import fill as fill_mod
+from . import fixviews
 from . import glb, scene, skins
 from . import layout as layout_mod
 from .layout import Layout
@@ -43,6 +44,7 @@ class Services:
 
     inpainter: fill_mod.Inpainter = field(default_factory=fill_mod.PullPush)
     cleaner: cleanup_mod.Cleaner | None = None
+    fixer: object | None = None  # atrium_photoreal.enhance.Fixer: views where buyers walk, cleaned up
 
 
 def fetch(url: str, target: Path) -> int:
@@ -121,7 +123,23 @@ def remaster(mesh: scene.Mesh, capture, options: dict, services: Services, devic
     report("skins", 0.0, "lining up the photos with the model")
     views = skins.prepare_photos(mesh, capture, cfg, device=device, log=log, photos=sharpened, residual=clean_cfg.residual, quiet_faces=quiet)
     report("skins", 0.02, f"{len(views)} photos")
-    result = skins.train(mesh, views, cfg, device=device, log=log, progress=lambda p: report("skins", 0.02 + 0.9 * p, ""))
+    extra = None
+    if services.fixer is not None and options.get("fixerViews", True):
+        d = fixviews.FixerViewsConfig()
+        fix_cfg = fixviews.FixerViewsConfig(
+            rounds=int(options.get("fixerRounds", d.rounds)),
+            views=int(options.get("fixerViewCount", d.views)),
+            width=int(options.get("fixerWidth", d.width)),
+            height=int(options.get("fixerHeight", d.height)),
+            weight=float(options.get("fixerWeight", d.weight)),
+            share=float(options.get("fixerShare", d.share)),
+            tone_lock=float(options.get("fixerToneLock", d.tone_lock)),
+        )
+        extra = fixviews.fixer_views(mesh, capture, cfg, fix_cfg, services.fixer, device=device, log=log)
+        prepare = services.fixer.prepare if hasattr(services.fixer, "prepare") else None
+        if prepare:
+            prepare()  # its GPU starts while the skins train
+    result = skins.train(mesh, views, cfg, device=device, log=log, progress=lambda p: report("skins", 0.02 + 0.9 * p, ""), extra=extra)
     stats.update(result.stats)
     out = result.mesh
     if not layout.empty:

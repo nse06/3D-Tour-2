@@ -20,7 +20,8 @@ HERE = Path(__file__).resolve().parent
 if len(HERE.parents) > 2 and (HERE.parents[2] / "worker" / "remaster").is_dir():
     sys.path[:0] = [str(HERE), str(HERE.parents[2] / "worker" / "photoreal"), str(HERE.parents[2] / "worker" / "remaster")]
 
-from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL  # noqa: E402  (after the path above)
+from atrium_photoreal.remote import RemoteFixer, fixer_image  # noqa: E402  (after the path above)
+from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL  # noqa: E402
 
 app = modal.App("atrium-remaster-eval")
 volume = modal.Volume.from_name("atrium-photoreal-eval", create_if_missing=True)
@@ -38,6 +39,27 @@ image = (
 )
 
 
+@app.cls(image=fixer_image(modal).add_local_python_source("atrium_remaster", "eval_splats", "eval_remaster"), gpu="A10G", timeout=1800, memory=32768, scaledown_window=300, max_containers=1)
+class Fixer:
+    """NVIDIA Fixer, as in worker/remaster/modal_app.py."""
+
+    @modal.enter()
+    def load(self):
+        from atrium_photoreal.fixer import FixerModel
+
+        self.model = FixerModel()
+
+    @modal.method()
+    def warm(self) -> bool:
+        return True
+
+    @modal.method()
+    def fix(self, jpegs: list[bytes]) -> list[bytes]:
+        from atrium_photoreal.fixer import fix_jpegs
+
+        return fix_jpegs(self.model, jpegs)
+
+
 @app.function(image=image, gpu="A10G", cpu=8, timeout=3 * 3600, memory=49152, volumes={"/data": volume})
 def evaluate(tag: str, variant: str, steps: int) -> dict:
     import eval_remaster
@@ -45,12 +67,13 @@ def evaluate(tag: str, variant: str, steps: int) -> dict:
     from atrium_remaster.models import LaMa, NAFNetCleaner
 
     overrides = {"steps": steps} if steps else None
-    services = Services(inpainter=LaMa(), cleaner=NAFNetCleaner())
+    fixer = RemoteFixer(Fixer()) if eval_remaster.uses_fixer(variant) else None
+    services = Services(inpainter=LaMa(), cleaner=NAFNetCleaner(), fixer=fixer)
     return eval_remaster.run_variant(f"/data/{tag}/capture", f"/data/{tag}/painted.glb", f"/data/{tag}/views", variant, "cuda", 1.0, overrides, services)
 
 
 @app.local_entrypoint()
-def main(capture: str, painted: str, views: str, out: str, variants: str = "painted,skins,skins+fill,skins-1x,skins-noalign", steps: int = 0):
+def main(capture: str, painted: str, views: str, out: str, variants: str = "painted,skins,skins+fill,full,full+fixer", steps: int = 0):
     import eval_remaster
 
     names = [n for n in variants.split(",") if n]
