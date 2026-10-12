@@ -134,3 +134,37 @@ def test_the_job_makes_furniture_before_the_skins(tmp_path):
     out, stats = remaster(mesh, capture, options, services, "cpu", lambda stage, value, message: stages.append(stage), log=lambda _: None, layout=layout.load(tmp_path / "capture"))
     assert stats["furnitureMade"] == 1 and "furniture" in stages and stages.index("furniture") < stages.index("skins"), (stats, stages)
     assert len(out.atlases) == len(mesh.atlases) + 1
+
+
+def test_what_hides_a_piece_is_painted_over_before_the_maker_sees_it(tmp_path):
+    """A box in front of the cabinet (a coffee table before a sofa): in the cutout the maker gets, the
+    part it hides is painted in (here a stand-in paints it magenta) and counts as the piece's."""
+    room.write(tmp_path, layout=room.layout_doc(cabinet="table"))
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    corners, faces = edit.box(np.array([1.3, 0.3, 0.75]), np.eye(3), np.array([0.4, 0.6, 0.2]))
+    mesh, _ = edit.apply(mesh, np.zeros(len(mesh.faces), bool), [edit.Addition(corners, faces, color=(0.1, 0.6, 0.1), name="stool")])
+    capture = load(tmp_path / "capture")
+    lay = layout.load(tmp_path / "capture")
+    cfg = furniture.FurnitureConfig(long_side=160, in_frame=0.8, crop=64, fit_px=80)
+
+    class Magenta:
+        name = "magenta"
+
+        def __call__(self, images, masks):
+            return [np.where(m[..., None], np.array([255, 0, 255], np.uint8), im) for im, m in zip(images, masks)]
+
+    # What hides it: in the cutout's photo, the stool covers part of the cabinet's outline.
+    caster = views.Caster.of(mesh)
+    chart = mesh.charts()
+    from atrium_remaster.fill import flat_charts
+
+    piece = furniture.piece_faces(mesh, lay.objects[0], chart, set(flat_charts(mesh, chart, 10.0)), cfg.margin)
+    assert piece.sum() == 8, "the stool isn't the cabinet"
+    s = furniture.sights(caster, piece, lay.objects[0], capture.cameras, cfg)[0]
+    outline, hides = furniture.hidden(caster, np.flatnonzero(piece), views.Caster(mesh.vertices, mesh.faces[piece]), s)
+    assert 0.05 < hides.sum() / outline.sum() < 0.6
+    painted, plain = BoxMaker(), BoxMaker()
+    furniture.run(mesh, capture, lay, furniture.BoxSegmenter(), painted, cfg, log=lambda _: None, inpainter=Magenta())
+    furniture.run(mesh, capture, lay, furniture.BoxSegmenter(), plain, cfg, log=lambda _: None)
+    magenta = lambda im: ((im[..., 0] > 200) & (im[..., 1] < 60) & (im[..., 2] > 200)).sum()  # noqa: E731
+    assert magenta(painted.images[0]) > 20 and magenta(plain.images[0]) == 0

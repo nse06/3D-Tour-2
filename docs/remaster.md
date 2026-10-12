@@ -111,9 +111,12 @@ For each movable piece in the room layout (sofas, chairs, beds and tables; never
 its box at least half in frame and at least 12% of the photo across are ranked by how much of the scanned piece
 they show (the steadier photo first). The best one that shows it whole and up to four more, looking at it from
 directions at least 20° apart, are read at 960 px, and **SAM 2.1** (Hiera-L, Apache-2.0, through transformers)
-cuts the piece out of each with its box as the prompt, kept within the box's outline. The clearest cutout, on
-white with 10% around it, goes to **TripoSG** (VAST-AI, MIT; its own GPU and image), which makes the piece's
-shape. That shape is turned about its up axis (four quarter turns, mirrored or not), stretched to fill the box
+cuts the piece out of each with its box as the prompt, kept within the box's outline, its holes filled (a throw on
+a sofa's seat is the sofa's). Of the clearest few whole views, the one where the least of the piece is hidden
+(by a coffee table, say: the model knows what stands in front of it) gives the cutout for **TripoSG** (VAST-AI,
+MIT; its own GPU and image), on white with 10% around it; what's hidden in it is painted in by LaMa first, since
+TripoSG would otherwise build the gap into the shape. TripoSG makes the piece's shape (about 30 s on an A10G; it
+comes out upright, y up, and is cut to 30,000 triangles). That shape is turned about its up axis (four quarter turns, mirrored or not), stretched to fill the box
 RoomPlan measured, and the turn whose outline best matches the cutouts wins (overlap counted only where nothing
 in front hides the piece). At 60% overlap or better it replaces the scanned piece (the box's faces or the LiDAR's
 shape, never the floor, a wall or a baseboard behind it), with new texels that start as the piece's color and that

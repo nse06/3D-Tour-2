@@ -159,7 +159,9 @@ def remaster(
                 in_frame=float(options.get("furnitureInFrame", 0.9)),
                 min_iou=float(options.get("furnitureMinFit", 0.6)),
             )
-            mesh, furniture_stats = furniture_mod.run(mesh, capture, layout, services.segmenter, services.shapes, furniture_cfg, sharpened=sharpened, log=log)
+            mesh, furniture_stats = furniture_mod.run(
+                mesh, capture, layout, services.segmenter, services.shapes, furniture_cfg, sharpened=sharpened, log=log, inpainter=services.inpainter
+            )
             stats.update(furniture_stats)
         except Exception as e:  # the scanned pieces stay
             traceback.print_exc()
