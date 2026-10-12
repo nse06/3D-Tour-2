@@ -175,7 +175,31 @@ def smear_horizontally(image: np.ndarray, length: int) -> np.ndarray:
     return out
 
 
-def write(folder: Path, cameras: int = 16, smeared=(3, 8), smear_px: int = 5, brightness_spread: float = 0.15, noise: float = 0.01, seed: int = 0) -> dict:
+# The layout the phone sends from build 13 (cameras.json "layout"): the four walls, a window in the
+# x = 3 wall, and the cabinet (RoomPlan's "storage", or a TV in tests that want one).
+WINDOW = {"center": [3.0, 1.4, 1.5], "along": [0.0, 0.0, 1.0], "normal": [-1.0, 0.0, 0.0], "width": 1.0, "height": 1.0}
+
+
+def layout_doc(cabinet: str = "storage") -> dict:
+    X, Y, Z = SIZE
+    corners = [(0, 0), (X, 0), (X, Z), (0, Z)]
+    walls = []
+    for k in range(4):
+        a, b = np.array(corners[k], float), np.array(corners[(k + 1) % 4], float)
+        d = (b - a) / np.linalg.norm(b - a)
+        walls.append({"id": f"W{k}", "a": a.tolist(), "b": b.tolist(), "inside": [-d[1], d[0]], "y0": 0.0, "y1": Y, "thickness": 0.12, "holes": [], "room": 0})
+    return {
+        "walls": walls,
+        "openings": [{"id": "WIN", "kind": "window", "wall": "W1", **WINDOW}],
+        "objects": [
+            {"id": "CAB", "category": cabinet, "center": [1.4, 0.45, 0.25], "axes": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "size": [0.8, 0.9, 0.5], "lidar": False, "room": 0}
+        ],
+    }
+
+
+def write(
+    folder: Path, cameras: int = 16, smeared=(3, 8), smear_px: int = 5, brightness_spread: float = 0.15, noise: float = 0.01, seed: int = 0, layout: dict | None = None
+) -> dict:
     """Writes the room into `folder` (capture/ and model.glb) and returns the truth: the charts, the
     truth atlas and the mesh."""
     folder = Path(folder)
@@ -245,6 +269,8 @@ def write(folder: Path, cameras: int = 16, smeared=(3, 8), smear_px: int = 5, br
         "rooms": [{"name": "Room", "floorY": 0.0, "ceilingY": Y, "polygon": [[0, 0], [X, 0], [X, Z], [0, Z]]}],
         "seeds": {"file": "seeds.ply", "count": len(seeds), "spacing": SEED_SPACING},
     }
+    if layout is not None:
+        doc["layout"] = layout
     (capture / "cameras.json").write_text(json.dumps(doc))
 
     # The painted model: the truth softened, each chart a little brighter or darker, and a patch of a

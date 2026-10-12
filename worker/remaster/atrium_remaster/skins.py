@@ -136,6 +136,7 @@ def prepare_view(
     people: np.ndarray | None = None,
     name: str = "",
     device: str = "cpu",
+    quiet_faces: np.ndarray | None = None,
 ) -> View:
     """A view as training uses it: which pixels say something, where in which atlas, at which mipmap."""
     h, w = image.shape[:2]
@@ -151,6 +152,8 @@ def prepare_view(
     valid &= ~edges(hits, mesh, normals, cfg.edge_px * max(w, h) / 1920)
     if people is not None:
         valid &= ~people
+    if quiet_faces is not None:
+        valid &= ~quiet_faces[face]
     # Footprint: a pixel's size on the surface (meters), in trained texels of its triangle.
     with np.errstate(divide="ignore", invalid="ignore"):
         footprint = np.where(hits.hit, hits.depth / K[0, 0] / np.maximum(cos, 0.25), 0.0)
@@ -170,9 +173,19 @@ def prepare_view(
     )
 
 
-def prepare_photos(mesh: Mesh, capture: Capture, cfg: SkinConfig, device: str = "cpu", photos: dict[str, np.ndarray] | None = None, log=print) -> list[View]:
-    """Every photo of the capture as a training view. `photos`: cleaned-up copies by camera name
-    (cleanup.py), used in place of the files."""
+def prepare_photos(
+    mesh: Mesh,
+    capture: Capture,
+    cfg: SkinConfig,
+    device: str = "cpu",
+    photos: dict[str, np.ndarray] | None = None,
+    log=print,
+    residual: float = 1.0,
+    quiet_faces: np.ndarray | None = None,
+) -> list[View]:
+    """Every photo of the capture as a training view. `photos`: sharpened copies by camera name
+    (cleanup.py), used in place of the files, whose smear counts `residual` times; `quiet_faces`: (F,)
+    triangles no photo says anything about (a TV's screen)."""
     caster = Caster.of(mesh)
     sizes = trained_size(mesh, cfg)
     texel = mesh.texel_size()
@@ -180,13 +193,14 @@ def prepare_photos(mesh: Mesh, capture: Capture, cfg: SkinConfig, device: str = 
     out = []
     for cam in capture.cameras:
         rgb, K, people = load_photo(cam, cfg.long_side)
-        if photos is not None and cam.name in photos:
+        sharpened = photos is not None and cam.name in photos
+        if sharpened:
             clean = photos[cam.name]
             if clean.shape[:2] != rgb.shape[:2]:
                 clean = np.asarray(Image.fromarray(clean).resize((rgb.shape[1], rgb.shape[0]), Image.LANCZOS))
             rgb = clean
-        view = prepare_view(mesh, caster, rgb.astype(np.float32) / 255.0, K, cam.camtoworld, cfg, sizes, texel, normals, people, cam.name, device)
-        view.smear = smear_px(cam, rgb.shape[1] / cam.width) or 0.0
+        view = prepare_view(mesh, caster, rgb.astype(np.float32) / 255.0, K, cam.camtoworld, cfg, sizes, texel, normals, people, cam.name, device, quiet_faces)
+        view.smear = (smear_px(cam, rgb.shape[1] / cam.width) or 0.0) * (residual if sharpened else 1.0)
         out.append(view)
     log(f"skins: {len(out)} photos, {sum(int(v.valid.sum()) for v in out):,} pixels that say something")
     return out

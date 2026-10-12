@@ -20,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 if len(HERE.parents) > 2 and (HERE.parents[2] / "worker" / "remaster").is_dir():
     sys.path[:0] = [str(HERE), str(HERE.parents[2] / "worker" / "photoreal"), str(HERE.parents[2] / "worker" / "remaster")]
 
-from atrium_remaster.models import LAMA_PATH, LAMA_URL  # noqa: E402  (after the path above)
+from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL  # noqa: E402  (after the path above)
 
 app = modal.App("atrium-remaster-eval")
 volume = modal.Volume.from_name("atrium-photoreal-eval", create_if_missing=True)
@@ -30,7 +30,10 @@ image = (
     .apt_install("libegl1", "libgl1", "libgomp1", "libusb-1.0-0", "curl")
     .pip_install("torch==2.5.1", "torchvision==0.20.1", index_url="https://download.pytorch.org/whl/cu124")
     .pip_install("numpy<2.3", "scipy", "pillow>=10", "open3d-cpu==0.20.0", "lpips==0.1.4")
-    .run_commands(f"mkdir -p /models && curl -fsSL -o {LAMA_PATH} {LAMA_URL} && sha256sum {LAMA_PATH}")
+    .run_commands(
+        f"mkdir -p /models && curl -fsSL -o {LAMA_PATH} {LAMA_URL} && sha256sum {LAMA_PATH}",
+        f"curl -fsSL -o {NAFNET_PATH} {NAFNET_URL} && sha256sum {NAFNET_PATH}",
+    )
     .add_local_python_source("atrium_photoreal", "atrium_remaster", "eval_splats", "eval_remaster")
 )
 
@@ -39,10 +42,11 @@ image = (
 def evaluate(tag: str, variant: str, steps: int) -> dict:
     import eval_remaster
     from atrium_remaster.job import Services
-    from atrium_remaster.models import LaMa
+    from atrium_remaster.models import LaMa, NAFNetCleaner
 
     overrides = {"steps": steps} if steps else None
-    return eval_remaster.run_variant(f"/data/{tag}/capture", f"/data/{tag}/painted.glb", f"/data/{tag}/views", variant, "cuda", 1.0, overrides, Services(inpainter=LaMa()))
+    services = Services(inpainter=LaMa(), cleaner=NAFNetCleaner())
+    return eval_remaster.run_variant(f"/data/{tag}/capture", f"/data/{tag}/painted.glb", f"/data/{tag}/views", variant, "cuda", 1.0, overrides, services)
 
 
 @app.local_entrypoint()

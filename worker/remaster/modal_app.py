@@ -25,20 +25,24 @@ import re
 import modal
 from fastapi import Header, HTTPException
 
-from atrium_remaster.models import LAMA_PATH, LAMA_URL
+from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL
 
 GPU = os.environ.get("REMASTER_GPU", "A10G")
 
 app = modal.App("atrium-remaster")
 
 # PyTorch with CUDA, Open3D's CPU build for ray casting (it needs EGL, GL and libusb to import),
-# and LaMa's weights. Every container imports this file, so each image has both packages.
+# and the weights of LaMa (fill) and NAFNet (sharpening). Every container imports this file, so each
+# image has both packages.
 gpu_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("libegl1", "libgl1", "libgomp1", "libusb-1.0-0", "curl")
     .pip_install("torch==2.5.1", index_url="https://download.pytorch.org/whl/cu124")
     .pip_install("numpy<2.3", "scipy", "pillow>=10", "open3d-cpu==0.20.0", "fastapi")
-    .run_commands(f"mkdir -p /models && curl -fsSL -o {LAMA_PATH} {LAMA_URL} && sha256sum {LAMA_PATH}")
+    .run_commands(
+        f"mkdir -p /models && curl -fsSL -o {LAMA_PATH} {LAMA_URL} && sha256sum {LAMA_PATH}",
+        f"curl -fsSL -o {NAFNET_PATH} {NAFNET_URL} && echo '175fe8b3cdf3abedfbc87769779c3d9f491e05bb2e73ea9d627883f90a4b2df3  {NAFNET_PATH}' | sha256sum -c -",
+    )
     .add_local_python_source("atrium_photoreal", "atrium_remaster")
 )
 web_image = modal.Image.debian_slim(python_version="3.11").pip_install("fastapi[standard]").add_local_python_source("atrium_photoreal", "atrium_remaster")
@@ -50,9 +54,9 @@ FILE = re.compile(r"^(cameras\.json|seeds\.ply|frames/[A-Za-z0-9_-]+\.(jpg|jpeg|
 
 def services():
     from atrium_remaster.job import Services
-    from atrium_remaster.models import LaMa
+    from atrium_remaster.models import LaMa, NAFNetCleaner
 
-    return Services(inpainter=LaMa())
+    return Services(inpainter=LaMa(), cleaner=NAFNetCleaner())
 
 
 @app.function(image=gpu_image, gpu=GPU, cpu=8, timeout=3 * 3600, memory=49152, secrets=secrets)
@@ -71,6 +75,7 @@ def remaster_files(files: dict[str, bytes], model: bytes, options: dict) -> dict
 
     from atrium_photoreal.capture import load
     from atrium_remaster import glb, scene
+    from atrium_remaster import layout as layout_mod
     from atrium_remaster.job import remaster
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -82,7 +87,7 @@ def remaster_files(files: dict[str, bytes], model: bytes, options: dict) -> dict
             (folder / name).write_bytes(data)
         capture = load(folder)
         mesh = scene.from_model(glb.read(model))
-        out, stats = remaster(mesh, capture, options, services(), "cuda", lambda stage, value, message: None)
+        out, stats = remaster(mesh, capture, options, services(), "cuda", lambda stage, value, message: None, layout=layout_mod.load(folder))
         return {"model": glb.write(scene.to_model(out, quality=int(options.get("jpegQuality", 90)))), "stats": stats}
 
 

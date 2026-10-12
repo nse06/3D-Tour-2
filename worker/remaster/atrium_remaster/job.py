@@ -29,8 +29,11 @@ import numpy as np
 from atrium_photoreal.capture import load
 from atrium_photoreal.job import Reporter, download, upload
 
+from . import cleanup as cleanup_mod
 from . import fill as fill_mod
 from . import glb, scene, skins
+from . import layout as layout_mod
+from .layout import Layout
 from .views import Caster
 
 
@@ -39,6 +42,7 @@ class Services:
     """The AI models a job can call (models.py on a GPU; stand-ins or nothing in tests)."""
 
     inpainter: fill_mod.Inpainter = field(default_factory=fill_mod.PullPush)
+    cleaner: cleanup_mod.Cleaner | None = None
 
 
 def fetch(url: str, target: Path) -> int:
@@ -84,16 +88,45 @@ def config_from(options: dict) -> skins.SkinConfig:
     )
 
 
-def remaster(mesh: scene.Mesh, capture, options: dict, services: Services, device: str, report, log=print) -> tuple[scene.Mesh, dict]:
-    """The stages, in order. `report(stage, progress, message)`."""
+def cleanup_config(options: dict) -> cleanup_mod.CleanupConfig:
+    d = cleanup_mod.CleanupConfig()
+    return cleanup_mod.CleanupConfig(
+        deblur=bool(options.get("deblur", d.deblur)),
+        min_smear_px=float(options.get("deblurMinSmear", d.min_smear_px)),
+        residual=float(options.get("deblurResidual", d.residual)),
+        tv_off=bool(options.get("tvOff", d.tv_off)),
+        windows=bool(options.get("windows", d.windows)),
+    )
+
+
+def remaster(mesh: scene.Mesh, capture, options: dict, services: Services, device: str, report, log=print, layout: Layout | None = None) -> tuple[scene.Mesh, dict]:
+    """The stages, in order. `report(stage, progress, message)`. `layout`: the room layout (build 13
+    on), for what needs to know where the TVs and windows are."""
     stats: dict = {"photos": len(capture.cameras), "triangles": int(len(mesh.faces))}
+    layout = layout or Layout()
+    stats["layout"] = not layout.empty
     cfg = config_from(options)
+    clean_cfg = cleanup_config(options)
+    sharpened: dict = {}
+    if services.cleaner is not None and clean_cfg.deblur:
+        report("cleanup", 0.0, "sharpening the smeared photos")
+        try:
+            sharpened = cleanup_mod.sharpen_photos(capture, services.cleaner, clean_cfg, cfg.long_side, log=log)
+            stats["photosSharpened"] = len(sharpened)
+        except Exception as e:  # the skins learn from the photos as they are
+            traceback.print_exc()
+            stats["cleanupError"] = f"{type(e).__name__}: {e}"[:200]
+            sharpened = {}
+    quiet = cleanup_mod.screen_faces(mesh, layout.objects_of("television")) if clean_cfg.tv_off else None
     report("skins", 0.0, "lining up the photos with the model")
-    views = skins.prepare_photos(mesh, capture, cfg, device=device, log=log)
+    views = skins.prepare_photos(mesh, capture, cfg, device=device, log=log, photos=sharpened, residual=clean_cfg.residual, quiet_faces=quiet)
     report("skins", 0.02, f"{len(views)} photos")
     result = skins.train(mesh, views, cfg, device=device, log=log, progress=lambda p: report("skins", 0.02 + 0.9 * p, ""))
     stats.update(result.stats)
     out = result.mesh
+    if not layout.empty:
+        out, tidy_stats = cleanup_mod.tidy_skins(out, layout, clean_cfg, log=log)
+        stats.update(tidy_stats)
     if options.get("fill", True):
         report("fill", 0.93, "filling in what no photo saw")
         try:
@@ -120,6 +153,7 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-remas
         model_path = work / "painted.glb"
         received += fetch(payload["model"]["url"], model_path)
         capture = load(capture_dir)
+        layout = layout_mod.load(capture_dir)
         mesh = scene.from_model(glb.read(model_path.read_bytes()))
         if not mesh.atlases:
             raise ValueError("the model has no photos painted on it (a photo scan is needed)")
@@ -131,7 +165,7 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-remas
         def report(stage: str, value: float, message: str) -> None:
             reporter.progress(stage, value, message)
 
-        out, stats = remaster(mesh, capture, options, services, device, report)
+        out, stats = remaster(mesh, capture, options, services, device, report, layout=layout)
         reporter.progress("uploading", 1, "", force=True)
         out_path = work / "remastered.glb"
         out_path.write_bytes(glb.write(scene.to_model(out, quality=int(options.get("jpegQuality", 90)))))

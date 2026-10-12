@@ -4,6 +4,8 @@ nothing here is imported unless a container loads it. Every model here may be us
 
 * LaMa (big-lama; code Apache-2.0, weights from its authors under the same terms), as IOPaint
   packages it (TorchScript): fills what no photo saw (fill.py).
+* NAFNet (MIT; nafnet.py), its REDS deblurring weights (trained on blurred, compressed video frames,
+  like the phone's photos): sharpens smeared photos (cleanup.py).
 """
 
 from __future__ import annotations
@@ -15,6 +17,9 @@ import numpy as np
 # IOPaint's TorchScript export of big-lama (github.com/Sanster/models), fetched when the image is built.
 LAMA_URL = "https://github.com/Sanster/models/releases/download/add_big_lama/big-lama.pt"
 LAMA_PATH = "/models/big-lama.pt"
+# NAFNet's released REDS deblurring weights, as mirrored on Hugging Face (sha256 175fe8b3...4b2df3).
+NAFNET_URL = "https://huggingface.co/nyanko7/nafnet-models/resolve/main/NAFNet-REDS-width64.pth"
+NAFNET_PATH = "/models/NAFNet-REDS-width64.pth"
 
 
 class LaMa:
@@ -59,4 +64,55 @@ class LaMa:
             else:
                 filled = self._fill(image, mask)
             out.append(np.where(mask[..., None], filled, image).astype(np.uint8))
+        return out
+
+
+class NAFNetCleaner:
+    """NAFNet deblurring (cleanup.Cleaner): photos in tiles of `tile` pixels overlapping by `overlap`,
+    blended across the overlap, in bfloat16 on the GPU."""
+
+    name = "NAFNet (REDS)"
+
+    def __init__(self, path: str = NAFNET_PATH, device: str = "cuda", tile: int = 1024, overlap: int = 96):
+        import torch
+
+        from .nafnet import load
+
+        self.torch = torch
+        self.device = device
+        self.tile, self.overlap = tile, overlap
+        self.model = load(path, "deblur", device)
+
+    def _run(self, x):
+        torch = self.torch
+        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=self.device == "cuda"):
+            return self.model(x).float()
+
+    def __call__(self, images: list[np.ndarray]) -> list[np.ndarray]:
+        torch = self.torch
+        out = []
+        for image in images:
+            h, w = image.shape[:2]
+            x = torch.from_numpy(image).to(self.device).permute(2, 0, 1)[None].float() / 255
+            if max(h, w) <= self.tile:
+                y = self._run(x)
+            else:
+                step = self.tile - self.overlap
+                acc = torch.zeros_like(x)
+                weight = torch.zeros(1, 1, h, w, device=x.device)
+                ramp = torch.ones(self.tile)
+                ramp[: self.overlap] = torch.linspace(0.05, 1, self.overlap)
+                ramp[-self.overlap :] = torch.linspace(1, 0.05, self.overlap)
+                for y0 in list(range(0, max(1, h - self.overlap), step)):
+                    for x0 in list(range(0, max(1, w - self.overlap), step)):
+                        y0c, x0c = min(y0, max(0, h - self.tile)), min(x0, max(0, w - self.tile))
+                        y1c, x1c = min(h, y0c + self.tile), min(w, x0c + self.tile)
+                        piece = self._run(x[:, :, y0c:y1c, x0c:x1c])
+                        wy = ramp[: y1c - y0c].to(x.device) if y1c - y0c == self.tile else torch.ones(y1c - y0c, device=x.device)
+                        wx = ramp[: x1c - x0c].to(x.device) if x1c - x0c == self.tile else torch.ones(x1c - x0c, device=x.device)
+                        wgt = (wy[:, None] * wx[None, :])[None, None]
+                        acc[:, :, y0c:y1c, x0c:x1c] += piece * wgt
+                        weight[:, :, y0c:y1c, x0c:x1c] += wgt
+                y = acc / weight.clamp(min=1e-6)
+            out.append((y[0].permute(1, 2, 0).clamp(0, 1) * 255 + 0.5).byte().cpu().numpy())
         return out

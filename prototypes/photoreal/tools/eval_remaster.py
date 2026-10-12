@@ -40,11 +40,13 @@ from eval_splats import lpips_model, sheet, ssim, summarize  # noqa: E402
 # Each variant: the remaster job's options (atrium_remaster/job.py), or None for the painted model as it is.
 VARIANTS: dict[str, dict | None] = {
     "painted": None,
-    "skins": {"fill": False},  # skins trained on every photo, twice the texels
-    "skins+fill": {},  # ... and the unseen spots filled: the job's defaults
-    "skins-1x": {"fill": False, "scale": 1.0},  # ... at the phone's texel size
-    "skins-noalign": {"fill": False, "align": False},  # ... without each photo's shift, turn and zoom
-    "skins-long": {"fill": False, "steps": 6000},  # ... twice the steps
+    "skins": {"fill": False, "deblur": False},  # skins trained on every photo, twice the texels
+    "skins+fill": {"deblur": False},  # ... and the unseen spots filled
+    "full": {},  # ... and the smeared photos sharpened first: the job's defaults
+    "full-residual0": {"deblurResidual": 0.0},  # ... counting the sharpened photos as sharp
+    "skins-1x": {"fill": False, "deblur": False, "scale": 1.0},  # skins at the phone's texel size
+    "skins-noalign": {"fill": False, "deblur": False, "align": False},  # ... without each photo's shift, turn and zoom
+    "skins-long": {"fill": False, "deblur": False, "steps": 6000},  # ... twice the steps
 }
 
 
@@ -88,6 +90,7 @@ def run_variant(capture_dir, painted_glb, views_dir, variant: str, device: str =
     """One variant: the remaster (or the painted model as it is), rendered and scored at every view."""
     from atrium_photoreal.capture import load
     from atrium_remaster import glb, scene
+    from atrium_remaster import layout as layout_mod
     from atrium_remaster.job import Services, remaster
 
     capture_dir, views_dir = Path(capture_dir), Path(views_dir)
@@ -99,7 +102,7 @@ def run_variant(capture_dir, painted_glb, views_dir, variant: str, device: str =
         mesh, stats = painted, {"atlases": [a.shape[0] for a in painted.atlases]}
     else:
         options = {**config, **(overrides or {})}
-        mesh, stats = remaster(painted, load(capture_dir), options, services or Services(), device, lambda stage, value, message: None)
+        mesh, stats = remaster(painted, load(capture_dir), options, services or Services(), device, lambda stage, value, message: None, layout=layout_mod.load(capture_dir))
         # What buyers download: the model as the job writes it (JPEG atlases).
         mesh = scene.from_model(glb.read(glb.write(scene.to_model(mesh, quality=int(options.get("jpegQuality", 90))))))
         stats["modelMB"] = round(len(glb.write(scene.to_model(mesh, quality=int(options.get("jpegQuality", 90))))) / 1e6, 1)
