@@ -133,7 +133,7 @@ export function RemasterPanel({
   const needsPhotos = !photosReady && (
     <p className="text-xs text-neutral-500">
       It works from the scan&apos;s photos on the server. In <b className="font-semibold">Atrium Capture</b>, open this scan and tap{" "}
-      <b className="font-semibold">Make it photoreal</b>: that sends them.
+      <b className="font-semibold">Make it photoreal</b>: that sends them, and the remaster starts by itself.
     </p>
   );
 

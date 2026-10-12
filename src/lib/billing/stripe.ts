@@ -2,6 +2,7 @@ import "server-only";
 import Stripe from "stripe";
 import { getAdminRepository } from "@/lib/data/repository";
 import { dispatchJob, inputNames } from "@/lib/photoreal";
+import { photosForRemaster, queueRemaster, remasterConfigured } from "@/lib/remaster";
 import type { Payer } from "./access";
 import { stripeApiOverride, stripeSecretKey } from "./config";
 import { PRICES, type Plan, type PriceKey, type PriceSpec } from "./plans";
@@ -95,6 +96,8 @@ export interface CheckoutRequest {
   origin: string;
   /** Where Stripe's back link leads. */
   cancelPath: string;
+  /** What a photoreal purchase starts once paid: the remastered model, or (by default) photoreal. */
+  start?: "remaster";
 }
 
 /** Stripe's checkout page for a purchase or a plan. */
@@ -105,6 +108,7 @@ export async function checkoutUrl(req: CheckoutRequest): Promise<string> {
   const kind = recurring ? "plan" : req.price === "listing" ? "listing" : "photoreal";
   const metadata: Record<string, string> = { userId: req.payer.id, kind, price: req.price };
   if (req.propertyId) metadata.propertyId = req.propertyId;
+  if (req.start) metadata.start = req.start;
   const session = await stripe().checkout.sessions.create({
     mode: recurring ? "subscription" : "payment",
     line_items: [{ price: price.id, quantity: 1 }],
@@ -215,7 +219,7 @@ export interface AppliedCheckout {
 /**
  * Records a finished checkout, once, however many times it's reported (the return page and the
  * webhook both report it), and does what the realtor paid for: publishes the listing, or starts
- * the photoreal walkthrough waiting for it. `baseUrl` is this server's address for the GPU worker.
+ * the photoreal walkthrough (or remastered model) waiting for it. `baseUrl` is this server's address for the GPU worker.
  */
 export async function applyCheckoutSession(session: Stripe.Checkout.Session, baseUrl: string): Promise<AppliedCheckout | null> {
   const meta = session.metadata ?? {};
@@ -236,15 +240,22 @@ export async function applyCheckoutSession(session: Stripe.Checkout.Session, bas
   if (!kind || !propertyId) return null;
   if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") return { kind, propertyId, plan: null, pending: true };
   const added = await store.addGrant({ userId, propertyId, kind, source: "purchase", reference: session.id, amountCents: session.amount_total ?? 0 });
-  if (added) await fulfil(kind, userId, propertyId, baseUrl);
+  if (added) await fulfil(kind, userId, propertyId, baseUrl, meta.start === "remaster");
   return { kind, propertyId, plan: null, pending: false };
 }
 
-async function fulfil(kind: "listing" | "photoreal", userId: string, propertyId: string, baseUrl: string) {
+async function fulfil(kind: "listing" | "photoreal", userId: string, propertyId: string, baseUrl: string, remaster: boolean) {
   try {
     const repo = await getAdminRepository();
     if (kind === "listing") {
       await repo.setPublished(userId, propertyId, true);
+      return;
+    }
+    // Paid from the remaster panel: the remastered model, from the photos on the server (not photoreal).
+    if (remaster) {
+      const tour = (await repo.getProperty(userId, propertyId))?.tour;
+      const upload = tour && remasterConfigured() ? await photosForRemaster(repo, userId, propertyId, tour) : null;
+      if (tour && upload) await queueRemaster(repo, userId, propertyId, tour, upload, baseUrl);
       return;
     }
     // The job the realtor paid from: waiting for payment, or a failed run they're retrying.

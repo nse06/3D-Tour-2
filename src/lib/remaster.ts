@@ -6,6 +6,7 @@
 // upload left (lib/photoreal.ts), so either can be switched off without the other.
 
 import "server-only";
+import { PHOTOS_FOR_REMASTER, REMASTER_UNPAID } from "@/lib/billing/plans";
 import type { Repository } from "@/lib/data/repository";
 import type { PhotorealJob, RemasterJob, Tour } from "@/lib/data/types";
 import { inputDownloadLinks, inputNames, photosJobId, photosOnServer, workerSecret } from "@/lib/photoreal";
@@ -22,7 +23,7 @@ export function remasterConfigured(): boolean {
 
 export const WAITING_FOR_REMASTER_GPU = "Waiting for the remaster GPU to be connected (REMASTER_GPU_URL and PHOTOREAL_WORKER_SECRET on the server).";
 
-export const NO_PHOTOS = "Remastering works from the scan's photos on the server. In Atrium Capture, make the scan photoreal once: that sends them.";
+export const NO_PHOTOS = "Remastering works from the scan's photos on the server. In Atrium Capture, open the scan and tap Make it photoreal: that sends them.";
 
 /** Whether a job is still working on (or waiting for) its photos. */
 export function remasterBusy(job: Pick<RemasterJob, "status">): boolean {
@@ -52,6 +53,36 @@ function remasterOptions(): Record<string, unknown> {
     console.error("remaster: REMASTER_OPTIONS isn't JSON; using the worker's defaults");
     return {};
   }
+}
+
+/**
+ * Remasters the tour from these photos (the realtor's go, or the phone's upload): a job still waiting
+ * for the same photos is handed over again rather than doubled, one for older photos gives way, and
+ * one already running for this scan is left alone (null). The job, as the GPU took it or waiting.
+ */
+export async function queueRemaster(
+  admin: Repository,
+  userId: string,
+  propertyId: string,
+  tour: Tour,
+  upload: PhotorealJob,
+  baseUrl: string,
+): Promise<RemasterJob | null> {
+  const latest = await admin.latestRemasterJob(userId, propertyId);
+  if (latest && latest.tourId === tour.id && latest.status === "running") return null;
+  const waiting = latest && latest.tourId === tour.id && latest.status === "queued" ? latest : null;
+  if (waiting && waiting.inputsJobId !== upload.id) {
+    await admin.updateRemasterJob(waiting.id, {
+      status: "failed",
+      message: "Newer photos arrived; remastered from those instead.",
+      finishedAt: new Date().toISOString(),
+    });
+  }
+  const job = waiting?.inputsJobId === upload.id ? waiting : await admin.createRemasterJob(userId, propertyId, upload.id);
+  if (!job) return null;
+  // The phone shows the photos' job: no longer waiting to be paid for.
+  if (upload.status === "queued" && upload.message === REMASTER_UNPAID) await admin.updatePhotorealJob(upload.id, { message: PHOTOS_FOR_REMASTER });
+  return dispatchRemaster(admin, job, upload, tour, baseUrl);
 }
 
 /**

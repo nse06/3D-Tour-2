@@ -25,7 +25,7 @@ import {
   photosOnServer,
   WAITING_FOR_GPU,
 } from "@/lib/photoreal";
-import { dispatchRemaster, NO_PHOTOS, photosForRemaster, remasterBusy, remasterConfigured, WAITING_FOR_REMASTER_GPU } from "@/lib/remaster";
+import { NO_PHOTOS, photosForRemaster, queueRemaster, remasterBusy, remasterConfigured, WAITING_FOR_REMASTER_GPU } from "@/lib/remaster";
 import { manifestToSpace } from "@/lib/tour/scan-manifest";
 import { newId, parseSpace } from "@/lib/tour/space";
 import type { TourAppearance, TourData } from "@/lib/tour/types";
@@ -403,7 +403,7 @@ export async function deletePhotorealPhotosAction(propertyId: string): Promise<A
 /**
  * Remasters the listing's scan from the photos kept on the server: a new job for the remaster GPU.
  * Covered by the listing's photoreal (one look made from the photos, any version of it); otherwise the
- * realtor pays first, as for photoreal, and starts it again after.
+ * realtor pays first, as for photoreal, and it starts once paid.
  */
 export async function startRemasterAction(propertyId: string): Promise<ActionResult> {
   const user = await requireUser();
@@ -430,26 +430,16 @@ export async function startRemasterAction(propertyId: string): Promise<ActionRes
           payer: user,
           price,
           propertyId,
-          description: `Photoreal walkthrough: ${bundle!.property.addressLine}`,
+          description: `Remastered model: ${bundle!.property.addressLine}`,
           origin,
           cancelPath: `/dashboard/properties/${propertyId}`,
+          start: "remaster",
         }),
     );
     if (pay) return { ok: false, checkoutUrl: pay };
-    // The admin repository: the job's columns are the server's to write. A job still waiting (no GPU
-    // then, or it didn't take it) for the same photos is handed over again rather than doubled; one
-    // for older photos gives way to a new one.
-    const waiting = latest && latest.tourId === tour.id && latest.status === "queued" ? latest : null;
-    if (waiting && waiting.inputsJobId !== upload.id) {
-      await admin.updateRemasterJob(waiting.id, {
-        status: "failed",
-        message: "Newer photos arrived; remastered from those instead.",
-        finishedAt: new Date().toISOString(),
-      });
-    }
-    const job = waiting?.inputsJobId === upload.id ? waiting : await admin.createRemasterJob(user.id, propertyId, upload.id);
-    if (!job) return { ok: false, error: "Send the scan to Atrium first." };
-    const started = await dispatchRemaster(admin, job, upload, tour, serverBaseUrl(await headers()).url);
+    // The admin repository: the job's columns are the server's to write.
+    const started = await queueRemaster(admin, user.id, propertyId, tour, upload, serverBaseUrl(await headers()).url);
+    if (!started) return { ok: false, error: "The remastered model is already on its way." };
     revalidatePath(`/dashboard/properties/${propertyId}`);
     return started.status === "running" ? { ok: true } : { ok: false, error: started.message ?? "The GPU didn't take the job." };
   } catch (e) {

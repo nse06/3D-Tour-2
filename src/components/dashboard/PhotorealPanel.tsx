@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { choosePhotorealVersionAction, deletePhotorealPhotosAction, retrainPhotorealAction, startPhotorealAction, type ActionResult } from "@/app/dashboard/actions";
 import { Button, ButtonLink } from "@/components/ui";
-import { PHOTOREAL_UNPAID, type PhotorealPricing } from "@/lib/billing/plans";
+import { PHOTOREAL_UNPAID, photorealParked, type PhotorealPricing } from "@/lib/billing/plans";
 import type { PhotorealVariant } from "@/lib/data/types";
 
 export interface PhotorealJobView {
@@ -50,6 +50,7 @@ export function PhotorealPanel({
   pricing,
   photos,
   buyersSee,
+  remasterFirst,
 }: {
   propertyId: string;
   initialJob: PhotorealJobView | null;
@@ -61,13 +62,17 @@ export function PhotorealPanel({
   photos: { kept: boolean; bytes: number } | null;
   /** Which of the job's versions buyers see (null: neither, e.g. a newer scan since). */
   buyersSee: "faithful" | "ai" | null;
+  /** The phone's photos make the remastered model first; photoreal starts only from here. */
+  remasterFirst: boolean;
 }) {
   const router = useRouter();
   const [job, setJob] = useState(initialJob);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [leaving, setLeaving] = useState(false);
-  const moving = job && (job.status === "uploading" || job.status === "queued" || job.status === "running" || job.ai?.status === "running");
+  const parked = job?.status === "queued" && photorealParked(job.message);
+  const moving =
+    job && (job.status === "uploading" || (job.status === "queued" && !parked) || job.status === "running" || job.ai?.status === "running");
 
   // While the job moves, follow it; once it's done, show the new look on the page.
   useEffect(() => {
@@ -134,7 +139,10 @@ export function PhotorealPanel({
             {hasPhotoScan ? (
               <>
                 In <b className="font-semibold text-ink">Atrium Capture</b>, open this scan and tap <b className="font-semibold text-ink">Make it photoreal</b>.
-                It uploads the photos (a few hundred MB, best on Wi-Fi) and takes about half an hour.
+                It uploads the photos (a few hundred MB, best on Wi-Fi)
+                {remasterFirst
+                  ? ". The remastered model starts from them by itself; photoreal is optional, started here once they're in (about half an hour)."
+                  : " and takes about half an hour."}
               </>
             ) : (
               <>Send a scan from Atrium Capture first: photoreal is made from its photos.</>
@@ -154,14 +162,18 @@ export function PhotorealPanel({
       {job?.status === "queued" && (
         <div className="mt-3 space-y-3 text-sm">
           <p className="text-neutral-600">
-            {pay ? "The photos are here. Training starts as soon as photoreal is paid for." : "The photos are here and waiting for the GPU."}
+            {parked
+              ? "The photos are here and went to the remastered model. Photoreal is optional: start it if you want it as well."
+              : pay
+                ? "The photos are here. Training starts as soon as photoreal is paid for."
+                : "The photos are here and waiting for the GPU."}
           </p>
           {pricing?.note && <p className="text-xs text-neutral-500">{pricing.note}</p>}
-          {job.message && job.message !== PHOTOREAL_UNPAID && <p className="text-xs text-neutral-400">{job.message}</p>}
+          {job.message && job.message !== PHOTOREAL_UNPAID && !parked && <p className="text-xs text-neutral-400">{job.message}</p>}
           {gpuReady && (
             <Button onClick={start} disabled={busy} size="sm">
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : pay ? <Sparkles className="size-3.5" /> : <Play className="size-3.5" />}{" "}
-              {pay ? pricing!.payLabel : "Start"}
+              {pay ? pricing!.payLabel : parked ? "Start photoreal" : "Start"}
             </Button>
           )}
         </div>

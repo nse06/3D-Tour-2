@@ -200,6 +200,7 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
                 hasPhotoScan={!!tour.cleanAssetUrl}
                 pricing={photorealCost}
                 photos={photos}
+                remasterFirst={remasterConfigured()}
                 buyersSee={
                   !photorealJob || !tour.splatUrl
                     ? null

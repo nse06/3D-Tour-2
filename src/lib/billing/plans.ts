@@ -33,6 +33,20 @@ export const PLAN_NAMES: Record<Plan, string> = { unlimited: "Unlimited", pro: "
  */
 export const PHOTOREAL_UNPAID = "The photos are in. Training starts once photoreal is turned on for this listing in the Atrium dashboard.";
 
+/**
+ * The phone's photos now make the remastered model first (docs/remaster.md); the photoreal job they
+ * came with waits until the realtor starts photoreal in the dashboard. As the phone shows it.
+ */
+export const PHOTOS_FOR_REMASTER = "The photos are in and the remastered model is on its way. Follow it in the Atrium dashboard, where photoreal can be started too.";
+
+/** The same, waiting to be paid for (no price: payment happens on the website). */
+export const REMASTER_UNPAID = "The photos are in. The remastered model starts once it's turned on for this listing in the Atrium dashboard.";
+
+/** A photoreal job whose photos went to the remaster: photoreal itself starts only when asked. */
+export function photorealParked(message: string | null): boolean {
+  return message === PHOTOS_FOR_REMASTER || message === REMASTER_UNPAID;
+}
+
 /** What publishing a listing costs, as the Share panel shows it. */
 export interface PublishPricing {
   /** "Publish tour — $19", "Publish tour — free". */
