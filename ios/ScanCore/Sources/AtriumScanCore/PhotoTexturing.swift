@@ -139,6 +139,7 @@ struct PhotoModel {
     /// Furniture and clutter from the LiDAR mesh: its triangles, and the RoomPlan boxes it replaced.
     var meshTriangles = 0
     var meshObjects = 0
+    var replacedObjects: Set<String> = []
 
     static let wallColor: (UInt8, UInt8, UInt8) = (233, 229, 222)
     static let floorColor: (UInt8, UInt8, UInt8) = (176, 150, 118)
@@ -247,6 +248,7 @@ struct PhotoModel {
         }
         meshTriangles = shapes.triangles.count
         meshObjects = shapes.replaced.count
+        replacedObjects = shapes.replaced
     }
 
     static func isPassage(_ o: ScanOpening, rooms: [RoomInfo]) -> Bool {

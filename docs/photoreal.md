@@ -27,6 +27,11 @@ Written by `PhotorealExport.swift` with each build (and `scanproc paint … --ph
   `speed` (build 11 on: how fast the phone was moving, m/s) and `pose`: 16 numbers, column-major, the ARKit camera-to-world (x right, y up, looking down −z) **in the model's
   frame**, as painted after the photos were lined up (`PoseRefinement`). So the splats come out in the frame of the
   `.glb` the listing shows, and need no alignment. OpenCV camera-to-world = `pose · diag(1, −1, −1, 1)`.
+  Build 13 on, also the room `layout` for the remastered model (docs/remaster.md): `walls` (plan ends `a`/`b` as
+  `[x, z]`, the normal `inside` the room, `y0`/`y1`, `thickness`, the `holes` cut for doorways), `openings` (`kind`
+  door/window/opening, `center`, the axis `along` the wall, its `normal`, `width`, `height`, `wall`, `open`) and
+  `objects` (RoomPlan's furniture boxes: `category`, `center`, `axes`, full `size`, and `lidar`: whether the LiDAR
+  mesh replaced the box in the painted model), in the model's frame. The splats ignore it.
 * **`seeds.ply`**: where training starts. Binary little-endian, per point `float x y z nx ny nz` and
   `uchar red green blue` (27 bytes): points every 3 cm (`seeds.spacing`) on the painted surfaces a photo saw, in
   their painted colors, at most 600,000.

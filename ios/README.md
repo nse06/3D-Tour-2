@@ -101,7 +101,8 @@ for sharp photos** when you're moving too fast, and **Hold still a moment for a 
 it has been waiting for a steady moment (build 11 on: it keeps photos it expects to be sharp;
 build 12 on: while it waits for one it takes a slightly soft one after a second or so, and the map
 keeps that spot amber, so you get a photo every second or two as you move slowly; build 11 waited
-several seconds and took too few photos). Turn the TV off: a picture that changes from photo to
+several seconds and took too few photos; build 13 also sends the room's layout with the photos, for the
+remastered model). Turn the TV off: a picture that changes from photo to
 photo comes out as streaks in the photoreal walkthrough. Scan in daylight with the lights on and
 the curtains open: indoors the camera already uses its longest exposure, so in dim light every
 movement smears, and dark windows give the photoreal model little to hold on to. Get close-ish (1–3 m) to furniture and

@@ -18,8 +18,9 @@ left on the server (docs/photoreal.md §2.1), so either can be switched off, red
 | Clean up the photos (sharpen, denoise, TV off, windows) | §4.1 | planned |
 | The Fixer's cleaned views feed the skins | §4.2 | planned |
 | Sharper depth from AI | §4.3 | planned |
-| AI-made furniture | §4.4 | planned (needs build 13's room layout) |
-| Trim, baseboards, door and window recesses | §4.5 | planned (needs build 13's room layout) |
+| AI-made furniture | §4.4 | planned (uses build 13's room layout) |
+| Trim, baseboards, door and window recesses | §4.5 | planned (uses build 13's room layout) |
+| The room layout from the phone (walls, doors, windows, furniture boxes) | build 13, `cameras.json` `layout` (docs/photoreal.md §1) | done |
 | Photo spots (Matterport-style) | §4.6 | planned |
 
 ## 1. Flow

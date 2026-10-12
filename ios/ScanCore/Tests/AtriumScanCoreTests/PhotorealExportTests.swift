@@ -54,6 +54,62 @@ final class PhotorealExportTests: XCTestCase {
         XCTAssertEqual((doc["rooms"] as? [Any])?.count, 1)
     }
 
+    /// The room layout for the remastered model (docs/remaster.md): walls, doors and windows, and the
+    /// furniture boxes, in the model's frame.
+    func testTheRoomLayoutGoesAlong() throws {
+        var scan = PhotoTexturingTests.room()
+        scan.frames = PhotoTexturingTests.frames()
+        let wall = try XCTUnwrap(scan.walls.first)
+        // A window in the middle of the first wall and a door near its end.
+        var window = wall.transform
+        window.m[13] = 1.4
+        scan.openings = [
+            ScanOpening(id: "W1", kind: .window, wallId: wall.id, roomId: scan.rooms[0].id, transform: window, width: 1.2, height: 1.1),
+            ScanOpening(
+                id: "D1", kind: .door, isOpen: false, wallId: wall.id, roomId: scan.rooms[0].id,
+                transform: Transform.translating(wall.transform.translation + wall.transform.xAxis * (wall.width / 2 - 0.6) + Vec3(0, -wall.height / 2 + 1.0, 0)),
+                width: 0.8, height: 2.0),
+        ]
+        let result = try ScanProcessor.process(
+            scan, options: ScanProcessorOptions(normalizeFrame: false), photos: PhotoTexturingTests.Raycast(),
+            photoOptions: PhotoTexturingOptions(atlasSize: 1024, maxAtlases: 2, texelSize: 0.02, depthWidth: 160))
+        let doc = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(result.photoreal).cameras) as? [String: Any])
+        let layout = try XCTUnwrap(doc["layout"] as? [String: Any])
+
+        let walls = try XCTUnwrap(layout["walls"] as? [[String: Any]])
+        XCTAssertEqual(walls.count, scan.walls.count)
+        for w in walls {
+            let a = try XCTUnwrap(w["a"] as? [Double]), b = try XCTUnwrap(w["b"] as? [Double]), inside = try XCTUnwrap(w["inside"] as? [Double])
+            XCTAssertEqual(a.count, 2)
+            XCTAssertGreaterThan(hypot(b[0] - a[0], b[1] - a[1]), 2.9, "every wall of the 4 × 3 m room")
+            // The inside normal points toward the room's middle (2, 1.5).
+            XCTAssertGreaterThan((2 - (a[0] + b[0]) / 2) * inside[0] + (1.5 - (a[1] + b[1]) / 2) * inside[1], 0)
+            XCTAssertEqual(try XCTUnwrap(w["y1"] as? Double) - (try XCTUnwrap(w["y0"] as? Double)), 2.5, accuracy: 0.01)
+            XCTAssertEqual(w["room"] as? Int, 0)
+        }
+
+        let openings = try XCTUnwrap(layout["openings"] as? [[String: Any]])
+        XCTAssertEqual(openings.map { $0["kind"] as? String }, ["window", "door"])
+        let w = openings[0]
+        XCTAssertEqual(w["wall"] as? String, wall.id)
+        XCTAssertEqual(try XCTUnwrap(w["width"] as? Double), 1.2, accuracy: 1e-6)
+        XCTAssertEqual(try XCTUnwrap(w["center"] as? [Double])[1], 1.4, accuracy: 1e-3)
+        XCTAssertEqual(openings[1]["open"] as? Bool, false)
+
+        let objects = try XCTUnwrap(layout["objects"] as? [[String: Any]])
+        XCTAssertEqual(objects.count, 1)
+        let cabinet = objects[0]
+        XCTAssertEqual(cabinet["category"] as? String, "storage")
+        XCTAssertEqual(cabinet["lidar"] as? Bool, false, "no LiDAR mesh in this scan: the box stays")
+        let size = try XCTUnwrap(cabinet["size"] as? [Double]), center = try XCTUnwrap(cabinet["center"] as? [Double])
+        XCTAssertEqual(size.count, 3)
+        for k in 0..<3 {
+            XCTAssertEqual(size[k], Double(scan.objects[0].size[k]), accuracy: 1e-3)
+            XCTAssertEqual(center[k], Double(scan.objects[0].transform.translation[k]), accuracy: 1e-3)
+        }
+        XCTAssertEqual(try XCTUnwrap(cabinet["axes"] as? [[Double]])[1], [0, 1, 0])
+    }
+
     func testSeedsLieOnThePaintedSurfacesInTheirColors() throws {
         let (_, result) = try Self.process()
         let export = try XCTUnwrap(result.photoreal)
