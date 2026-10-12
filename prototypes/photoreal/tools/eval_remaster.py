@@ -40,14 +40,15 @@ from eval_splats import lpips_model, sheet, ssim, summarize  # noqa: E402
 # Each variant: the remaster job's options (atrium_remaster/job.py), or None for the painted model as it is.
 VARIANTS: dict[str, dict | None] = {
     "painted": None,
-    "skins": {"fill": False, "deblur": False},  # skins trained on every photo, twice the texels
-    "skins+fill": {"deblur": False},  # ... and the unseen spots filled
-    "full": {"fixerViews": False},  # ... and the smeared photos sharpened first
-    "full-residual0": {"fixerViews": False, "deblurResidual": 0.0},  # ... counting the sharpened photos as sharp
+    "skins": {"fill": False, "deblur": False, "depth": False, "fixerViews": False},  # skins trained on every photo, twice the texels
+    "skins+fill": {"deblur": False, "depth": False, "fixerViews": False},  # ... and the unseen spots filled
+    "full": {"depth": False, "fixerViews": False},  # ... and the smeared photos sharpened first
+    "full-residual0": {"depth": False, "fixerViews": False, "deblurResidual": 0.0},  # ... counting the sharpened photos as sharp
+    "full+depth": {"fixerViews": False},  # ... and photo pixels the AI's depth puts off the model's shapes left out
     "full+fixer": {},  # ... and the Fixer's cleaned views where buyers walk: the job's defaults
-    "skins-1x": {"fill": False, "deblur": False, "scale": 1.0},  # skins at the phone's texel size
-    "skins-noalign": {"fill": False, "deblur": False, "align": False},  # ... without each photo's shift, turn and zoom
-    "skins-long": {"fill": False, "deblur": False, "steps": 6000},  # ... twice the steps
+    "skins-1x": {"fill": False, "deblur": False, "depth": False, "fixerViews": False, "scale": 1.0},  # skins at the phone's texel size
+    "skins-noalign": {"fill": False, "deblur": False, "depth": False, "fixerViews": False, "align": False},  # ... without each photo's shift, turn and zoom
+    "skins-long": {"fill": False, "deblur": False, "depth": False, "fixerViews": False, "steps": 6000},  # ... twice the steps
 }
 
 

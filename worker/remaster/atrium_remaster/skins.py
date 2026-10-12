@@ -193,10 +193,12 @@ def prepare_photos(
     log=print,
     residual: float = 1.0,
     quiet_faces: np.ndarray | None = None,
+    disagree: dict[str, np.ndarray] | None = None,
 ) -> list[View]:
     """Every photo of the capture as a training view. `photos`: sharpened copies by camera name
     (cleanup.py), used in place of the files, whose smear counts `residual` times; `quiet_faces`: (F,)
-    triangles no photo says anything about (a TV's screen)."""
+    triangles no photo says anything about (a TV's screen); `disagree`: per photo, where its depth
+    disagrees with the model's shapes (depth.py), any size: those pixels say nothing."""
     caster = Caster.of(mesh)
     sizes = trained_size(mesh, cfg)
     texel = mesh.texel_size()
@@ -212,6 +214,11 @@ def prepare_photos(
             rgb = clean
         view = prepare_view(mesh, caster, rgb.astype(np.float32) / 255.0, K, cam.camtoworld, cfg, sizes, texel, normals, people, cam.name, device, quiet_faces)
         view.smear = (smear_px(cam, rgb.shape[1] / cam.width) or 0.0) * (residual if sharpened else 1.0)
+        if disagree is not None and cam.name in disagree:
+            mask = disagree[cam.name]
+            if mask.shape != tuple(view.valid.shape):
+                mask = np.asarray(Image.fromarray(mask.astype(np.uint8) * 255).resize((view.valid.shape[1], view.valid.shape[0]), Image.NEAREST)) > 127
+            view.valid &= ~torch.as_tensor(mask, device=view.valid.device)
         out.append(view)
     log(f"skins: {len(out)} photos, {sum(int(v.valid.sum()) for v in out):,} pixels that say something")
     return out

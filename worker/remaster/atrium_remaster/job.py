@@ -30,6 +30,7 @@ from atrium_photoreal.capture import load
 from atrium_photoreal.job import Reporter, download, upload
 
 from . import cleanup as cleanup_mod
+from . import depth as depth_mod
 from . import fill as fill_mod
 from . import fixviews
 from . import glb, scene, skins
@@ -45,6 +46,7 @@ class Services:
     inpainter: fill_mod.Inpainter = field(default_factory=fill_mod.PullPush)
     cleaner: cleanup_mod.Cleaner | None = None
     fixer: object | None = None  # atrium_photoreal.enhance.Fixer: views where buyers walk, cleaned up
+    depth: depth_mod.DepthModel | None = None
 
 
 def fetch(url: str, target: Path) -> int:
@@ -120,8 +122,20 @@ def remaster(mesh: scene.Mesh, capture, options: dict, services: Services, devic
             stats["cleanupError"] = f"{type(e).__name__}: {e}"[:200]
             sharpened = {}
     quiet = cleanup_mod.screen_faces(mesh, layout.objects_of("television")) if clean_cfg.tv_off else None
+    disagree = None
+    if services.depth is not None and options.get("depth", True):
+        report("depth", 0.0, "measuring the photos' depth")
+        try:
+            disagree = depth_mod.disagreements(mesh, capture, services.depth, depth_mod.DepthConfig(), log=log)
+            stats["depthDisagreeShare"] = round(sum(int(m.sum()) for m in disagree.values()) / max(1, sum(m.size for m in disagree.values())), 4)
+        except Exception as e:  # the skins learn without it
+            traceback.print_exc()
+            stats["depthError"] = f"{type(e).__name__}: {e}"[:200]
+            disagree = None
     report("skins", 0.0, "lining up the photos with the model")
-    views = skins.prepare_photos(mesh, capture, cfg, device=device, log=log, photos=sharpened, residual=clean_cfg.residual, quiet_faces=quiet)
+    views = skins.prepare_photos(
+        mesh, capture, cfg, device=device, log=log, photos=sharpened, residual=clean_cfg.residual, quiet_faces=quiet, disagree=disagree
+    )
     report("skins", 0.02, f"{len(views)} photos")
     extra = None
     if services.fixer is not None and options.get("fixerViews", True):

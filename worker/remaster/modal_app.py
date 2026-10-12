@@ -26,7 +26,7 @@ import modal
 from fastapi import Header, HTTPException
 
 from atrium_photoreal.remote import RemoteFixer, fixer_image
-from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL
+from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL, PROMPT_DEPTH
 
 GPU = os.environ.get("REMASTER_GPU", "A10G")
 FIXER_GPU = os.environ.get("REMASTER_FIXER_GPU", "A10G")
@@ -34,16 +34,18 @@ FIXER_GPU = os.environ.get("REMASTER_FIXER_GPU", "A10G")
 app = modal.App("atrium-remaster")
 
 # PyTorch with CUDA, Open3D's CPU build for ray casting (it needs EGL, GL and libusb to import),
-# and the weights of LaMa (fill) and NAFNet (sharpening). Every container imports this file, so each
-# image has both packages.
+# and the weights of LaMa (fill), NAFNet (sharpening) and Prompt Depth Anything (depth). Every
+# container imports this file, so each image has both packages.
 gpu_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("libegl1", "libgl1", "libgomp1", "libusb-1.0-0", "curl")
     .pip_install("torch==2.5.1", index_url="https://download.pytorch.org/whl/cu124")
-    .pip_install("numpy<2.3", "scipy", "pillow>=10", "open3d-cpu==0.20.0", "fastapi")
+    .pip_install("numpy<2.3", "scipy", "pillow>=10", "open3d-cpu==0.20.0", "transformers==5.19.0", "fastapi")
+    .env({"HF_HOME": "/models/hf"})
     .run_commands(
         f"mkdir -p /models && curl -fsSL -o {LAMA_PATH} {LAMA_URL} && sha256sum {LAMA_PATH}",
         f"curl -fsSL -o {NAFNET_PATH} {NAFNET_URL} && echo '175fe8b3cdf3abedfbc87769779c3d9f491e05bb2e73ea9d627883f90a4b2df3  {NAFNET_PATH}' | sha256sum -c -",
+        f"python -c \"from transformers import AutoImageProcessor, PromptDepthAnythingForDepthEstimation as M; AutoImageProcessor.from_pretrained('{PROMPT_DEPTH}'); M.from_pretrained('{PROMPT_DEPTH}')\"",
     )
     .add_local_python_source("atrium_photoreal", "atrium_remaster")
 )
@@ -78,9 +80,9 @@ class Fixer:
 
 def services():
     from atrium_remaster.job import Services
-    from atrium_remaster.models import LaMa, NAFNetCleaner
+    from atrium_remaster.models import LaMa, NAFNetCleaner, PromptDepth
 
-    return Services(inpainter=LaMa(), cleaner=NAFNetCleaner(), fixer=RemoteFixer(Fixer()))
+    return Services(inpainter=LaMa(), cleaner=NAFNetCleaner(), fixer=RemoteFixer(Fixer()), depth=PromptDepth())
 
 
 @app.function(image=gpu_image, gpu=GPU, cpu=8, timeout=3 * 3600, memory=49152, secrets=secrets)

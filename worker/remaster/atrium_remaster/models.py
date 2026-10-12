@@ -6,6 +6,8 @@ nothing here is imported unless a container loads it. Every model here may be us
   packages it (TorchScript): fills what no photo saw (fill.py).
 * NAFNet (MIT; nafnet.py), its REDS deblurring weights (trained on blurred, compressed video frames,
   like the phone's photos): sharpens smeared photos (cleanup.py).
+* Prompt Depth Anything (ViT-L; code and weights Apache-2.0), through transformers: sharp metric depth
+  from a photo and the model's coarse depth at it (depth.py).
 """
 
 from __future__ import annotations
@@ -115,4 +117,36 @@ class NAFNetCleaner:
                         weight[:, :, y0c:y1c, x0c:x1c] += wgt
                 y = acc / weight.clamp(min=1e-6)
             out.append((y[0].permute(1, 2, 0).clamp(0, 1) * 255 + 0.5).byte().cpu().numpy())
+        return out
+
+
+PROMPT_DEPTH = "depth-anything/prompt-depth-anything-vitl-hf"
+
+
+class PromptDepth:
+    """Prompt Depth Anything (depth.DepthModel): the prompt in millimeters, as its processor expects
+    (ARKit's depth maps), the answer in meters at each photo's size."""
+
+    name = "Prompt Depth Anything (ViT-L)"
+
+    def __init__(self, name: str = PROMPT_DEPTH, device: str = "cuda"):
+        import torch
+        from transformers import AutoImageProcessor, PromptDepthAnythingForDepthEstimation
+
+        self.torch = torch
+        self.device = device
+        self.processor = AutoImageProcessor.from_pretrained(name)
+        self.model = PromptDepthAnythingForDepthEstimation.from_pretrained(name).to(device).eval()
+
+    def __call__(self, images: list[np.ndarray], prompts: list[np.ndarray]) -> list[np.ndarray]:
+        from PIL import Image
+
+        out = []
+        for image, prompt in zip(images, prompts):
+            inputs = self.processor(images=Image.fromarray(image), return_tensors="pt", prompt_depth=prompt.astype(np.float32) * 1000.0)
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            with self.torch.no_grad():
+                result = self.model(**inputs)
+            depth = self.processor.post_process_depth_estimation(result, target_sizes=[image.shape[:2]])[0]["predicted_depth"]
+            out.append(depth.float().cpu().numpy())
         return out
