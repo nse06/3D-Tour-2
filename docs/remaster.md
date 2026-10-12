@@ -266,7 +266,8 @@ limits); Depth Pro and UniDepth (research only); and GPL/AGPL mesh tools (pymesh
    modal deploy modal_app.py          # REMASTER_GPU=L4 modal deploy … for a cheaper, slower GPU
    ```
 
-   It prints the `start` endpoint's URL (`https://<workspace>--atrium-remaster-start.modal.run`).
+   It prints the `start` endpoint's URL (`https://<workspace>--atrium-remaster-start.modal.run`, on some workspaces
+   with a region before `.modal.run`, e.g. `.us-east.modal.run`): copy it as printed.
 2. **The site** (Vercel → Settings → Environment Variables), then redeploy:
 
    | Name | Value |
@@ -278,8 +279,9 @@ limits); Depth Pro and UniDepth (research only); and GPL/AGPL mesh tools (pymesh
    table (owners read their jobs; the server writes them) and the `remastered` look. Open `/setup`, or the site adds
    it on first use when it can reach Postgres directly.
 
-A job costs the GPU's time: the skins take a few minutes on an A10G for a room's photos; sharpening, depth and the
-Fixer's views add to it (the Fixer the most, on a second GPU).
+A job costs the GPU's time: with the defaults, about 6 minutes on an A10G for the synthetic apartment's 665 photos
+(the skins half of it, AI depth most of the rest); the Fixer's views, when turned on, add a few minutes and a second
+GPU.
 
 ## 8. Develop and test
 
