@@ -81,7 +81,7 @@ shape_image = (
     .env({"PYTHONPATH": "/opt/triposg:/opt/stubs"})
     .add_local_python_source("atrium_photoreal", "atrium_remaster")
 )
-web_image = modal.Image.debian_slim(python_version="3.11").pip_install("fastapi[standard]").add_local_python_source("atrium_photoreal", "atrium_remaster")
+web_image = modal.Image.debian_slim(python_version="3.11").pip_install("fastapi[standard]", "numpy<2.3").add_local_python_source("atrium_photoreal", "atrium_remaster")
 
 secrets = [modal.Secret.from_name("atrium-photoreal")]
 
