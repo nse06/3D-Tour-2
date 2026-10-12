@@ -31,7 +31,7 @@ def fixer_image(modal):
             *COSMOS_FILES,
             extra_index_url=COSMOS_WHEELS,
         )
-        .pip_install("cosmos-predict2==1.0.9", "natsort", "huggingface_hub[cli]>=0.32", extra_index_url=COSMOS_WHEELS)
+        .pip_install("cosmos-predict2==1.0.9", "natsort", "huggingface_hub[cli]>=0.32", "fastapi", extra_index_url=COSMOS_WHEELS)  # fastapi: modal_app.py imports it in every container
         .run_commands(
             f"git clone https://github.com/nv-tlabs/Fixer /opt/fixer && git -C /opt/fixer checkout {FIXER_COMMIT}",
             "huggingface-cli download nvidia/Fixer --local-dir /work/models",
