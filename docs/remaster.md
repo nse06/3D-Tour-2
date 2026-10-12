@@ -250,11 +250,24 @@ Fixer's views add to it (the Fixer the most, on a second GPU).
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU: the model file, ray casting, skins, fill, the job against a stand-in site
-modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # on a GPU
+python -m pytest tests -q        # CPU, 42 tests (below)
+modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
+modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```
 
-The tests need `open3d-cpu` (and, on Linux, `libegl1` and `libgl1`) next to the photoreal worker's requirements;
-`tests/room.py` makes the synthetic room. The site's flow (Remaster with AI, progress, upload, done, the look, the
-preview switch, photos kept while a remaster uses them) was checked end to end on a production build with stand-in
-GPUs, and the Supabase store against Postgres + PostgREST with row-level security.
+The tests need `open3d-cpu` (and, on Linux, `libegl1`, `libgl1` and `libusb-1.0-0`), `xatlas`, `shapely` and
+`mapbox-earcut` next to the photoreal worker's requirements; `tests/room.py` makes the synthetic room (walls, floor,
+ceiling, a cabinet, photos from inside with different exposures). They cover the model file, ray casting, the skins
+(and that their coverage count and tile warps match the straightforward way), the fill, cleanup, depth and its
+fusion, the shape edits, trim, furniture fitting, photo spots and the job against a stand-in site. The AI models
+themselves are stand-ins there; their real runs are on Modal.
+
+On the GPU, the photos' training views take 15 bytes a pixel; when they'd take more than 40% of its free memory
+(hundreds of full-size photos), they wait in pinned memory and each step moves only its tiles (`skinViewsOn` in the
+job's stats says which).
+
+The site's flow (Remaster with AI, progress, the photo spots' and model's uploads, done, the look, the preview switch,
+photos kept while a remaster uses them) was checked end to end on a production build with stand-in GPUs, and the
+Supabase store against Postgres + PostgREST with row-level security. The viewer's photo spots were checked in
+Chromium on a remastered synthetic room: WebGL samples the cubes as the worker lays them out, the photos show at a
+spot and the skins away from it, with no shader errors.
