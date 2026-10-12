@@ -178,9 +178,12 @@ events to send, and how listings are covered are in [docs/billing.md](docs/billi
 
 ### Remastered models
 
-A separate GPU process rebuilds a photo scan's painted model from the photos kept on the server (skins learned from
-every photo, spots no photo saw filled in by an AI); the realtor compares it in the preview and chooses what buyers
-see. Its own Modal app and `REMASTER_GPU_URL`: [docs/remaster.md](docs/remaster.md).
+A separate GPU process rebuilds a photo scan's painted model from the photos kept on the server: skins learned from
+every photo (sharpened first, with AI-cleaned views where buyers walk), spots no photo saw filled in by an AI, doors
+and windows set into their walls with the trim the photos show, furniture remade from its photos (SAM 2.1 and
+TripoSG) or reshaped from AI depth, and photo spots where the photos were taken (Matterport-style). The realtor
+compares it in the preview, sees what the AI changed, and chooses what buyers see. Its own Modal app and
+`REMASTER_GPU_URL`: [docs/remaster.md](docs/remaster.md).
 
 ---
 
