@@ -48,7 +48,10 @@ class SkinConfig:
     batch: int = 4  # photos per step, a `tile`-pixel square of each
     tile: int = 768
     lr: float = 0.01
-    levels: int = 4  # layers of the pyramid
+    # Layers of the pyramid. One: coarser layers, each texel a block of the finest, take Adam-sized
+    # steps for a whole block from a few pixels' say, and with hundreds of photos they drift into
+    # colored blotches (round 1 on the synthetic apartment).
+    levels: int = 1
     max_mip: int = 4
     # A pixel says nothing within `edge_px` pixels (at 1920 px; scaled with the photo) of a jump in depth
     # or between surfaces that meet at an angle, nor where it sees a surface more than `max_angle`
@@ -57,7 +60,7 @@ class SkinConfig:
     max_angle: float = 78.0
     blur_min_px: float = 1.0  # photos smeared at least this much are compared with a smeared render
     align: bool = True  # learn each photo's small shift, turn and zoom
-    color_prior: float = 0.05  # how strongly a photo's color correction stays near none
+    color_prior: float = 0.05  # how strongly a photo's color correction stays near what it started at
     huber: float = 0.03
     seed: int = 0
     progress_every: int = 100
@@ -286,13 +289,14 @@ class Skins(torch.nn.Module):
             ids = []
             for k in range(levels):
                 s = max(1, size >> k)
-                value = torch.from_numpy(base).permute(2, 0, 1)[None].clone() if k == 0 else torch.zeros(1, 3, s, s)
+                value = torch.from_numpy(base).permute(2, 0, 1)[None].contiguous() if k == 0 else torch.zeros(1, 3, s, s)
                 self.layers.append(torch.nn.Parameter(value))
                 ids.append(len(self.layers) - 1)
             self.index.append(ids)
-        # Per view: a 3x3 color matrix and offset (identity at first), and a shift (pixels at 1920),
-        # turn (radians) and zoom.
-        self.color = torch.nn.Parameter(torch.eye(3).repeat(views, 1, 1))
+        # Per view: its exposure and white balance (a gain per channel and an offset: a full color
+        # matrix would let the skins trade colors with the photos, rainbows where few photos look),
+        # and a shift (pixels at 1920), turn (radians) and zoom.
+        self.gain = torch.nn.Parameter(torch.ones(views, 3))
         self.offset = torch.nn.Parameter(torch.zeros(views, 3))
         self.warp = torch.nn.Parameter(torch.zeros(views, 4))
 
@@ -310,6 +314,45 @@ class Skins(torch.nn.Module):
         for _ in range(count):
             out.append(F.avg_pool2d(out[-1], 2))
         return out
+
+
+class LazyAdam:
+    """Adam for parameters most steps don't reach (texels the step's photos don't see, photos not in
+    the step): only what a step's loss reaches moves, each by its own history. torch's Adam keeps
+    moving every parameter on its momentum, and divides a rarely seen texel's next gradient by a
+    variance that decayed meanwhile: kicks of tens of learning rates, colored noise in the skins."""
+
+    def __init__(self, groups: list[tuple[list[torch.Tensor], float]], betas=(0.9, 0.999), eps: float = 1e-8):
+        self.groups = [(list(params), lr) for params, lr in groups]
+        self.b1, self.b2 = betas
+        self.eps = eps
+        self.state: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
+
+    def zero_grad(self) -> None:
+        for params, _ in self.groups:
+            for p in params:
+                p.grad = None
+
+    @torch.no_grad()
+    def step(self) -> None:
+        for params, lr in self.groups:
+            for p in params:
+                if p.grad is None or lr <= 0:
+                    continue
+                if id(p) not in self.state:
+                    self.state[id(p)] = tuple(torch.zeros(p.numel(), device=p.device, dtype=p.dtype) for _ in range(3))
+                m, v, n = self.state[id(p)]
+                g = p.grad.reshape(-1)
+                idx = torch.nonzero(g).squeeze(1)
+                if idx.numel() == 0:
+                    continue
+                gi = g[idx]
+                ni = n[idx] + 1
+                mi = self.b1 * m[idx] + (1 - self.b1) * gi
+                vi = self.b2 * v[idx] + (1 - self.b2) * gi * gi
+                n[idx], m[idx], v[idx] = ni, mi, vi
+                step = lr * (mi / (1 - self.b1**ni)) / ((vi / (1 - self.b2**ni)).sqrt() + self.eps)
+                p.view(-1).index_add_(0, idx, -step)
 
 
 def lookup(mips: list[list[torch.Tensor]], atlas: torch.Tensor, uv: torch.Tensor, level: torch.Tensor) -> torch.Tensor:
@@ -363,13 +406,22 @@ def train(
     sizes = trained_size(mesh, cfg)
     model = Skins(mesh.atlases, sizes, cfg.levels, len(views)).to(device)
     texture_params = list(model.layers.parameters())
-    opt = torch.optim.Adam(
-        [
-            {"params": texture_params, "lr": cfg.lr},
-            {"params": [model.color, model.offset], "lr": cfg.lr * 0.1},
-            {"params": [model.warp], "lr": cfg.lr * 0.1 if cfg.align else 0.0},
-        ]
-    )
+    opt = LazyAdam([(texture_params, cfg.lr), ([model.gain, model.offset], cfg.lr * 0.1), ([model.warp], cfg.lr * 0.1 if cfg.align else 0.0)])
+    # Each photo's exposure and white balance to start with: against the phone's painting (which
+    # already evened the photos out), the ratio of their medians, channel by channel. Their average
+    # stays the painting's throughout, so what the photos saw keeps the brightness of what they didn't.
+    with torch.no_grad():
+        mips0 = [model.mips(a, cfg.max_mip) for a in range(len(sizes))]
+        for i, v in enumerate(views):
+            valid, atlas, uv, level = v.piece(device)
+            if not v.learn_color or int(valid.sum()) < 100:
+                continue
+            painted = lookup(mips0, atlas[valid], uv[valid], level[valid])
+            seen = v.photo(device)[valid]
+            model.gain[i] = (seen.median(0).values / painted.median(0).values.clamp(min=0.02)).clamp(0.5, 2.0)
+        mips0 = None
+        gain_mean = model.gain.mean(0).clone()
+        gain_start = model.gain.detach().clone()
     weights = np.array([v.weight * max(1, int(v.valid.sum())) for v in views], dtype=np.float64)
     if weights.sum() <= 0:
         raise ValueError("no photo sees a textured surface")
@@ -420,7 +472,7 @@ def train(
             else:
                 target = v.photo(device, box)
             colors = lookup(mips, atlas[valid], uv[valid], level[valid])
-            colors = colors @ model.color[i].T + model.offset[i] if is_photo and v.learn_color else colors
+            colors = colors * model.gain[i] + model.offset[i] if is_photo and v.learn_color else colors
             if v.smear >= cfg.blur_min_px and step >= cfg.steps // 5:
                 # Smear the render like the photo: the tile's other pixels from the photo itself.
                 render = target.detach().clone()
@@ -445,12 +497,17 @@ def train(
         if count == 0:
             continue
         loss = loss / count
-        prior = cfg.color_prior * ((model.color - torch.eye(3, device=device)) ** 2).mean() + cfg.color_prior * (model.offset**2).mean()
-        anchor = ((model.color.mean(0) - torch.eye(3, device=device)) ** 2).sum() + (model.offset.mean(0) ** 2).sum()
-        total = loss + prior + anchor + 1e-4 * (model.warp**2).sum() / max(1, len(views))
-        opt.zero_grad(set_to_none=True)
+        # The step's photos' corrections stay near where they started (only theirs: a prior on every
+        # photo every step would make every photo's gradient dense).
+        mine = torch.tensor(sorted({i for i, _, is_photo in picks if is_photo}), device=device, dtype=torch.long)
+        prior = cfg.color_prior * (((model.gain[mine] - gain_start[mine]) ** 2).mean() + (model.offset[mine] ** 2).mean()) + 1e-4 * (model.warp[mine] ** 2).sum() if len(mine) else 0.0
+        total = loss + prior
+        opt.zero_grad()
         total.backward()
         opt.step()
+        with torch.no_grad():  # the photos' average exposure stays the painting's
+            model.gain.mul_(gain_mean / model.gain.mean(0))
+            model.offset.sub_(model.offset.mean(0))
         value = float(loss.detach())
         loss_ema = value if loss_ema is None else 0.95 * loss_ema + 0.05 * value
         if progress is not None and step % 10 == 0:
@@ -460,10 +517,11 @@ def train(
 
     with torch.no_grad():
         atlases = [model.texture(a)[0].permute(1, 2, 0).clamp(0, 1).cpu().numpy() for a in range(len(sizes))]
-    color, offset, warp = (t.detach().cpu().numpy() for t in (model.color, model.offset, model.warp))
+    gain, offset, warp = (t.detach().cpu().numpy() for t in (model.gain, model.offset, model.warp))
+    color = np.stack([np.diag(g) for g in gain]) if len(gain) else np.zeros((0, 3, 3), np.float32)
     shift = round(float(np.linalg.norm(warp[:, :2], axis=1).mean()), 2) if len(views) else 0.0
     # The model and its optimizer's state go before the coverage count needs the room.
-    opt = model = mips = loss = total = texture_params = current = None  # noqa: F841
+    opt = model = mips = loss = total = texture_params = current = gain_start = None  # noqa: F841
     if str(device).startswith("cuda"):
         torch.cuda.empty_cache()
     seen = coverage(views, sizes, device)
@@ -476,6 +534,7 @@ def train(
         "skinViews": len(views),
         "skinSeenShare": round(float(np.mean([(s > 0).mean() for s in seen])) if seen else 0.0, 4),
         "photoShiftPx": shift,
+        "photoGainSpread": round(float(gain.std(0).mean()), 4) if len(gain) else 0.0,
     }
     if extra:
         stats["extraViews"] = len(extras)

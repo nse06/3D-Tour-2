@@ -53,20 +53,28 @@ the photos at once, by gradient descent, like the splats, except that nothing ca
 * **What a pixel may say**: nothing within 3 px (at 1920 px) of a jump in depth or a seam between surfaces at more
   than 30° (where a small error in the shapes would put one surface's color on another), nothing more than 78° off
   head-on, nothing where the photo shows people (the phone's masks).
-* **Per photo**: a 3×3 color matrix and offset (auto exposure and white balance; their average is held at none), and a
-  small shift, turn and zoom (what lining the photos up on the phone left).
+* **Per photo**: a gain and an offset per channel (auto exposure and white balance), started from the ratio of the
+  photo's colors to the painting's and kept near it, their average held at the painting's (so what the photos saw
+  keeps the brightness of what they didn't); and a small shift, turn and zoom (what lining the photos up on the phone
+  left). A full color matrix per photo let the skins trade colors with the photos where few photos look.
 * **Smeared photos** are compared with the render smeared the same way (atrium_photoreal's motion smear, its
   direction found once the skins take shape).
 * **Finer texels**: the atlases are learned at twice the phone's texel density (8 mm → 4 mm), within 40 M texels for
-  the whole home (a multiple of 16 on a side, so mipmaps line up), as a pyramid of four layers that add up (broad
-  corrections spread at once, fine detail follows). Each pixel reads the mipmap its footprint covers (a floor seen at
-  a grazing angle doesn't alias).
-* **What no photo saw** keeps the phone's colors, apart from the broad corrections around it; the coverage map goes
-  on to the fill (§3).
+  the whole home (a multiple of 16 on a side, so mipmaps line up). Each pixel reads the mipmap its footprint covers
+  (a floor seen at a grazing angle doesn't alias).
+* **Seldom seen texels**: with hundreds of photos, a texel is in a step's photos now and then. The optimizer is a
+  lazy Adam: only what a step's photos reach moves, each by its own history. torch's Adam kept every texel moving on
+  its momentum and divided a seldom seen texel's next gradient by a variance that had decayed meanwhile; with a
+  pyramid of coarser layers on top (a layer's texel a block of the finest), that turned the synthetic apartment's
+  665-photo skins into colored blotches (round 1: 18 dB where the painting has 24). The pyramid is gone too
+  (`levels` 1).
+* **What no photo saw** keeps the phone's colors exactly; the coverage map goes on to the fill (§3).
 
 On a synthetic room with exact ground truth (`worker/remaster/tests/room.py`: a painted atlas softened, with a
 different brightness per chart and a flat patch; 16 photos with different exposures, noise and two smeared), trained
-skins cut the error on new viewpoints from 0.129 to 0.074 (the truth at the phone's texel size: 0.055).
+skins cut the error on new viewpoints from 0.129 to 0.074 (the truth at the phone's texel size: 0.055); with 96 photos,
+each step one small tile (seldom seen texels), from 0.130 to 0.084, their color left as the photos have it (the old
+optimizer: 0.124, with blotches).
 
 ## 3. Spots no photo saw (`fill.py`)
 

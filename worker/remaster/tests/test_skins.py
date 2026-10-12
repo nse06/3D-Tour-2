@@ -10,7 +10,7 @@ from atrium_remaster import glb, scene, skins, views
 
 from . import room
 
-FAST = dict(steps=150, batch=4, tile=256, lr=0.03, progress_every=0, levels=3, max_mip=3)
+FAST = dict(steps=150, batch=4, tile=256, lr=0.03, progress_every=0, max_mip=3)
 
 
 def held_out_error(truth, mesh, count=5):
@@ -143,3 +143,23 @@ def test_a_tile_warps_the_same_from_the_patch_around_it():
         whole = skins.warp_image(view.photo("cpu"), warp, box, (h, w))
         region, origin = view.region("cpu", box, 64)
         assert torch.allclose(skins.warp_image(region, warp, box, (h, w), origin), whole, atol=1e-5)
+
+
+def test_many_photos_seldom_seen_dont_turn_the_skins_to_rainbows(tmp_path):
+    """With hundreds of photos each texel is seen now and then (round 1 on the synthetic apartment,
+    665 photos: colored blotches everywhere). Here 96 photos, one small tile a step: the skins still
+    beat the painting, and what they change is brightness, not color."""
+    from PIL import Image
+
+    truth = room.write(tmp_path, cameras=96)
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    capture = load(tmp_path / "capture")
+    cfg = skins.SkinConfig(steps=900, batch=1, tile=48, progress_every=0)
+    result = skins.train(mesh, skins.prepare_photos(mesh, capture, cfg, log=lambda _: None), cfg, log=lambda _: None)
+    assert held_out_error(truth, result.mesh) < 0.8 * held_out_error(truth, mesh)
+    trained = result.mesh.atlases[0]
+    painted = np.asarray(Image.fromarray((mesh.atlases[0] * 255 + 0.5).astype(np.uint8)).resize(trained.shape[:2][::-1], Image.BICUBIC), np.float32) / 255
+    change = trained - painted
+    tint = np.abs(change - change.mean(-1, keepdims=True))  # how much a texel's change differs between its channels
+    seen = result.seen[0] > 0
+    assert tint[seen].mean() < 0.02 and tint[~seen].mean() < 0.005, (tint[seen].mean(), tint[~seen].mean())
