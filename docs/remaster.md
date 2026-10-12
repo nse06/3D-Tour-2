@@ -18,7 +18,7 @@ left on the server (docs/photoreal.md §2.1), so either can be switched off, red
 | Clean up the photos (sharpen, TV off, windows) | `cleanup.py` (§4.1), NAFNet | built |
 | The Fixer's cleaned views feed the skins | `fixviews.py` (§4.2) | built |
 | Sharper depth from AI | `depth.py` (§4.3), Prompt Depth Anything | built: photo pixels where the shape is wrong say nothing; finer furniture shapes next |
-| AI-made furniture | §4.4 | planned (uses build 13's room layout) |
+| AI-made furniture | `furniture.py` (§4.4), SAM 2.1, TripoSG | built: fitting tested on CPU; TripoSG's GPU run next |
 | Trim: doors and windows set into their walls, baseboards, crown moldings, casings, cabinet doors | `trim.py` (§4.5) | built |
 | The room layout from the phone (walls, doors, windows, furniture boxes) | build 13, `cameras.json` `layout` (docs/photoreal.md §1) | done |
 | Photo spots (Matterport-style) | §4.6 | planned |
@@ -99,12 +99,23 @@ sharp depth at 960 px. Where the two disagree by more than 4 cm + 4% (grown by 2
 the model's shape is off there (a furniture edge, clutter the scan smoothed over) and its colors would land on the
 wrong surface. Next: a finer mesh for furniture and clutter, fused from it (Open3D's TSDF).
 
-### 4.4 AI-made furniture
-For movable furniture (sofas, chairs, beds, tables; never built-ins), the sharpest photo's crop, cut out by **SAM
-2.1** (Apache-2.0) with the furniture's box as the prompt, goes to an image-to-3D model: **TRELLIS** (MIT; the mesh
-path only, which needs none of NVIDIA's non-commercial libraries) on an A10G, or **TRELLIS.2** (MIT, ≥24 GB, with
-its background remover swapped for BiRefNet and nvdiffrast kept out). The shape is turned to match the photos'
-silhouettes, scaled into the box RoomPlan measured, and skinned from the photos like the rest (§2).
+### 4.4 AI-made furniture (`furniture.py`, `triposg.py`)
+For each movable piece in the room layout (sofas, chairs, beds and tables; never built-ins), the photos that see
+its box at least half in frame and at least 12% of the photo across are ranked by how much of the scanned piece
+they show (the steadier photo first). The best one that shows it whole and up to four more, looking at it from
+directions at least 20° apart, are read at 960 px, and **SAM 2.1** (Hiera-L, Apache-2.0, through transformers)
+cuts the piece out of each with its box as the prompt, kept within the box's outline. The clearest cutout, on
+white with 10% around it, goes to **TripoSG** (VAST-AI, MIT; its own GPU and image), which makes the piece's
+shape. That shape is turned about its up axis (four quarter turns, mirrored or not), stretched to fill the box
+RoomPlan measured, and the turn whose outline best matches the cutouts wins (overlap counted only where nothing
+in front hides the piece). At 60% overlap or better it replaces the scanned piece (the box's faces or the LiDAR's
+shape, never the floor, a wall or a baseboard behind it), with new texels that start as the piece's color and that
+the skins (§2) learn from the photos like the rest; below that, the scanned piece stays.
+
+TripoSG runs with its marching-cubes decoder (scikit-image). Its fast decoder's mesher (diso) and its background
+remover (RMBG-1.4) aren't used, since neither license is one we take on: the image puts a stub in place of diso
+for TripoSG's imports, and the cutouts come from SAM. To try it on one photo:
+`modal run modal_app.py::make_shape --image photo.jpg --box x0,y0,x1,y1 --out folder` (the cutout and an OBJ).
 
 ### 4.5 Trim (`trim.py`, `edit.py`)
 With the room layout, every window and closed door is set 10 cm into its wall (`recessDepth`): the wall is cut
@@ -146,7 +157,7 @@ another scan don't), runs the stages and reports to the callback with the same s
 
 | Event | Answer |
 |---|---|
-| `{ event: "progress", stage, progress, message }` (stages: `downloading`, `cleanup`, `shapes`, `depth`, `skins`, `fill`, `uploading`) | the job |
+| `{ event: "progress", stage, progress, message }` (stages: `downloading`, `cleanup`, `shapes`, `furniture`, `depth`, `skins`, `fill`, `uploading`) | the job |
 | `{ event: "upload", files: [{ name: "model.glb", bytes }] }` | `{ targets: [{ name, url, method, headers, assetUrl }] }` |
 | `{ event: "done", modelUrl, stats }` | the job |
 | `{ event: "failed", message }` | the job |
@@ -157,6 +168,8 @@ Options (all optional):
   `maxMip` (4), `align` (true).
 * Cleanup: `deblur` (true), `deblurMinSmear` (1.5 px), `deblurResidual` (0.3), `tvOff` (true), `windows` (true).
 * Trim: `trim` (true: all of it), `recessDepth` (0.1 m), `baseboards`, `crowns`, `casings`, `cabinets` (true).
+* Furniture: `furniture` (true), `furnitureMinFit` (0.6), `furnitureViews` (5), `furnitureLongSide` (960),
+  `furnitureInFrame` (0.9).
 * Depth: `depth` (true). Fixer views: `fixerViews` (true), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
   (1024), `fixerHeight` (576), `fixerWeight` (0.5), `fixerShare` (0.25), `fixerToneLock` (0.012).
 * `fill` (true), `jpegQuality` (90).
@@ -172,16 +185,18 @@ session notes, summarized here):
 | Use | Model | License |
 |---|---|---|
 | Fill (§3) | LaMa big-lama | Apache-2.0 (code; weights from its authors) |
-| Ray casting, TSDF, meshes | Open3D 0.20, xatlas, fast-simplification | MIT |
-| Deblur/denoise (§4.1) | NAFNet; Restormer to compare | MIT; MIT since 2025-10-23 |
-| Masks (§4.1, §4.4) | SAM 2.1; SAM 3 for text prompts | Apache-2.0; SAM License (commercial use allowed) |
-| Depth (§4.3) | Prompt Depth Anything; MoGe-2 | Apache-2.0; MIT |
-| Furniture (§4.4) | TRELLIS (mesh path), TRELLIS.2 | MIT (DINOv3 License for TRELLIS.2's encoder) |
+| Ray casting, meshes, cutting walls | Open3D 0.20, xatlas, shapely, mapbox-earcut | MIT; MIT; BSD-3; ISC |
+| Deblur (§4.1) | NAFNet (REDS weights) | MIT |
+| Cutouts (§4.4) | SAM 2.1 (Hiera-L, through transformers) | Apache-2.0 |
+| Depth (§4.3) | Prompt Depth Anything (ViT-L) | Apache-2.0 |
+| Furniture shapes (§4.4) | TripoSG, with its marching-cubes decoder (scikit-image) | MIT; BSD-3 |
 | Views (§4.2) | NVIDIA Fixer | NVIDIA Open Model License |
 
-Kept out on purpose: nvdiffrast, nvdiffrec, diffoctreerast and the Inria Gaussian rasterizer (non-commercial), RMBG
-1.4/2.0 (non-commercial background removers), diso, cubvh (provenance), FLUX.1 [dev] (non-commercial), Hunyuan3D
-(territory and user limits), Depth Pro and UniDepth (research only), and GPL/AGPL mesh tools (pymeshfix, igraph).
+Kept out on purpose: nvdiffrast, nvdiffrec, diffoctreerast and the Inria Gaussian rasterizer (non-commercial);
+TRELLIS, whose mesh step is NVIDIA's FlexiCubes (Kaolin ships it under its non-commercial license, and TRELLIS's
+copy carries NVIDIA's all-rights-reserved notice); RMBG 1.4/2.0 (non-commercial background removers); diso (TripoSG's
+fast mesher: stubbed out) and cubvh (provenance); FLUX.1 [dev] (non-commercial); Hunyuan3D (territory and user
+limits); Depth Pro and UniDepth (research only); and GPL/AGPL mesh tools (pymeshfix, pymeshlab, igraph).
 
 ## 7. Set it up
 

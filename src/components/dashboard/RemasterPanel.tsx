@@ -13,6 +13,7 @@ const STAGE: Record<string, string> = {
   downloading: "The GPU is downloading the photos and the model",
   cleanup: "Sharpening the blurry photos",
   shapes: "Adding trim: doors and windows, baseboards, casings",
+  furniture: "Making the furniture's shapes from the photos",
   depth: "Measuring depth in the photos",
   skins: "Learning the skins from every photo",
   fill: "Filling in spots no photo saw",

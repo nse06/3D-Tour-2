@@ -34,6 +34,7 @@ from . import depth as depth_mod
 from . import fill as fill_mod
 from . import fixviews
 from . import glb, scene, skins
+from . import furniture as furniture_mod
 from . import trim as trim_mod
 from . import layout as layout_mod
 from .layout import Layout
@@ -48,6 +49,8 @@ class Services:
     cleaner: cleanup_mod.Cleaner | None = None
     fixer: object | None = None  # atrium_photoreal.enhance.Fixer: views where buyers walk, cleaned up
     depth: depth_mod.DepthModel | None = None
+    segmenter: furniture_mod.Segmenter | None = None  # SAM 2.1: pieces of furniture cut out of the photos
+    shapes: furniture_mod.ShapeMaker | None = None  # TripoSG: a piece's shape from its cutout
 
 
 def fetch(url: str, target: Path) -> int:
@@ -139,6 +142,20 @@ def remaster(mesh: scene.Mesh, capture, options: dict, services: Services, devic
         except Exception as e:  # the model keeps its flat walls
             traceback.print_exc()
             stats["trimError"] = f"{type(e).__name__}: {e}"[:200]
+    if layout.objects and services.segmenter is not None and services.shapes is not None and options.get("furniture", True):
+        report("furniture", 0.0, "making the furniture's shapes from the photos")
+        try:
+            furniture_cfg = furniture_mod.FurnitureConfig(
+                long_side=int(options.get("furnitureLongSide", 960)),
+                views=int(options.get("furnitureViews", 5)),
+                in_frame=float(options.get("furnitureInFrame", 0.9)),
+                min_iou=float(options.get("furnitureMinFit", 0.6)),
+            )
+            mesh, furniture_stats = furniture_mod.run(mesh, capture, layout, services.segmenter, services.shapes, furniture_cfg, sharpened=sharpened, log=log)
+            stats.update(furniture_stats)
+        except Exception as e:  # the scanned pieces stay
+            traceback.print_exc()
+            stats["furnitureError"] = f"{type(e).__name__}: {e}"[:200]
     quiet = cleanup_mod.screen_faces(mesh, layout.objects_of("television")) if clean_cfg.tv_off else None
     disagree = None
     if services.depth is not None and options.get("depth", True):

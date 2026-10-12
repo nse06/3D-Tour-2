@@ -8,6 +8,8 @@ nothing here is imported unless a container loads it. Every model here may be us
   like the phone's photos): sharpens smeared photos (cleanup.py).
 * Prompt Depth Anything (ViT-L; code and weights Apache-2.0), through transformers: sharp metric depth
   from a photo and the model's coarse depth at it (depth.py).
+* SAM 2.1 (Hiera-L; Apache-2.0), through transformers: furniture cut out of the photos (furniture.py).
+* TripoSG (MIT; triposg.py, on a GPU of its own): a piece of furniture's shape from its cutout.
 """
 
 from __future__ import annotations
@@ -150,3 +152,83 @@ class PromptDepth:
             depth = self.processor.post_process_depth_estimation(result, target_sizes=[image.shape[:2]])[0]["predicted_depth"]
             out.append(depth.float().cpu().numpy())
         return out
+
+
+SAM2 = "facebook/sam2.1-hiera-large"
+
+
+class Sam2Segmenter:
+    """SAM 2.1 (Hiera-L; code and weights Apache-2.0), through transformers: pieces of furniture cut out
+    of a photo, each box a prompt (furniture.Segmenter)."""
+
+    name = "SAM 2.1"
+
+    def __init__(self, name: str = SAM2, device: str = "cuda"):
+        import torch
+        from transformers import Sam2Model, Sam2Processor
+
+        self.torch = torch
+        self.device = device
+        self.processor = Sam2Processor.from_pretrained(name)
+        self.model = Sam2Model.from_pretrained(name).to(device).eval()
+
+    def __call__(self, image: np.ndarray, boxes: list[tuple[float, float, float, float]]) -> list[np.ndarray]:
+        from PIL import Image
+
+        if not boxes:
+            return []
+        inputs = self.processor(images=Image.fromarray(np.asarray(image, np.uint8)), input_boxes=[[[float(v) for v in b] for b in boxes]], return_tensors="pt")
+        sizes = inputs["original_sizes"]
+        with self.torch.no_grad():
+            out = self.model(**inputs.to(self.device), multimask_output=False)
+        masks = self.processor.post_process_masks(out.pred_masks.cpu(), sizes)[0]  # (boxes, 1, H, W)
+        return [m[0].numpy().astype(bool) for m in masks]
+
+
+def png(image: np.ndarray) -> bytes:
+    import io
+
+    from PIL import Image
+
+    out = io.BytesIO()
+    Image.fromarray(np.asarray(image, np.uint8)).save(out, "PNG")
+    return out.getvalue()
+
+
+def unpng(data: bytes) -> np.ndarray:
+    import io
+
+    from PIL import Image
+
+    with Image.open(io.BytesIO(data)) as im:
+        return np.asarray(im.convert("RGB"))
+
+
+def pack_shape(vertices: np.ndarray, faces: np.ndarray) -> bytes:
+    import io
+
+    out = io.BytesIO()
+    np.savez_compressed(out, vertices=np.asarray(vertices, np.float32), faces=np.asarray(faces, np.int64))
+    return out.getvalue()
+
+
+def unpack_shape(data: bytes) -> tuple[np.ndarray, np.ndarray]:
+    import io
+
+    with np.load(io.BytesIO(data)) as z:
+        return z["vertices"], z["faces"]
+
+
+class RemoteShapes:
+    """The shape maker on its own GPU (modal_app.Shapes): cutouts go as PNGs, shapes come back packed."""
+
+    name = "TripoSG (remote)"
+
+    def __init__(self, remote):
+        self.remote = remote
+
+    def __call__(self, images: list[np.ndarray]) -> list[tuple[np.ndarray, np.ndarray] | None]:
+        if not images:
+            return []
+        answers = self.remote.make.remote([png(image) for image in images])
+        return [None if a is None else unpack_shape(a) for a in answers]

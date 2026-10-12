@@ -77,7 +77,8 @@ A separate process from photoreal: the painted model rebuilt on a GPU from the p
 | Idea 4, the Fixer's cleaned views of where buyers walk feed the skins (2 rounds, tone-locked, half weight) | built — CPU tests with a stand-in Fixer |
 | Idea 6, part 1: photo pixels where Prompt Depth Anything's depth disagrees with the model's shape are left out | built — CPU tests with a stand-in; finer furniture shapes from AI depth next |
 | Idea 7, trim: doors and windows set 10 cm into their walls; baseboards, crown moldings, casings and cabinet door gaps and toe kicks where the skins show them | built — CPU tests on the synthetic room (6: window, door with casing and baseboards, window casing with apron, cabinet, checked walls left alone) |
-| Ideas 5 and 8 (AI furniture, photo spots) | planned — models chosen for commercial licenses (docs/remaster.md §6) |
+| Idea 5, AI furniture: sofas, chairs, beds and tables cut out of their best photos (SAM 2.1), made by TripoSG (MIT; its own GPU), turned and stretched into the measured box to match the cutouts, in place of the scanned piece | built — CPU tests (4: a one-armed chair placed exactly from four outlines, a scanned piece replaced, a shape that doesn't match left out, the job's order); SAM 2.1 checked on CPU; TripoSG's first GPU run next |
+| Idea 8, photo spots | planned |
 
 ## Billing ([docs/billing.md](docs/billing.md))
 

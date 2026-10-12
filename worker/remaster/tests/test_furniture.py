@@ -1,0 +1,136 @@
+"""AI-made furniture (furniture.py): a shape from the shape maker turned and stretched into the box
+the scan measured, so its outline matches the photos' cutouts, in place of the scanned piece."""
+
+import math
+
+import numpy as np
+from scipy.spatial import cKDTree
+
+from atrium_photoreal.capture import load
+from atrium_photoreal.enhance import heading, look
+from atrium_remaster import edit, furniture, glb, layout, scene, views
+from atrium_remaster.job import Services, remaster
+
+from . import room
+
+
+def chair() -> tuple[np.ndarray, np.ndarray]:
+    """A chair with one armrest, in a frame of its own: x across, y up, its back toward -z."""
+    parts = [
+        ((0.0, 0.42, 0.0), (0.5, 0.06, 0.5)),  # the seat
+        ((0.0, 0.70, -0.22), (0.5, 0.5, 0.06)),  # the back
+        ((0.22, 0.58, 0.02), (0.06, 0.26, 0.42)),  # one armrest, on its right
+    ] + [((sx * 0.21, 0.2, sz * 0.21), (0.05, 0.4, 0.05)) for sx in (-1, 1) for sz in (-1, 1)]  # the legs
+    vs, fs = [], []
+    for center, size in parts:
+        v, f = edit.box(np.array(center), np.eye(3), np.array(size))
+        fs.append(f + sum(len(x) for x in vs))
+        vs.append(v)
+    return np.concatenate(vs).astype(np.float64), np.concatenate(fs)
+
+
+def aim(position: np.ndarray, target: np.ndarray) -> np.ndarray:
+    d = target - position
+    forward = np.eye(4)
+    forward[:3, 2] = d / np.linalg.norm(d)
+    return look(position, *heading(forward))
+
+
+def test_a_shape_is_turned_and_stretched_to_match_the_cutouts():
+    v, f = chair()
+    turn = np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]])  # a quarter turn: its back toward -x
+    size = np.ptp(v @ turn.T, axis=0)
+    box = layout.Box("C", "chair", np.array([1.5, size[1] / 2, 1.6]), np.eye(3), size)
+    truth = furniture.placed(v, turn, box)
+    # The shape maker's frame: facing the other way, half the size, somewhere else.
+    half_turn = np.diag([-1.0, 1.0, -1.0])
+    made = v @ half_turn.T * 0.5 + np.array([3.0, -2.0, 1.0])
+    # The cutouts: the chair's outline from four spots around it (the room's walls and floor behind).
+    items = room.charts()
+    room.pack(items)
+    walls = room.build_mesh(items, room.truth_atlas(items))
+    walls_caster, chair_caster = views.Caster.of(walls), views.Caster(truth, f)
+    K = np.array([[room.F, 0, room.W / 2], [0, room.F, room.H / 2], [0, 0, 1]])
+    fit_views = []
+    for k in range(4):
+        a = 2 * math.pi * k / 4 + 0.4
+        pose = aim(np.array([1.5 + 1.1 * math.sin(a), 1.3, 1.6 + 1.1 * math.cos(a)]), box.center)
+        mask = chair_caster.view(K, pose, room.W, room.H).hit
+        fit_views.append(furniture.FitView(K, pose, room.W, room.H, mask, walls_caster.view(K, pose, room.W, room.H).depth))
+    world, faces, iou = furniture.fit(made, f, box, fit_views)
+    assert iou > 0.97
+    gap, _ = cKDTree(truth).query(world)
+    assert gap.max() < 1e-6, "every corner where the chair is"
+    a, b, c = (world[faces[:, k]] for k in range(3))
+    assert np.einsum("ij,ij->i", a, np.cross(b, c)).sum() > 0, "wound outward"
+    # A maker with z up: found too when any way up is allowed.
+    z_up = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]])
+    world, faces, iou = furniture.fit(v @ z_up.T, f, box, fit_views, upright=False)
+    assert iou > 0.97 and cKDTree(truth).query(world)[0].max() < 1e-6
+
+
+class BoxMaker:
+    """Stand-in shape maker: a box of other proportions, whatever the picture."""
+
+    name = "box"
+
+    def __init__(self):
+        self.images = []
+
+    def __call__(self, images):
+        self.images += images
+        return [edit.box(np.zeros(3), np.eye(3), np.array([1.0, 1.1, 0.6])) for _ in images]
+
+
+def test_a_scanned_piece_is_replaced_by_the_shape_made_for_it(tmp_path):
+    room.write(tmp_path, layout=room.layout_doc(cabinet="table"))
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    capture = load(tmp_path / "capture")
+    lay = layout.load(tmp_path / "capture")
+    maker = BoxMaker()
+    cfg = furniture.FurnitureConfig(long_side=160, in_frame=0.8, crop=64, fit_px=80)  # few photos see the low cabinet whole
+    out, stats = furniture.run(mesh, capture, lay, furniture.BoxSegmenter(), maker, cfg, log=lambda _: None)
+    assert stats["furnitureMade"] == 1 and stats["furnitureFit"]["CAB"] > 0.8, stats
+    assert len(maker.images) == 1 and maker.images[0].shape == (64, 64, 3), "the clearest cutout went to the maker"
+    corners = np.array([[1.0, 0.0, 0.0], [1.8, 0.9, 0.5]])
+    cabinet = np.repeat(np.arange(len(room.charts())), 2) >= 6
+    kept = len(mesh.faces) - int(cabinet.sum())
+    assert len(out.faces) == kept + 12 and np.allclose(out.faces[:kept], mesh.faces[~cabinet]), "the scanned cabinet's faces went"
+    new = out.vertices[np.unique(out.faces[kept:])]
+    assert np.allclose(new.min(0), corners[0], atol=1e-5) and np.allclose(new.max(0), corners[1], atol=1e-5), "the shape fills the box"
+    assert len(out.atlases) == len(mesh.atlases) + 1 and (out.face_atlas[kept:] == len(mesh.atlases)).all(), "with texels of its own"
+
+
+def test_pieces_no_photo_shows_and_shapes_that_dont_match_are_left_alone(tmp_path):
+    doc = room.layout_doc(cabinet="table")
+    doc["objects"].append({"id": "GONE", "category": "sofa", "center": [9.0, 0.4, 9.0], "axes": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "size": [2.0, 0.8, 0.9]})
+    room.write(tmp_path, layout=doc)
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    capture = load(tmp_path / "capture")
+
+    class Pedestal:
+        """A round table on one leg, as a shape maker might mistake a cabinet for: even stretched to
+        fill the cabinet's box, its outline is a thin top over a thin leg."""
+
+        name = "pedestal"
+
+        def __call__(self, images):
+            top, top_f = edit.box(np.array([0.0, 0.97, 0.0]), np.eye(3), np.array([1.0, 0.06, 1.0]))
+            leg, leg_f = edit.box(np.array([0.0, 0.47, 0.0]), np.eye(3), np.array([0.08, 0.94, 0.08]))
+            return [(np.concatenate([top, leg]), np.concatenate([top_f, leg_f + len(top)])) for _ in images]
+
+    cfg = furniture.FurnitureConfig(long_side=160, in_frame=0.8, crop=64, fit_px=80)  # few photos see the low cabinet whole
+    out, stats = furniture.run(mesh, capture, layout.load(tmp_path / "capture"), furniture.BoxSegmenter(), Pedestal(), cfg, log=lambda _: None)
+    assert out is mesh and stats["furnitureMade"] == 0 and stats["furnitureKept"] == 2, stats
+
+
+def test_the_job_makes_furniture_before_the_skins(tmp_path):
+    room.write(tmp_path, layout=room.layout_doc(cabinet="table"))
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    capture = load(tmp_path / "capture")
+    services = Services(segmenter=furniture.BoxSegmenter(), shapes=BoxMaker())
+    options = {"steps": 20, "batch": 2, "tile": 128, "longSide": 160, "furnitureLongSide": 160, "furnitureInFrame": 0.8, "fill": False, "trim": False, "fixerViews": False, "depth": False}
+    stages = []
+    out, stats = remaster(mesh, capture, options, services, "cpu", lambda stage, value, message: stages.append(stage), log=lambda _: None, layout=layout.load(tmp_path / "capture"))
+    assert stats["furnitureMade"] == 1 and "furniture" in stages and stages.index("furniture") < stages.index("skins"), (stats, stages)
+    assert len(out.atlases) == len(mesh.atlases) + 1

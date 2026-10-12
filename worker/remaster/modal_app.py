@@ -1,7 +1,8 @@
 """Atrium's remaster worker on Modal (https://modal.com), separate from the photoreal one
 (worker/photoreal): a GPU function that rebuilds one photo scan's painted model (atrium_remaster), and
 a web endpoint the Atrium site calls to start it (REMASTER_GPU_URL on the site). It shares the
-photoreal worker's secret. NVIDIA's Fixer runs on a GPU of its own (the photoreal worker's image).
+photoreal worker's secret. NVIDIA's Fixer runs on a GPU of its own (the photoreal worker's image), and so
+does TripoSG, which makes the furniture's shapes (an image of its own).
 
 Setup (once; see docs/remaster.md):
 
@@ -26,16 +27,18 @@ import modal
 from fastapi import Header, HTTPException
 
 from atrium_photoreal.remote import RemoteFixer, fixer_image
-from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL, PROMPT_DEPTH
+from atrium_remaster.models import LAMA_PATH, LAMA_URL, NAFNET_PATH, NAFNET_URL, PROMPT_DEPTH, SAM2
+from atrium_remaster.triposg import TRIPOSG_COMMIT, TRIPOSG_PATH, TRIPOSG_REPO, TRIPOSG_REVISION, TRIPOSG_WEIGHTS
 
 GPU = os.environ.get("REMASTER_GPU", "A10G")
 FIXER_GPU = os.environ.get("REMASTER_FIXER_GPU", "A10G")
+SHAPE_GPU = os.environ.get("REMASTER_SHAPE_GPU", "A10G")
 
 app = modal.App("atrium-remaster")
 
 # PyTorch with CUDA, Open3D's CPU build for ray casting (it needs EGL, GL and libusb to import),
-# and the weights of LaMa (fill), NAFNet (sharpening) and Prompt Depth Anything (depth). Every
-# container imports this file, so each image has both packages.
+# and the weights of LaMa (fill), NAFNet (sharpening), Prompt Depth Anything (depth) and SAM 2.1
+# (furniture cutouts). Every container imports this file, so each image has both packages.
 gpu_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("libegl1", "libgl1", "libgomp1", "libusb-1.0-0", "curl")
@@ -46,7 +49,26 @@ gpu_image = (
         f"mkdir -p /models && curl -fsSL -o {LAMA_PATH} {LAMA_URL} && sha256sum {LAMA_PATH}",
         f"curl -fsSL -o {NAFNET_PATH} {NAFNET_URL} && echo '175fe8b3cdf3abedfbc87769779c3d9f491e05bb2e73ea9d627883f90a4b2df3  {NAFNET_PATH}' | sha256sum -c -",
         f"python -c \"from transformers import AutoImageProcessor, PromptDepthAnythingForDepthEstimation as M; AutoImageProcessor.from_pretrained('{PROMPT_DEPTH}'); M.from_pretrained('{PROMPT_DEPTH}')\"",
+        f"python -c \"from transformers import Sam2Model, Sam2Processor; Sam2Processor.from_pretrained('{SAM2}'); Sam2Model.from_pretrained('{SAM2}')\"",
     )
+    .add_local_python_source("atrium_photoreal", "atrium_remaster")
+)
+# TripoSG (MIT) at a fixed commit and weights. Its fast decoder's mesher, diso, is stubbed out (its
+# license isn't one we take on): the remaster uses the marching-cubes decoder (scikit-image).
+shape_image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .apt_install("git", "libgl1", "libglib2.0-0")
+    .pip_install("torch==2.5.1", "torchvision==0.20.1", index_url="https://download.pytorch.org/whl/cu124")
+    .pip_install(
+        "numpy<2.3", "scipy", "pillow>=10", "diffusers==0.32.2", "transformers==4.49.0", "accelerate==1.3.0", "peft==0.14.0",
+        "huggingface_hub>=0.26,<1", "einops", "omegaconf", "scikit-image", "trimesh", "jaxtyping", "typeguard", "opencv-python-headless", "fastapi",
+    )
+    .run_commands(
+        f"git clone {TRIPOSG_REPO} /opt/triposg && cd /opt/triposg && git checkout {TRIPOSG_COMMIT}",
+        "mkdir -p /opt/stubs/diso && printf 'class DiffDMC:\\n    def __init__(self, *args, **kwargs):\\n        raise RuntimeError(\"diso is not installed\")\\n' > /opt/stubs/diso/__init__.py && cat /opt/stubs/diso/__init__.py",
+        f"python -c \"from huggingface_hub import snapshot_download; snapshot_download('{TRIPOSG_WEIGHTS}', revision='{TRIPOSG_REVISION}', local_dir='{TRIPOSG_PATH}')\"",
+    )
+    .env({"PYTHONPATH": "/opt/triposg:/opt/stubs"})
     .add_local_python_source("atrium_photoreal", "atrium_remaster")
 )
 web_image = modal.Image.debian_slim(python_version="3.11").pip_install("fastapi[standard]").add_local_python_source("atrium_photoreal", "atrium_remaster")
@@ -78,11 +100,47 @@ class Fixer:
         return fix_jpegs(self.model, jpegs)
 
 
+@app.cls(image=shape_image, gpu=SHAPE_GPU, timeout=1800, memory=32768, scaledown_window=300, max_containers=1)
+class Shapes:
+    """TripoSG (atrium_remaster/triposg.py) on a GPU of this app's own: furniture shapes from cutouts."""
+
+    @modal.enter()
+    def load(self):
+        from atrium_remaster.triposg import TripoSG
+
+        self.model = TripoSG()
+
+    @modal.method()
+    def make(self, pngs: list[bytes]) -> list[bytes | None]:
+        from atrium_remaster.models import pack_shape, unpng
+
+        return [None if s is None else pack_shape(*s) for s in self.model([unpng(p) for p in pngs])]
+
+
 def services():
     from atrium_remaster.job import Services
-    from atrium_remaster.models import LaMa, NAFNetCleaner, PromptDepth
+    from atrium_remaster.models import LaMa, NAFNetCleaner, PromptDepth, RemoteShapes, Sam2Segmenter
 
-    return Services(inpainter=LaMa(), cleaner=NAFNetCleaner(), fixer=RemoteFixer(Fixer()), depth=PromptDepth())
+    return Services(
+        inpainter=LaMa(), cleaner=NAFNetCleaner(), fixer=RemoteFixer(Fixer()), depth=PromptDepth(), segmenter=Sam2Segmenter(), shapes=RemoteShapes(Shapes())
+    )
+
+
+@app.function(image=gpu_image, gpu=GPU, timeout=1800)
+def shape_from_photo(image: bytes, box: list[float]) -> dict:
+    """make_shape's work: the cutout (PNG) and the shape (OBJ text) of what's in `box`."""
+    from atrium_remaster.furniture import cutout
+    from atrium_remaster.models import RemoteShapes, Sam2Segmenter, png, unpng
+
+    photo = unpng(image)
+    (mask,) = Sam2Segmenter()(photo, [tuple(box)])
+    piece = cutout(photo, mask, 768, 0.1)
+    (shape,) = RemoteShapes(Shapes())([piece])
+    if shape is None:
+        return {"cutout": png(piece), "obj": None, "triangles": 0}
+    v, f = shape
+    obj = "".join(f"v {x:.5f} {y:.5f} {z:.5f}\n" for x, y, z in v) + "".join(f"f {a + 1} {b + 1} {c + 1}\n" for a, b, c in f)
+    return {"cutout": png(piece), "obj": obj, "triangles": int(len(f))}
 
 
 @app.function(image=gpu_image, gpu=GPU, cpu=8, timeout=3 * 3600, memory=49152, secrets=secrets)
@@ -129,6 +187,22 @@ def remaster_folder(capture: str, model: str, out: str, options: str = "{}"):
     (Path(out) / "remastered.glb").write_bytes(result["model"])
     (Path(out) / "stats.json").write_text(json.dumps(result["stats"], indent=2))
     print(json.dumps(result["stats"], indent=2))
+
+
+@app.local_entrypoint()
+def make_shape(image: str, box: str, out: str):
+    """One piece of furniture's shape from a photo: SAM 2.1 cuts out what's in `box` (x0,y0,x1,y1 in
+    the photo's pixels), TripoSG makes its shape. Writes <out>/cutout.png and <out>/shape.obj."""
+    from pathlib import Path
+
+    result = shape_from_photo.remote(Path(image).read_bytes(), [float(v) for v in box.split(",")])
+    Path(out).mkdir(parents=True, exist_ok=True)
+    (Path(out) / "cutout.png").write_bytes(result["cutout"])
+    if result["obj"] is None:
+        print("no shape made")
+        return
+    (Path(out) / "shape.obj").write_text(result["obj"])
+    print(f"{result['triangles']} triangles; see {out}")
 
 
 @app.function(image=web_image, secrets=secrets)
