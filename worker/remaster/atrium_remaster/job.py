@@ -80,6 +80,7 @@ def config_from(options: dict) -> skins.SkinConfig:
         tile=int(options.get("tile", d.tile)),
         levels=int(options.get("levels", d.levels)),
         max_mip=int(options.get("maxMip", d.max_mip)),
+        align=bool(options.get("align", d.align)),
     )
 
 
@@ -96,7 +97,8 @@ def remaster(mesh: scene.Mesh, capture, options: dict, services: Services, devic
     if options.get("fill", True):
         report("fill", 0.93, "filling in what no photo saw")
         try:
-            out, fill_stats = fill_mod.fill(out, result.seen, services.inpainter, log=log)
+            painted = fill_mod.painted_from_photos(out, capture.seeds_xyz, capture.seed_spacing)
+            out, fill_stats = fill_mod.fill(out, result.seen, services.inpainter, log=log, painted=painted)
             stats.update(fill_stats)
         except Exception as e:  # the skins stand without it
             traceback.print_exc()

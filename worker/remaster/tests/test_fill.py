@@ -58,3 +58,27 @@ def test_only_flat_charts_with_a_fillable_hole_are_sent(tmp_path):
     untouched = np.ones(mesh.atlases[0].shape[:2], bool)
     untouched[wy0 + 38 : wy0 + 62, wx0 + 38 : wx0 + 82] = False
     assert np.allclose(out.atlases[0][untouched], mesh.atlases[0][untouched])
+
+
+def test_texels_the_phone_painted_from_photos_are_never_made_up(tmp_path):
+    from atrium_photoreal.capture import load
+
+    truth = room.write(tmp_path)
+    mesh = truth["mesh"]
+    capture = load(tmp_path / "capture")
+    painted = fill.painted_from_photos(mesh, capture.seeds_xyz, capture.seed_spacing)[0]
+    ceiling, wall = truth["charts"][1], truth["charts"][3]
+    cx0, cy0, cw, ch = ceiling.rect
+    wx0, wy0, ww, wh = wall.rect
+    # No photo looks up at the ceiling; the walls in front of the cameras are seen nearly everywhere.
+    assert painted[cy0 + 4 : cy0 + ch - 4, cx0 + 4 : cx0 + cw - 4].mean() < 0.05
+    assert painted[wy0 + 30 : wy0 + wh - 10, wx0 + 10 : wx0 + ww - 10].mean() > 0.9
+    # The skins counting nothing on that wall doesn't make it a hole: the phone painted it.
+    seen = np.zeros(mesh.atlases[0].shape[:2], np.float32)
+    recording = Recording()
+    out, stats = fill.fill(mesh, [seen], recording, log=lambda _: None, painted=[painted])
+    for images, masks in recording.calls:
+        for mask in masks:
+            assert mask.sum() < 0.5 * mask.size
+    untouched = painted & ~np.isclose(out.atlases[0], 1.0).all(-1)
+    assert untouched[painted].mean() > 0.99

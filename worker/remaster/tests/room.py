@@ -28,6 +28,7 @@ ATLAS = 512
 PAD = 2
 W, H, F = 160, 120, 120.0
 EXPOSURE = 1 / 60
+SEED_SPACING = 0.05
 
 
 @dataclass
@@ -144,6 +145,24 @@ def camera_poses(count: int) -> list[np.ndarray]:
     return poses
 
 
+def seen_from(caster: views.Caster, point: np.ndarray, normal: np.ndarray, pose: np.ndarray, K: np.ndarray) -> bool:
+    """Whether a camera (OpenCV pose) sees `point`: in its frame, facing it within 78 degrees, and
+    nothing in between."""
+    center = pose[:3, 3]
+    local = pose[:3, :3].T @ (point - center)
+    if local[2] <= 0.05:
+        return False
+    u, v = K[0, 0] * local[0] / local[2] + K[0, 2], K[1, 1] * local[1] / local[2] + K[1, 2]
+    if not (0 <= u < W and 0 <= v < H):
+        return False
+    d = point - center
+    dist = float(np.linalg.norm(d))
+    if float(-(d / dist) @ normal) < math.cos(math.radians(78)):
+        return False
+    t, _, _ = caster.rays(center[None], (d / dist)[None])
+    return bool(t[0] > dist - 0.01)
+
+
 def smear_horizontally(image: np.ndarray, length: int) -> np.ndarray:
     if length <= 1:
         return image
@@ -200,12 +219,17 @@ def write(folder: Path, cameras: int = 16, smeared=(3, 8), smear_px: int = 5, br
             }
         )
 
-    # Seeds: a point every 20 cm on every chart (the photoreal format wants them; the remaster doesn't).
+    # Seeds: like the phone's, a point every 5 cm where a photo sees the surface (within 78 degrees of
+    # head-on), none elsewhere (the fill takes the rest as unseen).
     seeds = []
+    poses = camera_poses(cameras)
     for c in items:
-        for a in np.arange(0.1, c.width, 0.2):
-            for b in np.arange(0.1, c.height, 0.2):
-                seeds.append((*(c.origin + a * c.u + b * c.v), *np.cross(c.u, c.v), 128, 128, 128))
+        normal = -np.cross(c.u, c.v)
+        for a in np.arange(0.025, c.width, SEED_SPACING):
+            for b in np.arange(0.025, c.height, SEED_SPACING):
+                point = c.origin + a * c.u + b * c.v
+                if any(seen_from(caster, point, normal, pose, K) for pose in poses):
+                    seeds.append((*point, *normal, 128, 128, 128))
     header = (
         f"ply\nformat binary_little_endian 1.0\nelement vertex {len(seeds)}\n"
         + "".join(f"property float {n}\n" for n in ["x", "y", "z", "nx", "ny", "nz"])
@@ -219,7 +243,7 @@ def write(folder: Path, cameras: int = 16, smeared=(3, 8), smear_px: int = 5, br
         "frames": frames,
         "bounds": {"min": [0, 0, 0], "max": [X, Y, Z]},
         "rooms": [{"name": "Room", "floorY": 0.0, "ceilingY": Y, "polygon": [[0, 0], [X, 0], [X, Z], [0, Z]]}],
-        "seeds": {"file": "seeds.ply", "count": len(seeds), "spacing": 0.2},
+        "seeds": {"file": "seeds.ply", "count": len(seeds), "spacing": SEED_SPACING},
     }
     (capture / "cameras.json").write_text(json.dumps(doc))
 

@@ -20,6 +20,7 @@ from typing import Protocol
 import numpy as np
 
 from .scene import Mesh
+from .views import Caster
 
 
 class Inpainter(Protocol):
@@ -101,6 +102,45 @@ def rasterize_uv(uv: np.ndarray, size: tuple[int, int]) -> np.ndarray:
     return out
 
 
+def painted_from_photos(mesh: Mesh, seeds: np.ndarray, spacing: float) -> list[np.ndarray]:
+    """Per atlas, (S, S) bool: the texels the phone painted from a photo. The phone's seeds (seeds.ply,
+    PhotorealExport.swift) lie every `spacing` meters on exactly those surfaces, so each marks the
+    texels within `spacing` of it."""
+    out = [np.zeros(a.shape[:2], bool) for a in mesh.atlases]
+    if not len(seeds) or not mesh.atlases:
+        return out
+    import open3d as o3d
+
+    caster = Caster.of(mesh)
+    found = caster.scene.compute_closest_points(o3d.core.Tensor(np.ascontiguousarray(seeds, dtype=np.float32)))
+    face = found["primitive_ids"].numpy().astype(np.int64)
+    bary = found["primitive_uvs"].numpy().astype(np.float64)
+    ok = (face >= 0) & (face < len(mesh.faces))
+    point = found["points"].numpy()
+    ok &= np.linalg.norm(point - seeds, axis=1) < max(spacing, 0.01)
+    face, bary = face[ok], bary[ok]
+    tri = mesh.faces[face]
+    uv = (1 - bary[:, :1] - bary[:, 1:]) * mesh.uvs[tri[:, 0]] + bary[:, :1] * mesh.uvs[tri[:, 1]] + bary[:, 1:] * mesh.uvs[tri[:, 2]]
+    texel = mesh.texel_size()[face]
+    atlas = mesh.face_atlas[face]
+    for a, image in enumerate(out):
+        sel = (atlas == a) & np.isfinite(texel)
+        if not sel.any():
+            continue
+        h, w = image.shape
+        x = np.clip((uv[sel, 0] * w).astype(np.int64), 0, w - 1)
+        y = np.clip((uv[sel, 1] * h).astype(np.int64), 0, h - 1)
+        image[y, x] = True
+        # Each seed stands for the texels around it, out to the next seed.
+        radius = int(np.ceil(np.median(spacing / texel[sel]))) if sel.any() else 0
+        if radius > 0:
+            from scipy import ndimage
+
+            yy, xx = np.mgrid[-radius : radius + 1, -radius : radius + 1]
+            out[a] = ndimage.binary_dilation(image, structure=(xx * xx + yy * yy) <= radius * radius)
+    return out
+
+
 def flat_charts(mesh: Mesh, chart: np.ndarray, planar_mm: float) -> list[int]:
     """Charts whose triangles lie in one plane (walls, floors, ceilings, a cabinet's faces)."""
     out = []
@@ -118,8 +158,13 @@ def flat_charts(mesh: Mesh, chart: np.ndarray, planar_mm: float) -> list[int]:
     return out
 
 
-def fill(mesh: Mesh, seen: list[np.ndarray], inpainter: Inpainter, cfg: FillConfig = FillConfig(), log=print) -> tuple[Mesh, dict]:
-    """The mesh with what no photo saw on its flat charts filled in by the inpainter."""
+def fill(
+    mesh: Mesh, seen: list[np.ndarray], inpainter: Inpainter, cfg: FillConfig = FillConfig(), log=print, painted: list[np.ndarray] | None = None
+) -> tuple[Mesh, dict]:
+    """The mesh with what no photo saw on its flat charts filled in by the inpainter. `seen`: the photo
+    weight per texel the skins counted (skins.coverage); `painted`: the texels the phone painted from a
+    photo (painted_from_photos), which keep their colors even where the skins' stricter rules (no
+    edges, no grazing views) counted nothing."""
     chart = mesh.charts()
     atlases = [a.copy() for a in mesh.atlases]
     jobs = []  # (atlas, y0, x0, image, hole)
@@ -136,7 +181,8 @@ def fill(mesh: Mesh, seen: list[np.ndarray], inpainter: Inpainter, cfg: FillConf
         local = uv - np.array([x0 / w, y0 / h])
         inside = rasterize_uv(local * np.array([w / (x1 - x0), h / (y1 - y0)]), (y1 - y0, x1 - x0))
         weight = seen[a][y0:y1, x0:x1] if seen[a].shape == atlas.shape[:2] else np.zeros((y1 - y0, x1 - x0))
-        hole = inside & (weight < cfg.seen_below)
+        keep = painted[a][y0:y1, x0:x1] if painted is not None and painted[a].shape == atlas.shape[:2] else np.zeros_like(inside)
+        hole = inside & (weight < cfg.seen_below) & ~keep
         holes, area = int(hole.sum()), int(inside.sum())
         if holes < cfg.min_texels or area == 0 or holes > cfg.max_share * area:
             continue
@@ -146,7 +192,7 @@ def fill(mesh: Mesh, seen: list[np.ndarray], inpainter: Inpainter, cfg: FillConf
         grown[:-1] |= hole[1:]
         grown[:, 1:] |= hole[:, :-1]
         grown[:, :-1] |= hole[:, 1:]
-        grown &= inside
+        grown &= inside & ~keep
         crop = (np.clip(atlas[y0:y1, x0:x1], 0, 1) * 255 + 0.5).astype(np.uint8)
         jobs.append((a, y0, x0, crop, grown, inside))
     filled_texels = 0
