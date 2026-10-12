@@ -17,6 +17,7 @@ const STAGE: Record<string, string> = {
   depth: "Measuring depth in the photos",
   skins: "Learning the skins from every photo",
   fill: "Filling in spots no photo saw",
+  spots: "Making the photo spots",
   uploading: "Saving the remastered model",
 };
 

@@ -21,7 +21,7 @@ left on the server (docs/photoreal.md §2.1), so either can be switched off, red
 | AI-made furniture | `furniture.py` (§4.4), SAM 2.1, TripoSG | built: fitting tested on CPU; TripoSG's GPU run next |
 | Trim: doors and windows set into their walls, baseboards, crown moldings, casings, cabinet doors | `trim.py` (§4.5) | built |
 | The room layout from the phone (walls, doors, windows, furniture boxes) | build 13, `cameras.json` `layout` (docs/photoreal.md §1) | done |
-| Photo spots (Matterport-style) | §4.6 | planned |
+| Photo spots (Matterport-style) | `spots.py`, viewer's `PhotoSpots` (§4.6) | built: tested on CPU and in Chromium on a synthetic room |
 
 ## 1. Flow
 
@@ -145,9 +145,24 @@ surfaces (reveals, the slabs' sides, the grooves' sides) share one new atlas (xa
 are learned from the photos like the rest. Scans from before build 13 have no layout: only baseboards and crown
 moldings are looked for.
 
-### 4.6 Photo spots
-At the spots where photos were taken, the real photos lined up on the model (a panorama per spot, the gaps from the
-model), as Matterport and Zillow tours show them; the viewer moves between spots over the remastered model.
+### 4.6 Photo spots (`spots.py`, the viewer's `PhotoSpots.tsx`)
+Where the photos were taken, buyers see the photos, as in Matterport and Zillow tours. The photos taken within 1 m
+of each other (across the floor, in the order they were taken) make a spot, at the middle of where they were taken,
+if it's at least 25 cm from every surface. From each spot the worker renders a cube of six 1024 px views of the
+finished model and paints the photos over it: each pixel from the photos (the spot's own and up to 24 taken within
+3.5 m) that saw the same point from nearly the same direction, by the angle between their line of sight and the
+spot's (8° fades a photo's say by two thirds), never across something in front (the model's depth at the photo)
+nor where it showed people or the depth model disagreed, fading in from each photo's border, and with each photo's
+color and alignment as the skins learned them, so the photos agree with each other and with the model. Where no
+photo saw the point, the model shows. Each cube is one JPEG, its faces in OpenGL's layout in a 3 × 2 grid (+x −x
++y over −y +z −z), which WebGL samples as stored (checked in Chromium).
+
+The pictures upload before the model (storage kind `spot`), and the model lists them in its scene's extras
+(`atriumSpots`: version, face size, and per spot its position, picture and photo count), so nothing else on the site
+changes. The viewer, while the remastered model shows, loads the two spots nearest the camera (three at most in
+memory), renders each one's distances once (a cube camera), and projects its photos onto the model from the spot
+where the spot saw that surface: fully within 12 cm of a spot, fading out by 1.6 m, the two nearest blending
+between. Rings on the floor mark the spots, and a click on the floor within 90 cm of one goes exactly there.
 
 ## 5. The job (`atrium_remaster/job.py`)
 
@@ -164,7 +179,8 @@ another scan don't), runs the stages and reports to the callback with the same s
 
 | Event | Answer |
 |---|---|
-| `{ event: "progress", stage, progress, message }` (stages: `downloading`, `cleanup`, `shapes`, `furniture`, `depth`, `skins`, `fill`, `uploading`) | the job |
+| `{ event: "progress", stage, progress, message }` (stages: `downloading`, `cleanup`, `shapes`, `furniture`, `depth`, `skins`, `fill`, `spots`, `uploading`) | the job |
+| `{ event: "upload", files: [{ name: "spot-000.jpg", bytes }, …] }` (the photo spots, first) | `{ targets: [{ name, url, method, headers, assetUrl }] }` |
 | `{ event: "upload", files: [{ name: "model.glb", bytes }] }` | `{ targets: [{ name, url, method, headers, assetUrl }] }` |
 | `{ event: "done", modelUrl, stats }` | the job |
 | `{ event: "failed", message }` | the job |
@@ -179,6 +195,7 @@ Options (all optional):
   `furnitureInFrame` (0.9).
 * Depth: `depth` (true), `fuse` (true). Fixer views: `fixerViews` (true), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
   (1024), `fixerHeight` (576), `fixerWeight` (0.5), `fixerShare` (0.25), `fixerToneLock` (0.012).
+* Photo spots: `spots` (true), `spotFace` (1024), `spotSpacing` (1 m), `spotLongSide` (1920).
 * `fill` (true), `jpegQuality` (90).
 
 The remastered model is a GLB like the phone's photo models: one unlit primitive per atlas (JPEG), the scan manifest

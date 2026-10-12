@@ -7,11 +7,16 @@ import { isWorkerRequest, pruneListingPhotos, workerSecret } from "@/lib/photore
 import { remasterSummary } from "@/lib/remaster";
 import { assetExists, createUploadTarget, isOwnedAssetUrl, UploadError } from "@/lib/storage";
 
+/** A photo spot's picture, as the worker names it; a model has at most this many. */
+const SPOT_FILE = /^spot-\d{3}\.jpg$/;
+const MAX_SPOTS = 250;
+
 /**
  * The remaster worker reports on a job (worker/remaster/atrium_remaster/job.py), with the shared
  * secret (Authorization: Bearer PHOTOREAL_WORKER_SECRET). Events:
  *   { event: "progress", stage, progress (0–1), message }
  *   { event: "upload", files: [{ name: "model.glb", bytes }] } → { targets: [{ name, url, method, headers, assetUrl }] }
+ *     (before it, the photo spots' pictures: files [{ name: "spot-000.jpg", bytes }, …], which model.glb lists)
  *   { event: "done", modelUrl, stats }
  *   { event: "failed", message }
  */
@@ -47,12 +52,15 @@ export async function POST(request: Request, ctx: RouteContext<"/api/remaster/jo
       }
       case "upload": {
         const files = Array.isArray(body.files) ? body.files : [];
-        if (!files.length || files.length > 1) return apiError(400, "Expected the remastered model (model.glb).");
+        const spots = files.length > 0 && files.every((f: { name?: unknown }) => typeof f?.name === "string" && SPOT_FILE.test(f.name));
+        if (!files.length || (!spots && files.length > 1) || files.length > MAX_SPOTS) {
+          return apiError(400, "Expected the remastered model (model.glb) or its photo spots (spot-000.jpg, …).");
+        }
         const base = serverBaseUrl(await headers()).url;
         const targets = [];
         for (const file of files) {
-          if (file?.name !== "model.glb") return apiError(400, `Unexpected file: ${String(file?.name).slice(0, 60)}`);
-          const target = await createUploadTarget(job.userId, job.propertyId, "remaster", "model.glb", Number(file.bytes), { admin: true });
+          if (!spots && file?.name !== "model.glb") return apiError(400, `Unexpected file: ${String(file?.name).slice(0, 60)}`);
+          const target = await createUploadTarget(job.userId, job.propertyId, spots ? "spot" : "remaster", file.name, Number(file.bytes), { admin: true });
           // Local storage hands out links relative to this site.
           targets.push({ name: file.name, ...target, url: target.url.startsWith("/") ? `${base}${target.url}` : target.url });
         }

@@ -27,6 +27,8 @@ interface Props {
   onUserInteract?: () => void;
   /** A photo scan: keep the view no wider than the photos were (see `baseFovFor`). */
   photoScan?: boolean;
+  /** Photo spots (PhotoSpots): a click on the floor near one goes exactly there. */
+  snapTo?: Vec3[] | null;
 }
 
 interface Motion {
@@ -60,6 +62,8 @@ function baseFovFor(aspect: number, photoScan = false) {
   return THREE.MathUtils.clamp(v, BASE_FOV, 96);
 }
 const LOOK_SPEED = 0.0042;
+/** A click on the floor this near a photo spot (meters) goes to the spot. */
+const SNAP_RADIUS = 0.9;
 const WALK_SPEED = 1.5;
 const TURN_SPEED = 1.7;
 
@@ -101,6 +105,7 @@ export function CameraRig({
   autoPan = false,
   onUserInteract,
   photoScan = false,
+  snapTo = null,
 }: Props) {
   const { camera, gl, raycaster, scene, size } = useThree();
   const baseFov = baseFovFor(size.width / size.height, photoScan);
@@ -127,8 +132,8 @@ export function CameraRig({
     started: false,
   });
 
-  const latest = useRef({ onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract });
-  latest.current = { onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract };
+  const latest = useRef({ onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract, snapTo });
+  latest.current = { onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract, snapTo };
 
   // Initial placement (before the visitor enters, the camera slowly drifts).
   useEffect(() => {
@@ -373,7 +378,16 @@ export function CameraRig({
       const quick = performance.now() - st.downAt.time < 450;
       if (st.pointers.size === 0 && quick && st.downAt.moved < 8 && !st.motion) {
         const target = pickFloor(e.clientX, e.clientY);
-        if (target) {
+        // Near a photo spot: to the spot itself, where its photos line up.
+        let spot: Vec3 | null = null;
+        let nearest = SNAP_RADIUS;
+        for (const p of target ? (latest.current.snapTo ?? []) : []) {
+          const d = Math.hypot(p[0] - target!.x, p[2] - target!.z);
+          if (d < nearest) [spot, nearest] = [p, d];
+        }
+        if (spot) {
+          glideTo([spot], st.yawTarget, THREE.MathUtils.clamp(st.pitchTarget, -0.35, 0.35), { travelFacing: false, speed: 2.2 });
+        } else if (target) {
           const sp = latest.current.space;
           const eye = target.y + sp.eyeHeight;
           // Stop a little short of the clicked point so we never end up in a wall.

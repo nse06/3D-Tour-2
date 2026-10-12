@@ -9,13 +9,16 @@ Downloads the photos and the painted model, rebuilds the model (the stages below
 the skins), asks the callback where to upload the files, uploads them, and reports back. Every call
 carries the shared worker secret (Authorization: Bearer ...). The callback hears:
 {"event": "progress", "stage", "progress", "message"}; {"event": "upload", "files": [{"name",
-"bytes"}]}, answered with {"targets": [{"name", "url", "method", "headers", "assetUrl"}]};
-{"event": "done", "modelUrl", "stats"} or {"event": "failed", "message"}.
+"bytes"}]}, answered with {"targets": [{"name", "url", "method", "headers", "assetUrl"}]}: first the
+photo spots' pictures (spot-000.jpg, ...; spots.py), then model.glb, which lists them; {"event":
+"done", "modelUrl", "stats"} or {"event": "failed", "message"}.
 
 The photoreal splats (worker/photoreal) are a separate job; this one borrows its helpers.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import shutil
 import time
@@ -36,6 +39,7 @@ from . import fixviews
 from . import glb, scene, skins
 from . import furniture as furniture_mod
 from . import fuse as fuse_mod
+from . import spots as spots_mod
 from . import trim as trim_mod
 from . import layout as layout_mod
 from .layout import Layout
@@ -108,9 +112,12 @@ def cleanup_config(options: dict) -> cleanup_mod.CleanupConfig:
     )
 
 
-def remaster(mesh: scene.Mesh, capture, options: dict, services: Services, device: str, report, log=print, layout: Layout | None = None) -> tuple[scene.Mesh, dict]:
+def remaster(
+    mesh: scene.Mesh, capture, options: dict, services: Services, device: str, report, log=print, layout: Layout | None = None, spots: list | None = None
+) -> tuple[scene.Mesh, dict]:
     """The stages, in order. `report(stage, progress, message)`. `layout`: the room layout (build 13
-    on), for what needs to know where the TVs and windows are."""
+    on), for what needs to know where the TVs and windows are. `spots`: if given, the photo spots
+    (spots.run) are made and go into it."""
     stats: dict = {"photos": len(capture.cameras), "triangles": int(len(mesh.faces))}
     layout = layout or Layout()
     stats["layout"] = not layout.empty
@@ -222,6 +229,19 @@ def remaster(mesh: scene.Mesh, capture, options: dict, services: Services, devic
         except Exception as e:  # the skins stand without it
             traceback.print_exc()
             stats["fillError"] = f"{type(e).__name__}: {e}"[:200]
+    if spots is not None and options.get("spots", True):
+        report("spots", 0.0, "making the photo spots")
+        try:
+            d = spots_mod.SpotConfig()
+            spot_cfg = spots_mod.SpotConfig(
+                face=int(options.get("spotFace", d.face)), spacing=float(options.get("spotSpacing", d.spacing)), long_side=int(options.get("spotLongSide", d.long_side))
+            )
+            spots += spots_mod.run(out, capture, result.fixes, spot_cfg, device, sharpened, disagree, log=log, progress=lambda p: report("spots", p, ""))
+            stats["spots"] = len(spots)
+        except Exception as e:  # the model stands without them
+            traceback.print_exc()
+            stats["spotsError"] = f"{type(e).__name__}: {e}"[:200]
+            spots.clear()
     return out, stats
 
 
@@ -251,8 +271,29 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-remas
         def report(stage: str, value: float, message: str) -> None:
             reporter.progress(stage, value, message)
 
-        out, stats = remaster(mesh, capture, options, services, device, report, layout=layout)
+        made: list[dict] = []
+        out, stats = remaster(mesh, capture, options, services, device, report, layout=layout, spots=made)
         reporter.progress("uploading", 1, "", force=True)
+        if made:
+            # The spots' pictures go up first: the model lists where they are.
+            try:
+                names = [f"spot-{k:03d}.jpg" for k in range(len(made))]
+                answer = reporter.send({"event": "upload", "files": [{"name": n, "bytes": len(s["jpeg"])} for n, s in zip(names, made)]})
+                targets = {t.get("name"): t for t in answer.get("targets", [])}
+                listed = []
+                for name, spot in zip(names, made):
+                    path = work / name
+                    path.write_bytes(spot["jpeg"])
+                    upload(targets[name], path)
+                    listed.append({"position": spot["position"], "image": targets[name]["assetUrl"], "photos": spot["photos"]})
+                face = int(options.get("spotFace", spots_mod.SpotConfig().face))
+                extras = {**out.extras, "atriumSpots": {"version": 1, "face": face, "layout": "3x2: +x -x +y / -y +z -z", "spots": listed}}
+                out = dataclasses.replace(out, extras=extras)
+                stats["spotsMB"] = round(sum(len(s["jpeg"]) for s in made) / 1e6, 1)
+            except Exception as e:  # an older site takes only the model
+                traceback.print_exc()
+                stats["spotsError"] = f"{type(e).__name__}: {e}"[:200]
+                stats["spots"] = 0
         out_path = work / "remastered.glb"
         out_path.write_bytes(glb.write(scene.to_model(out, quality=int(options.get("jpegQuality", 90)))))
         stats.update(

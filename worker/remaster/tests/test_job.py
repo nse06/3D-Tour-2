@@ -70,7 +70,7 @@ class Site:
         return {"jobId": "job-1", "callback": f"{self.base}/callback", "files": files, "model": {"url": f"{self.base}/model.glb"}, "options": options or {}}
 
 
-FAST = {"steps": 60, "batch": 4, "tile": 256, "levels": 3, "maxMip": 3}
+FAST = {"steps": 60, "batch": 4, "tile": 256, "levels": 3, "maxMip": 3, "spotFace": 32, "spotLongSide": 160}
 
 
 def test_a_job_downloads_rebuilds_uploads_and_reports(tmp_path):
@@ -78,12 +78,20 @@ def test_a_job_downloads_rebuilds_uploads_and_reports(tmp_path):
     site = Site(tmp_path / "site")
     stats = job.run_job(site.payload(FAST), SECRET, workdir=tmp_path / "work", device="cpu")
     kinds = [e["event"] for e in site.events]
-    assert kinds[0] == "progress" and kinds[-2:] == ["upload", "done"] and "failed" not in kinds
-    done = site.events[-1]
+    assert kinds[0] == "progress" and kinds[-3:] == ["upload", "upload", "done"] and "failed" not in kinds
+    spots_upload, model_upload, done = site.events[-3:]
+    assert [f["name"] for f in model_upload["files"]] == ["model.glb"]
     assert done["modelUrl"].endswith("/assets/model.glb") and done["stats"]["photos"] == 16
     model = scene.from_model(glb.read(site.uploads["/up/model.glb"]))
     assert model.atlases[0].shape == (1024, 1024, 3) and model.extras["atrium"]["schema"] == "atrium.scan-manifest/v1"
     assert stats["photosOnModel"] > 0.9 and not (tmp_path / "work" / "job-1").exists()
+    # The photo spots: their pictures uploaded first, listed in the model.
+    listed = model.extras["atriumSpots"]["spots"]
+    assert stats["spots"] == len(listed) == len(spots_upload["files"]) > 0 and model.extras["atriumSpots"]["face"] == 32
+    for k, spot in enumerate(listed):
+        assert spot["image"].endswith(f"/assets/spot-{k:03d}.jpg") and len(spot["position"]) == 3
+        sheet = site.uploads[f"/up/spot-{k:03d}.jpg"]
+        assert sheet[:2] == b"\xff\xd8"
 
 
 def test_photos_of_another_scan_are_turned_away(tmp_path):

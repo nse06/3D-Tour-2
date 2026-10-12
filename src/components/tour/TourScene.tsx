@@ -14,6 +14,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import type { SplatSpot, TourAppearance, TourSpace, Waypoint } from "@/lib/tour/types";
 import { CameraRig } from "./CameraRig";
+import { makeSpotUniforms, PhotoSpots, spotsOf, withPhotoSpots } from "./PhotoSpots";
 import type { LivePose, ViewerApi, ViewerMode } from "./viewer-types";
 
 export interface TourSceneProps {
@@ -32,6 +33,8 @@ export interface TourSceneProps {
   remastered?: boolean;
   /** The remastered model couldn't be loaded; the model before stays on screen. */
   onRemasterError?: (message: string) => void;
+  /** The remastered model's photo spots (docs/remaster.md §4.6), if it has any: on unless false. */
+  photoSpots?: boolean;
   /** Photoreal Gaussian splats (.spz) in the model's frame (docs/photoreal.md). */
   splatUrl?: string | null;
   /** Show the splats instead of the models (loaded the first time it's asked for). */
@@ -133,6 +136,7 @@ function PropertyModel({
   remasterUrl = null,
   remastered = false,
   onRemasterError,
+  photoSpots = true,
   splatUrl = null,
   photoreal = false,
   onSplatState,
@@ -211,10 +215,13 @@ function PropertyModel({
     if (!photoScene || photoLook !== "captured") return;
     return showUnlit(photoScene);
   }, [photoScene, photoLook]);
+  // The remastered model shows its photo spots where it has them (PhotoSpots sets the uniforms).
+  const spotUniforms = useMemo(() => makeSpotUniforms(), []);
+  const spots = useMemo(() => spotsOf(remasterScene), [remasterScene]);
   useLayoutEffect(() => {
     if (!remasterScene) return;
-    return showUnlit(remasterScene);
-  }, [remasterScene]);
+    return showUnlit(remasterScene, (m) => withPhotoSpots(m, spotUniforms));
+  }, [remasterScene, spotUniforms]);
 
   // Photoreal splats load the first time they're asked for; until they're ready (or if they
   // fail) the models stay on screen. The models keep doing the walking either way: the rig picks
@@ -226,6 +233,7 @@ function PropertyModel({
   const showSplats = photoreal && splatReady;
 
   const captured = showSplats || showing === "remaster" || (showingClean ? "studio" : photoLook) === "captured";
+  const spotsOn = photoSpots && showing === "remaster" && !showSplats && spots.length > 0;
   return (
     <>
       {!captured && <EnvironmentLighting intensity={hasLights ? 0.9 : 1.15} />}
@@ -256,6 +264,7 @@ function PropertyModel({
           );
         })}
       </group>
+      {spots.length > 0 && <PhotoSpots scene={remasterScene} spots={spots} uniforms={spotUniforms} active={spotsOn} />}
       {splatAsked && splatUrl && (
         <SplatLayer
           url={splatUrl}
@@ -284,6 +293,7 @@ function PropertyModel({
         autoPan={autoPan}
         onUserInteract={onUserInteract}
         photoScan={photoLook === "captured"}
+        snapTo={spotsOn ? spots.map((s) => s.position) : null}
       />
       {effects && !captured && (
         <EffectComposer multisampling={4}>
@@ -461,11 +471,12 @@ function AlternateModel({ url, visible, onReady }: { url: string; visible: boole
 /**
  * Swap every material for an unlit one with the same colour texture, so a
  * photo-textured scan looks exactly as captured (its lighting is baked into
- * the texture). Returns a function that restores the original materials.
+ * the texture). `extend` adjusts each new material. Returns a function that
+ * restores the original materials.
  */
-function showUnlit(root: THREE.Object3D): () => void {
+function showUnlit(root: THREE.Object3D, extend?: (m: THREE.MeshBasicMaterial) => void): () => void {
   const restore: (() => void)[] = [];
-  const unlit = new Map<THREE.Material, THREE.Material>();
+  const unlit = new Map<THREE.Material, THREE.MeshBasicMaterial>();
   const toUnlit = (m: THREE.Material) => {
     let basic = unlit.get(m);
     if (!basic) {
@@ -485,6 +496,7 @@ function showUnlit(root: THREE.Object3D): () => void {
         polygonOffsetFactor: m.polygonOffsetFactor,
         toneMapped: false,
       });
+      extend?.(basic);
       unlit.set(m, basic);
     }
     return basic;

@@ -99,6 +99,9 @@ class Result:
     mesh: Mesh  # the model with the trained atlases
     seen: list[np.ndarray]  # per atlas (S, S) float: how much photo weight landed on each texel
     stats: dict = field(default_factory=dict)
+    # Per photo (by camera name): what training learned about it, to use it as the skins do (spots.py):
+    # its color matrix and offset (photo ≈ skin @ M.T + b, sRGB 0-1) and its warp (warp_image).
+    fixes: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = field(default_factory=dict)
 
 
 def trained_size(mesh: Mesh, cfg: SkinConfig) -> list[int]:
@@ -418,7 +421,9 @@ def train(
     if extra:
         stats["extraViews"] = len(extras)
         stats["extraRounds"] = len(rounds)
-    return Result(trained, seen, stats)
+    color, offset, warp = (t.detach().cpu().numpy() for t in (model.color, model.offset, model.warp))
+    fixes = {v.name: (color[i], offset[i], warp[i] if cfg.align else np.zeros(4, np.float32)) for i, v in enumerate(views) if v.learn_color}
+    return Result(trained, seen, stats, fixes)
 
 
 def render_view(mips: list[list[torch.Tensor]], v: View) -> torch.Tensor:
