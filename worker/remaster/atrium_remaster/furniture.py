@@ -206,6 +206,15 @@ def cutout(image: np.ndarray, mask: np.ndarray, size: int, pad: float) -> np.nda
     return np.asarray(Image.fromarray(canvas).resize((size, size), Image.LANCZOS))
 
 
+def hidden(caster: Caster, ids: np.ndarray, alone: Caster, s: Sight) -> tuple[np.ndarray, np.ndarray]:
+    """In a photo: where the scanned piece would show with nothing in front of it (its outline), and
+    where something in front of it hides it (a coffee table before a sofa)."""
+    hits = caster.view(s.K, s.camera.camtoworld, s.width, s.height)
+    mine = alone.view(s.K, s.camera.camtoworld, s.width, s.height)
+    hides = mine.hit & ~np.isin(hits.face, ids) & (hits.depth < mine.depth - 0.02)
+    return mine.hit, hides
+
+
 def fit_view(s: Sight, mask: np.ndarray, scene: Caster, fit_px: int) -> FitView:
     scale = fit_px / max(s.width, s.height)
     w, h = max(8, round(s.width * scale)), max(8, round(s.height * scale))
@@ -316,8 +325,13 @@ def run(
     cfg: FurnitureConfig = FurnitureConfig(),
     sharpened: dict | None = None,
     log=print,
+    inpainter=None,
 ) -> tuple[Mesh, dict]:
-    """The mesh with its movable pieces made by the shape maker, where their shapes match the photos."""
+    """The mesh with its movable pieces made by the shape maker, where their shapes match the photos.
+    `inpainter` (fill.Inpainter): what's hidden behind something in the cutout's photo is painted in
+    before the shape maker sees it (else the gap would end up in the piece's shape)."""
+    from scipy import ndimage
+
     from .fill import flat_charts
 
     pieces = [b for b in layout.objects if b.category in cfg.categories]
@@ -337,18 +351,32 @@ def run(
             stats["furnitureKept"] += 1
             continue
         scene = Caster(mesh.vertices, mesh.faces[~piece])
+        ids, alone = np.flatnonzero(piece), Caster(mesh.vertices, mesh.faces[piece])
+        # The cutout's photo: of the clearest whole views, the one where the least of it is hidden.
+        best, best_score, best_hides = whole[0], -1.0, None
+        for s in whole[:6]:
+            outline, hides = hidden(caster, ids, alone, s)
+            score = s.seen * (1 - hides.sum() / max(1, outline.sum())) ** 2
+            if score > best_score:
+                best, best_score, best_hides = s, score, hides
         views, crop, color = [], None, None
-        # The clearest whole view first (its cutout goes to the shape maker), then others around it.
-        for s in spread_out(whole[:1] + [s for s in found if s is not whole[0]], cfg.views, cfg.spread):
+        # That view first, then others around it, for the fit.
+        for s in spread_out([best] + [s for s in found if s is not best], cfg.views, cfg.spread):
             image = photo(s, sharpened)
             x0, y0, x1, y1 = s.box
             gx, gy = 0.05 * (x1 - x0), 0.05 * (y1 - y0)
             (mask,) = segmenter(image, [(max(0.0, x0 - gx), max(0.0, y0 - gy), min(s.width, x1 + gx), min(s.height, y1 + gy))])
-            mask = np.asarray(mask, bool) & hull_mask(s.hull, s.width, s.height, 0.04)
+            # Holes in the cutout are the piece's too (a throw on a sofa's seat).
+            mask = ndimage.binary_fill_holes(np.asarray(mask, bool) & hull_mask(s.hull, s.width, s.height, 0.04))
             if mask.sum() < 0.1 * s.seen:
                 continue
-            if crop is None and s.framed >= cfg.in_frame:
-                crop, color = cutout(image, mask, cfg.crop, cfg.pad), np.median(image[mask], 0) / 255
+            if crop is None and s is best:
+                # What hides it shows there, whether or not the cutout took it in: painted over.
+                cut = mask
+                if inpainter is not None and best_hides.sum() > 0.01 * mask.sum():
+                    (image,) = inpainter([image], [best_hides])
+                    cut = mask | best_hides
+                crop, color = cutout(image, cut, cfg.crop, cfg.pad), np.median(image[mask], 0) / 255
             views.append(fit_view(s, mask, scene, cfg.fit_px))
         if crop is None:
             log(f"furniture: {b.category} {b.id}: no cutout")

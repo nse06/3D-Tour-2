@@ -208,7 +208,7 @@ def pack_shape(vertices: np.ndarray, faces: np.ndarray) -> bytes:
     import io
 
     out = io.BytesIO()
-    np.savez_compressed(out, vertices=np.asarray(vertices, np.float32), faces=np.asarray(faces, np.int64))
+    np.savez_compressed(out, vertices=np.asarray(vertices, np.float32), faces=np.asarray(faces, np.int32))
     return out.getvalue()
 
 
@@ -216,7 +216,7 @@ def unpack_shape(data: bytes) -> tuple[np.ndarray, np.ndarray]:
     import io
 
     with np.load(io.BytesIO(data)) as z:
-        return z["vertices"], z["faces"]
+        return z["vertices"], z["faces"].astype(np.int64)
 
 
 class RemoteShapes:
