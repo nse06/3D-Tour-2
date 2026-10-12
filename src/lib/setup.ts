@@ -20,6 +20,7 @@ const REQUIRED_TABLES = ["properties", "tours", "floors", "rooms", "capture_sess
 const REQUIRED_COLUMNS: [table: string, column: string][] = [
   ["tours", "clean_asset_url"],
   ["tours", "splat_url"],
+  ["photoreal_jobs", "variants"],
 ];
 
 const MISSING_TABLE = /PGRST205|42P01|schema cache|does not exist/i;
