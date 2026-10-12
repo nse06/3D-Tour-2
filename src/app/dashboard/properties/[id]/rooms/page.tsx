@@ -32,6 +32,7 @@ export default async function RoomsPage(props: PageProps<"/dashboard/properties/
           cleanAssetUrl={bundle.tour.cleanAssetUrl}
           splatUrl={bundle.tour.splatUrl}
           splatSpots={bundle.tour.splatSpots}
+          remasterUrl={bundle.tour.remasterUrl}
           initialSpace={space}
           initialAppearance={bundle.tour.appearance}
         />

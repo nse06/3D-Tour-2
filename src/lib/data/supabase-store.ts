@@ -19,6 +19,8 @@ import type {
   PhotorealJob,
   PhotorealJobUpdate,
   PhotorealVariant,
+  RemasterJob,
+  RemasterJobUpdate,
   Property,
   PropertyBundle,
   PropertyInput,
@@ -55,6 +57,8 @@ interface TourRow {
   /** Added by migration 20261010000000 (photoreal splats). */
   splat_url?: string | null;
   splat_spots?: SplatSpot[] | null;
+  /** Added by migration 20261014000000 (remastered models). */
+  remaster_url?: string | null;
   asset_format: "glb" | "gltf";
   source: Tour["source"];
   scan_package_url: string | null;
@@ -92,6 +96,24 @@ interface PhotorealJobRow {
   inputs_job_id?: string | null;
   inputs_deleted_at?: string | null;
   variants?: Record<string, PhotorealVariant> | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+interface RemasterJobRow {
+  id: string;
+  property_id: string;
+  tour_id: string | null;
+  user_id: string;
+  inputs_job_id: string | null;
+  status: RemasterJob["status"];
+  stage: string | null;
+  progress: number;
+  message: string | null;
+  model_url: string | null;
+  stats: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -145,12 +167,13 @@ const toTour = (r: TourRow): Tour => ({
   cleanAssetUrl: r.clean_asset_url ?? null,
   splatUrl: r.splat_url ?? null,
   splatSpots: Array.isArray(r.splat_spots) ? r.splat_spots : null,
+  remasterUrl: r.remaster_url ?? null,
   assetFormat: r.asset_format,
   source: r.source,
   scanPackageUrl: r.scan_package_url,
   processingStatus: r.processing_status,
   navigation: { links: r.navigation?.links ?? [], eyeHeight: r.navigation?.eyeHeight ?? 1.6 },
-  appearance: r.appearance === "captured" || r.appearance === "photoreal" ? r.appearance : "studio",
+  appearance: r.appearance === "captured" || r.appearance === "photoreal" || r.appearance === "remastered" ? r.appearance : "studio",
   published: r.published,
   createdAt: r.created_at,
 });
@@ -181,6 +204,24 @@ const toPhotorealJob = (r: PhotorealJobRow): PhotorealJob => ({
   inputsJobId: r.inputs_job_id ?? null,
   inputsDeletedAt: r.inputs_deleted_at ?? null,
   variants: r.variants ?? null,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+  startedAt: r.started_at,
+  finishedAt: r.finished_at,
+});
+
+const toRemasterJob = (r: RemasterJobRow): RemasterJob => ({
+  id: r.id,
+  propertyId: r.property_id,
+  tourId: r.tour_id,
+  userId: r.user_id,
+  inputsJobId: r.inputs_job_id,
+  status: r.status,
+  stage: r.stage,
+  progress: Number(r.progress),
+  message: r.message,
+  modelUrl: r.model_url,
+  stats: r.stats,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   startedAt: r.started_at,
@@ -517,7 +558,14 @@ export class SupabaseRepository implements Repository {
     await this.ownedProperty(db, userId, propertyId);
     const tour = await this.latestTour(db, propertyId);
     if (!tour) return null;
-    const row: Record<string, unknown> = { property_id: propertyId, tour_id: tour.id, user_id: userId, status: "uploading", files: input.files, bytes: input.bytes };
+    const row: Record<string, unknown> = {
+      property_id: propertyId,
+      tour_id: tour.id,
+      user_id: userId,
+      status: "uploading",
+      files: input.files,
+      bytes: input.bytes,
+    };
     // Trained again from photos already here: nothing to upload. (Only then the newer column, so a
     // database from before it still takes the phone's uploads.)
     if (input.inputsJobId) Object.assign(row, { status: "queued", inputs_job_id: input.inputsJobId });
@@ -611,5 +659,78 @@ export class SupabaseRepository implements Repository {
       console.error("photoreal: tours.splat_spots is missing (open /setup); attaching the splats without their photo spots");
       return withMigrations(async () => !!(await attach(false)));
     }
+  }
+
+  async createRemasterJob(userId: string, propertyId: string, inputsJobId: string): Promise<RemasterJob | null> {
+    const db = await this.client();
+    await this.ownedProperty(db, userId, propertyId);
+    const tour = await this.latestTour(db, propertyId);
+    if (!tour) return null;
+    const row = { property_id: propertyId, tour_id: tour.id, user_id: userId, inputs_job_id: inputsJobId, status: "queued" };
+    return withMigrations(async () => toRemasterJob(check(await db.from("remaster_jobs").insert(row).select("*").single()) as RemasterJobRow));
+  }
+
+  async getRemasterJob(jobId: string): Promise<RemasterJob | null> {
+    if (!UUID.test(jobId)) return null;
+    const db = await this.client();
+    return withMigrations(async () => {
+      const row = check(await db.from("remaster_jobs").select("*").eq("id", jobId).maybeSingle()) as RemasterJobRow | null;
+      return row ? toRemasterJob(row) : null;
+    });
+  }
+
+  async updateRemasterJob(jobId: string, update: RemasterJobUpdate): Promise<RemasterJob | null> {
+    if (!UUID.test(jobId)) return null;
+    const db = await this.client();
+    const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (update.status !== undefined) row.status = update.status;
+    if (update.stage !== undefined) row.stage = update.stage;
+    if (update.progress !== undefined) row.progress = update.progress;
+    if (update.message !== undefined) row.message = update.message;
+    if (update.modelUrl !== undefined) row.model_url = update.modelUrl;
+    if (update.stats !== undefined) row.stats = update.stats;
+    if (update.startedAt !== undefined) row.started_at = update.startedAt;
+    if (update.finishedAt !== undefined) row.finished_at = update.finishedAt;
+    return withMigrations(async () => {
+      const result = check(await db.from("remaster_jobs").update(row).eq("id", jobId).select("*").maybeSingle()) as RemasterJobRow | null;
+      return result ? toRemasterJob(result) : null;
+    });
+  }
+
+  async latestRemasterJob(userId: string, propertyId: string): Promise<RemasterJob | null> {
+    const db = await this.client();
+    return withMigrations(async () => {
+      const row = check(
+        await db
+          .from("remaster_jobs")
+          .select("*")
+          .eq("property_id", propertyId)
+          .eq("user_id", userId)
+          .not("tour_id", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ) as RemasterJobRow | null;
+      return row ? toRemasterJob(row) : null;
+    });
+  }
+
+  async listRemasterJobs(userId: string, propertyId: string): Promise<RemasterJob[]> {
+    const db = await this.client();
+    return withMigrations(async () => {
+      const rows = check(
+        await db.from("remaster_jobs").select("*").eq("property_id", propertyId).eq("user_id", userId).order("created_at", { ascending: false }),
+      ) as RemasterJobRow[];
+      return rows.map(toRemasterJob);
+    });
+  }
+
+  async attachRemaster(job: RemasterJob, modelUrl: string): Promise<boolean> {
+    if (!job.tourId) return false;
+    const db = await this.client();
+    return withMigrations(
+      async () =>
+        !!check(await db.from("tours").update({ remaster_url: modelUrl }).eq("id", job.tourId!).eq("property_id", job.propertyId).select("id").maybeSingle()),
+    );
   }
 }

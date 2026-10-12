@@ -45,6 +45,8 @@ export interface Tour {
   splatUrl: string | null;
   /** Where those photos were taken ([x, y, z, yaw, pitch]): the viewer shows the splats near them. */
   splatSpots: SplatSpot[] | null;
+  /** The painted model rebuilt by the remaster GPU (docs/remaster.md): same rooms, better skins. */
+  remasterUrl: string | null;
   assetFormat: "glb" | "gltf";
   source: CaptureSource;
   scanPackageUrl: string | null;
@@ -164,6 +166,34 @@ export interface NewPhotorealJob {
   /** Trained again: the job whose photos to use (the job starts "queued" instead of "uploading"). */
   inputsJobId?: string;
 }
+
+export type RemasterStatus = "queued" | "running" | "done" | "failed";
+
+/**
+ * One remaster run (docs/remaster.md): a cloud GPU rebuilds the tour's painted model from the photos
+ * a photoreal upload left on the server. Separate from the photoreal jobs, whose photos it borrows.
+ */
+export interface RemasterJob {
+  id: string;
+  propertyId: string;
+  tourId: string | null;
+  userId: string;
+  /** The photoreal upload whose photos it works from. */
+  inputsJobId: string | null;
+  status: RemasterStatus;
+  /** What the worker is doing ("downloading", "skins", "fill", "uploading") and how far along (0–1). */
+  stage: string | null;
+  progress: number;
+  message: string | null;
+  modelUrl: string | null;
+  stats: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export type RemasterJobUpdate = Partial<Pick<RemasterJob, "status" | "stage" | "progress" | "message" | "modelUrl" | "stats" | "startedAt" | "finishedAt">>;
 
 export interface AppUser {
   id: string;

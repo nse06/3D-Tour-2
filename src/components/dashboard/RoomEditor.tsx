@@ -25,6 +25,8 @@ interface Props {
   splatUrl?: string | null;
   /** Where those photos were taken (photoreal shows near them). */
   splatSpots?: SplatSpot[] | null;
+  /** The painted model rebuilt by the remaster GPU (docs/remaster.md). */
+  remasterUrl?: string | null;
   initialSpace: TourSpace;
   initialAppearance: TourAppearance;
 }
@@ -34,7 +36,16 @@ interface Props {
  * in each room. (With iPhone scans this happens automatically; this editor is
  * for manual uploads and for fine-tuning.)
  */
-export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, splatUrl = null, splatSpots = null, initialSpace, initialAppearance }: Props) {
+export function RoomEditor({
+  propertyId,
+  assetUrl,
+  cleanAssetUrl = null,
+  splatUrl = null,
+  splatSpots = null,
+  remasterUrl = null,
+  initialSpace,
+  initialAppearance,
+}: Props) {
   const router = useRouter();
   const apiRef = useRef<ViewerApi | null>(null);
   const [space, setSpace] = useState<TourSpace>(initialSpace);
@@ -315,6 +326,8 @@ export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, splatUr
               splatUrl={splatUrl}
               splatSpots={splatSpots}
               photoreal={appearance === "photoreal"}
+              remasterUrl={remasterUrl}
+              remastered={appearance === "remastered"}
               onSwitchError={(m) => flash("error", `That view couldn't be loaded: ${m}`)}
               effects
             />
@@ -338,6 +351,9 @@ export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, splatUr
                 ? ([
                     ...(splatUrl
                       ? ([["photoreal", "Photoreal", "Buyers start with the photoreal walkthrough (they can switch to the photos on the model)"]] as const)
+                      : []),
+                    ...(remasterUrl
+                      ? ([["remastered", "Remastered", "Buyers start with the remastered model (rebuilt by the AI from every photo)"]] as const)
                       : []),
                     ["captured", "Photos on", "Buyers start with your photos painted on the model (they can turn them off)"],
                     ["studio", "Photos off", "Buyers start with the clean 3D model (they can turn the photos on)"],
@@ -365,9 +381,11 @@ export function RoomEditor({ propertyId, assetUrl, cleanAssetUrl = null, splatUr
                         "ok",
                         value === "photoreal"
                           ? "Buyers start with the photoreal walkthrough"
-                          : value === "captured"
-                            ? "Buyers start with the photos on"
-                            : "Buyers start with the photos off",
+                          : value === "remastered"
+                            ? "Buyers start with the remastered model"
+                            : value === "captured"
+                              ? "Buyers start with the photos on"
+                              : "Buyers start with the photos off",
                       );
                     else flash("ok", value === "captured" ? "Showing the capture as scanned" : "Using studio lighting");
                   }}

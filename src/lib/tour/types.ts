@@ -71,9 +71,10 @@ export type CaptureSource = "demo" | "upload" | "ios_scan";
  * like Polycam or Scaniverse), so the model is shown unlit, exactly as scanned.
  * "photoreal": start with the trained splats (docs/photoreal.md); the painted
  * model, unlit as "captured", stays one switch away (and stands in until the
- * splats exist).
+ * splats exist). "remastered": the painted model rebuilt by the remaster GPU
+ * (docs/remaster.md), unlit as "captured", in its place.
  */
-export type TourAppearance = "studio" | "captured" | "photoreal";
+export type TourAppearance = "studio" | "captured" | "photoreal" | "remastered";
 
 export interface PropertyInfo {
   slug: string;
@@ -103,6 +104,8 @@ export interface TourData {
   splatUrl: string | null;
   /** Where those photos were taken: photoreal is shown near them, the painted model elsewhere. */
   splatSpots: SplatSpot[] | null;
+  /** The painted model rebuilt by the remaster GPU (docs/remaster.md), in the same frame. */
+  remasterUrl: string | null;
   source: CaptureSource;
   appearance: TourAppearance;
   space: TourSpace;

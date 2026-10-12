@@ -46,6 +46,8 @@ interface Props {
   shareUrl?: string | null;
   /** The realtor's preview: versions of the photoreal splats to switch between (buyers see one). */
   splatVersions?: SplatVersion[];
+  /** The realtor's preview: switch between the painted and the remastered model (docs/remaster.md). */
+  compareRemaster?: boolean;
 }
 
 const FALLBACK_START: Waypoint = { position: [0, 1.6, 0], yaw: 0, pitch: 0 };
@@ -67,7 +69,7 @@ const noopSubscribe = () => () => {};
 /** Seconds spent looking around each room during the guided autoplay. */
 const DWELL_MS = 5200;
 
-export default function TourViewer({ data, banner, shareUrl, splatVersions }: Props) {
+export default function TourViewer({ data, banner, shareUrl, splatVersions, compareRemaster = false }: Props) {
   const { property, space } = data;
   const floors = useMemo(() => sortedFloors(space), [space]);
   const order = useMemo(() => walkthroughOrder(space), [space]);
@@ -132,6 +134,40 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions }: Pr
       setToast("Up close: the photos painted on the model — photoreal returns as you step back");
     }
   }, []);
+  // The remastered model (docs/remaster.md): in place of the painted one when the realtor chose it for
+  // buyers; in the realtor's preview, a switch between the two.
+  const [remastered, setRemastered] = useState(!!data.remasterUrl && data.appearance === "remastered");
+  const [remasterFailed, setRemasterFailed] = useState(false);
+  const onRemasterError = useCallback(() => {
+    setRemasterFailed(true);
+    setRemastered(false);
+    setToast("The remastered model couldn't be loaded");
+  }, []);
+  const modelSwitch =
+    compareRemaster && data.remasterUrl && !remasterFailed && photos && !photoreal ? (
+      <div className="glass flex h-11 items-center gap-0.5 rounded-full p-1" role="group" aria-label="Model version">
+        {(
+          [
+            [false, "Painted"],
+            [true, "Remastered"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={label}
+            onClick={() => {
+              if (value === remastered) return;
+              setRemastered(value);
+              setToast(value ? "Remastered: rebuilt by the AI from every photo" : "Painted: the photos as the phone painted them");
+            }}
+            aria-pressed={value === remastered}
+            aria-label={`${label} model`}
+            className={`h-9 rounded-full px-3 text-[12px] font-medium transition ${value === remastered ? "bg-white text-neutral-900" : "text-white/80 hover:bg-white/15 hover:text-white"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    ) : null;
   // The realtor's preview: which version of the photoreal splats (docs/photoreal.md §3.1). In the
   // bottom bar on wide screens, in a row of its own above it on a phone's.
   const versionSwitch =
@@ -315,6 +351,9 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions }: Pr
             setToast(startWithPhotos ? "The clean model couldn't be loaded" : "The photos couldn't be loaded");
           }}
           appearance={data.appearance}
+          remasterUrl={data.remasterUrl}
+          remastered={remastered}
+          onRemasterError={onRemasterError}
           splatUrl={splatUrl}
           photoreal={photoreal}
           onSplatState={onSplatState}
@@ -416,7 +455,9 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions }: Pr
         </div>
       )}
 
-      {entered && versionSwitch && <div className="absolute inset-x-0 bottom-[72px] z-20 flex justify-center md:hidden">{versionSwitch}</div>}
+      {entered && (versionSwitch || modelSwitch) && (
+        <div className="absolute inset-x-0 bottom-[72px] z-20 flex justify-center md:hidden">{versionSwitch ?? modelSwitch}</div>
+      )}
 
       {/* Bottom controls */}
       {entered && order.length > 0 && (
@@ -481,6 +522,7 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions }: Pr
             </button>
           )}
           {versionSwitch && <div className="hidden md:flex">{versionSwitch}</div>}
+          {modelSwitch && <div className="hidden md:flex">{modelSwitch}</div>}
           {hasClean && !photoreal && (
             <button
               onClick={() => {

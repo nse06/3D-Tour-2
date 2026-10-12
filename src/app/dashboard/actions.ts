@@ -14,7 +14,18 @@ import { adminRepositoryUnavailableReason, bundleToTourData, getAdminRepository,
 import type { PropertyInput } from "@/lib/data/types";
 import { DEMO_ASSET_URL, DEMO_COVER_URL, demoManifest } from "@/lib/demo";
 import { ingestCapture } from "@/lib/ingest";
-import { deleteListingPhotos, deletePhotos, dispatchJob, gpuConfigured, inputNames, PHOTOS_GONE, photosJobId, photosOnServer, WAITING_FOR_GPU } from "@/lib/photoreal";
+import {
+  deleteListingPhotos,
+  deletePhotos,
+  dispatchJob,
+  gpuConfigured,
+  inputNames,
+  PHOTOS_GONE,
+  photosJobId,
+  photosOnServer,
+  WAITING_FOR_GPU,
+} from "@/lib/photoreal";
+import { dispatchRemaster, NO_PHOTOS, photosForRemaster, remasterBusy, remasterConfigured, WAITING_FOR_REMASTER_GPU } from "@/lib/remaster";
 import { manifestToSpace } from "@/lib/tour/scan-manifest";
 import { newId, parseSpace } from "@/lib/tour/space";
 import type { TourAppearance, TourData } from "@/lib/tour/types";
@@ -242,13 +253,19 @@ export async function saveSpaceAction(propertyId: string, space: unknown): Promi
 
 export async function setAppearanceAction(propertyId: string, appearance: TourAppearance): Promise<ActionResult> {
   const user = await requireUser();
-  if (appearance !== "studio" && appearance !== "captured" && appearance !== "photoreal") return { ok: false, error: "Unknown appearance." };
+  if (appearance !== "studio" && appearance !== "captured" && appearance !== "photoreal" && appearance !== "remastered")
+    return { ok: false, error: "Unknown appearance." };
   try {
-    await (await getRepository()).setAppearance(user.id, propertyId, appearance);
+    const repo = await getRepository();
+    if (appearance === "remastered" && !(await repo.getProperty(user.id, propertyId))?.tour?.remasterUrl) {
+      return { ok: false, error: "Remaster the scan first: there's no remastered model yet." };
+    }
+    await repo.setAppearance(user.id, propertyId, appearance);
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
   revalidatePath(`/dashboard/properties/${propertyId}`);
+  revalidatePath(`/dashboard/properties/${propertyId}/preview`);
   return { ok: true };
 }
 
@@ -367,9 +384,74 @@ export async function deletePhotorealPhotosAction(propertyId: string): Promise<A
     if (latest.status === "uploading" || latest.status === "queued" || latest.status === "running") {
       return { ok: false, error: "The photos are in use: wait until the walkthrough is ready." };
     }
+    const remaster = await (await getRepository()).latestRemasterJob(user.id, propertyId).catch(() => null);
+    if (remaster && remasterBusy(remaster) && remaster.inputsJobId === photosJobId(latest)) {
+      return { ok: false, error: "The photos are in use: wait until the remastered model is ready." };
+    }
     await deletePhotos(await getAdminRepository(), latest);
     revalidatePath(`/dashboard/properties/${propertyId}`);
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Remastered models (docs/remaster.md)
+// ---------------------------------------------------------------------------
+
+/**
+ * Remasters the listing's scan from the photos kept on the server: a new job for the remaster GPU.
+ * Covered by the listing's photoreal (one look made from the photos, any version of it); otherwise the
+ * realtor pays first, as for photoreal, and starts it again after.
+ */
+export async function startRemasterAction(propertyId: string): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    const repo = await getRepository();
+    const bundle = await repo.getProperty(user.id, propertyId);
+    const tour = bundle?.tour;
+    if (!tour || tour.source !== "ios_scan" || !tour.cleanAssetUrl) return { ok: false, error: "Remastering works on photo scans from Atrium Capture." };
+    const admin = await getAdminRepository();
+    const latest = await repo.latestRemasterJob(user.id, propertyId);
+    if (latest && latest.tourId === tour.id && latest.status === "running") {
+      // A GPU that stopped reporting for hours isn't coming back: that job is written off.
+      if (Date.now() - Date.parse(latest.updatedAt) < 3 * 3600_000) return { ok: false, error: "The remastered model is already on its way." };
+      await admin.updateRemasterJob(latest.id, { status: "failed", stage: null, message: "The GPU stopped reporting.", finishedAt: new Date().toISOString() });
+    }
+    if (!remasterConfigured()) return { ok: false, error: WAITING_FOR_REMASTER_GPU };
+    const upload = await photosForRemaster(repo, user.id, propertyId, tour);
+    if (!upload) return { ok: false, error: NO_PHOTOS };
+    const origin = requestOrigin(await headers());
+    const pay = await claimOrCheckout(
+      () => photorealAccess(user, propertyId),
+      (price) =>
+        checkoutUrl({
+          payer: user,
+          price,
+          propertyId,
+          description: `Photoreal walkthrough: ${bundle!.property.addressLine}`,
+          origin,
+          cancelPath: `/dashboard/properties/${propertyId}`,
+        }),
+    );
+    if (pay) return { ok: false, checkoutUrl: pay };
+    // The admin repository: the job's columns are the server's to write. A job still waiting (no GPU
+    // then, or it didn't take it) for the same photos is handed over again rather than doubled; one
+    // for older photos gives way to a new one.
+    const waiting = latest && latest.tourId === tour.id && latest.status === "queued" ? latest : null;
+    if (waiting && waiting.inputsJobId !== upload.id) {
+      await admin.updateRemasterJob(waiting.id, {
+        status: "failed",
+        message: "Newer photos arrived; remastered from those instead.",
+        finishedAt: new Date().toISOString(),
+      });
+    }
+    const job = waiting?.inputsJobId === upload.id ? waiting : await admin.createRemasterJob(user.id, propertyId, upload.id);
+    if (!job) return { ok: false, error: "Send the scan to Atrium first." };
+    const started = await dispatchRemaster(admin, job, upload, tour, serverBaseUrl(await headers()).url);
+    revalidatePath(`/dashboard/properties/${propertyId}`);
+    return started.status === "running" ? { ok: true } : { ok: false, error: started.message ?? "The GPU didn't take the job." };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }

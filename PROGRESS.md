@@ -61,6 +61,19 @@ Branch: `claude/3d-real-estate-tour-mvp-pxgyqw`
 | AI-enhanced version (`enhance.py`): after the faithful splats are delivered, NVIDIA Fixer (commercial license; Difix3D+'s successor) cleans up views where buyers walk, 3 rounds moving further from the photos, and the splats train on them; second `.spz`; listing page shows it and picks what buyers see; Faithful/AI switch in the realtor's preview | built — CPU tests with a stand-in fixer (7 new, 31 worker tests in all; the faithful version identical with and without the AI phase); site e2e on a prod build (30 checks: ask, progress, upload, choice, preview switch on desktop and phone, failure, old worker). GPU round 6 (synthetic apartment): the Fixer builds, loads and cleans render glitches (a mottled fridge panel, window frames), but tinted plain walls (−0.4 to −1.2 dB where buyers walk); with the render's shading put back on the cleaned views (tone lock), round 7: equal or slightly better than the faithful version on every kind of view (+0.01 to +0.11 dB), cleanups kept, about 3 more minutes a job. Not deployed yet |
 | Viewer: **Photoreal** switch (Spark 2.2.0, loaded on first use), photoreal as a starting look | done — in Chromium the splats sit on the painted model with its colors (seed-disc splats 26–46 dB against the painted view at 6 spots) |
 
+## Remastered models ([docs/remaster.md](docs/remaster.md))
+
+A separate process from photoreal: the painted model rebuilt on a GPU from the photos kept on the server.
+
+| Piece | Status |
+|-------|--------|
+| Worker foundation (`worker/remaster`): read/write the model file, ray cast every photo (Open3D), synthetic room with exact ground truth | done — CPU tests |
+| Idea 2, trained skins: atlases learned from all photos at 2× texel density (per-photo color and alignment, motion smear, edges/grazing/people ignored, mipmapped lookups) | done — on the synthetic room, error on new viewpoints 0.129 → 0.074 (truth at the phone's texel size 0.055); GPU eval next |
+| Idea 3, fill for unseen spots: flat charts' holes inpainted by LaMa (pull-push in tests) | built — CPU tests with the stand-in |
+| Job protocol, Modal app `atrium-remaster` (A10G + 8 CPUs), `remaster_folder` entrypoint | built — job tested against a stand-in site; not deployed yet |
+| Site: `remaster_jobs`, `tours.remaster_url`, the `remastered` look, Remaster with AI panel, preview switch Painted/Remastered, look picker, photos kept while a remaster uses them | done — e2e on a prod build with stand-in GPUs (39 checks) plus the photoreal flows again; Supabase store with RLS (17 checks) |
+| Ideas 1, 4, 5, 6, 7, 8 (photo cleanup, Fixer views, AI furniture, AI depth, trim, photo spots) and build 13's room layout | planned — models chosen for commercial licenses (docs/remaster.md §6) |
+
 ## Billing ([docs/billing.md](docs/billing.md))
 
 | Piece | Status |

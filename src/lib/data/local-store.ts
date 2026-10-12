@@ -17,6 +17,8 @@ import type {
   PhotorealJob,
   PhotorealJobUpdate,
   Property,
+  RemasterJob,
+  RemasterJobUpdate,
   PropertyBundle,
   PropertyInput,
   PropertySummary,
@@ -32,9 +34,10 @@ interface Db {
   rooms: RoomRecord[];
   captureSessions: CaptureSession[];
   photorealJobs: PhotorealJob[];
+  remasterJobs: RemasterJob[];
 }
 
-const empty = (): Db => ({ version: 1, properties: [], tours: [], floors: [], rooms: [], captureSessions: [], photorealJobs: [] });
+const empty = (): Db => ({ version: 1, properties: [], tours: [], floors: [], rooms: [], captureSessions: [], photorealJobs: [], remasterJobs: [] });
 
 /** A copy of a job, with the fields jobs saved before they existed. */
 const withJobDefaults = (job: PhotorealJob): PhotorealJob => ({
@@ -60,6 +63,7 @@ async function readDb(): Promise<Db> {
       cleanAssetUrl: t.cleanAssetUrl ?? null,
       splatUrl: t.splatUrl ?? null,
       splatSpots: t.splatSpots ?? null,
+      remasterUrl: t.remasterUrl ?? null,
       scanPackageUrl: t.scanPackageUrl ?? null,
       appearance: t.appearance ?? "studio",
     }));
@@ -182,6 +186,7 @@ export class LocalRepository implements Repository {
       db.tours = db.tours.filter((t) => !tourIds.has(t.id));
       db.captureSessions = db.captureSessions.filter((s) => s.propertyId !== propertyId);
       db.photorealJobs = db.photorealJobs.filter((j) => j.propertyId !== propertyId);
+      db.remasterJobs = db.remasterJobs.filter((j) => j.propertyId !== propertyId);
       db.properties = db.properties.filter((p) => p.id !== propertyId);
     });
   }
@@ -213,6 +218,7 @@ export class LocalRepository implements Repository {
         replaceSpace(db, previous, { floors: [], rooms: [], links: [], eyeHeight: 1.6 });
         db.tours = db.tours.filter((t) => t.id !== previous.id);
         for (const job of db.photorealJobs) if (job.tourId === previous.id) job.tourId = null;
+        for (const job of db.remasterJobs) if (job.tourId === previous.id) job.tourId = null;
       }
       const tour: Tour = {
         id: randomUUID(),
@@ -221,6 +227,7 @@ export class LocalRepository implements Repository {
         cleanAssetUrl: capture.cleanAssetUrl ?? null,
         splatUrl: null,
         splatSpots: null,
+        remasterUrl: null,
         assetFormat: capture.assetFormat,
         source: capture.source,
         scanPackageUrl: capture.scanPackageUrl ?? null,
@@ -370,6 +377,65 @@ export class LocalRepository implements Repository {
       if (!tour) return false;
       tour.splatUrl = splatUrl;
       tour.splatSpots = spots;
+      return true;
+    });
+  }
+
+  createRemasterJob(userId: string, propertyId: string, inputsJobId: string): Promise<RemasterJob | null> {
+    return mutate((db) => {
+      owned(db, userId, propertyId);
+      const tour = db.tours.find((t) => t.propertyId === propertyId);
+      if (!tour) return null;
+      const job: RemasterJob = {
+        id: randomUUID(),
+        propertyId,
+        tourId: tour.id,
+        userId,
+        inputsJobId,
+        status: "queued",
+        stage: null,
+        progress: 0,
+        message: null,
+        modelUrl: null,
+        stats: null,
+        createdAt: now(),
+        updatedAt: now(),
+        startedAt: null,
+        finishedAt: null,
+      };
+      db.remasterJobs.push(job);
+      return job;
+    });
+  }
+
+  async getRemasterJob(jobId: string): Promise<RemasterJob | null> {
+    return (await readDb()).remasterJobs.find((j) => j.id === jobId) ?? null;
+  }
+
+  updateRemasterJob(jobId: string, update: RemasterJobUpdate): Promise<RemasterJob | null> {
+    return mutate((db) => {
+      const job = db.remasterJobs.find((j) => j.id === jobId);
+      if (!job) return null;
+      for (const [key, value] of Object.entries(update)) if (value !== undefined) Object.assign(job, { [key]: value });
+      job.updatedAt = now();
+      return { ...job };
+    });
+  }
+
+  async latestRemasterJob(userId: string, propertyId: string): Promise<RemasterJob | null> {
+    return (await this.listRemasterJobs(userId, propertyId)).find((j) => j.tourId) ?? null;
+  }
+
+  async listRemasterJobs(userId: string, propertyId: string): Promise<RemasterJob[]> {
+    const jobs = (await readDb()).remasterJobs.filter((j) => j.propertyId === propertyId && j.userId === userId);
+    return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  attachRemaster(job: RemasterJob, modelUrl: string): Promise<boolean> {
+    return mutate((db) => {
+      const tour = db.tours.find((t) => t.id === job.tourId && t.propertyId === job.propertyId);
+      if (!tour) return false;
+      tour.remasterUrl = modelUrl;
       return true;
     });
   }

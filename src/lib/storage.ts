@@ -15,7 +15,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured, localDataDir, SUPABASE_BUCKET, supabasePublicKey, supabaseUrl } from "./data/config";
 
-export type UploadKind = "capture" | "cover" | "package" | "splat";
+export type UploadKind = "capture" | "cover" | "package" | "splat" | "remaster";
 
 export const UPLOAD_RULES: Record<UploadKind, { extensions: string[]; maxBytes: number }> = {
   capture: { extensions: ["glb", "gltf"], maxBytes: 250 * 1024 * 1024 },
@@ -24,6 +24,8 @@ export const UPLOAD_RULES: Record<UploadKind, { extensions: string[]; maxBytes: 
   package: { extensions: ["zip"], maxBytes: 1024 * 1024 * 1024 },
   // Photoreal splats (.spz) the GPU worker trained on a scan's photos (docs/photoreal.md).
   splat: { extensions: ["spz"], maxBytes: 500 * 1024 * 1024 },
+  // The painted model rebuilt by the remaster GPU (docs/remaster.md).
+  remaster: { extensions: ["glb"], maxBytes: 250 * 1024 * 1024 },
 };
 
 export const CONTENT_TYPES: Record<string, string> = {
@@ -113,7 +115,7 @@ export function extensionOf(filename: string): string {
   return filename.split(".").pop()?.toLowerCase() ?? "";
 }
 
-const KEY_FILE = /^(capture|cover|package|splat)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.([a-z0-9]+)$/;
+const KEY_FILE = /^(capture|cover|package|splat|remaster)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.([a-z0-9]+)$/;
 
 /** The kind of a storage key ("<userId>/<propertyId>/<kind>-<uuid>.<ext>"), or null if it isn't a valid key. */
 export function uploadKindOfKey(key: string): UploadKind | null {

@@ -6,6 +6,7 @@ import { CoverMaker } from "@/components/dashboard/CoverMaker";
 import { CoverUpload } from "@/components/dashboard/CoverUpload";
 import { PhoneCapturePanel } from "@/components/dashboard/PhoneCapturePanel";
 import { PhotorealPanel } from "@/components/dashboard/PhotorealPanel";
+import { RemasterPanel } from "@/components/dashboard/RemasterPanel";
 import { AttachDemoButton, DeletePropertyButton, PublishPanel } from "@/components/dashboard/PropertyActions";
 import { PropertyForm } from "@/components/dashboard/PropertyForm";
 import { ButtonLink, Card, StatusPill } from "@/components/ui";
@@ -14,6 +15,7 @@ import { photorealPricing, publishPricing } from "@/lib/billing/labels";
 import { getRepository } from "@/lib/data/repository";
 import { cityLine, formatPrice } from "@/lib/format";
 import { gpuConfigured, jobSummary, keptPhotos } from "@/lib/photoreal";
+import { photosForRemaster, remasterConfigured, remasterSummary } from "@/lib/remaster";
 import { sortedFloors } from "@/lib/tour/navigation";
 import { updatePropertyAction } from "../../actions";
 
@@ -49,6 +51,20 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
           return null;
         })
       : null;
+  // The remastered model (docs/remaster.md): its own job, from the photos photoreal left. A side show too.
+  const photoScan = tour?.source === "ios_scan" && !!tour.cleanAssetUrl;
+  const [remasterJob, remasterPhotos] = photoScan
+    ? await Promise.all([
+        repo.latestRemasterJob(user.id, id).catch((e) => {
+          console.error("remaster job lookup:", (e as Error).message);
+          return null;
+        }),
+        photosForRemaster(repo, user.id, id, tour!).catch((e) => {
+          console.error("remaster photos lookup:", (e as Error).message);
+          return null;
+        }),
+      ])
+    : [null, null];
   const live = p.published && !!tour?.published;
   const floors = space ? sortedFloors(space) : [];
   const roomCount = space?.rooms.length ?? 0;
@@ -193,6 +209,19 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
                         ? "faithful"
                         : null
                 }
+              />
+            </Card>
+          )}
+
+          {photoScan && (
+            <Card className="p-6">
+              <RemasterPanel
+                propertyId={p.id}
+                initialJob={remasterJob && remasterJob.tourId === tour!.id ? remasterSummary(remasterJob) : null}
+                gpuReady={remasterConfigured()}
+                photosReady={!!remasterPhotos}
+                hasRemaster={!!tour!.remasterUrl}
+                buyersSeeRemaster={tour!.appearance === "remastered" && !!tour!.remasterUrl}
               />
             </Card>
           )}

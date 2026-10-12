@@ -21,6 +21,8 @@ const REQUIRED_COLUMNS: [table: string, column: string][] = [
   ["tours", "clean_asset_url"],
   ["tours", "splat_url"],
   ["photoreal_jobs", "variants"],
+  ["tours", "remaster_url"],
+  ["remaster_jobs", "model_url"],
 ];
 
 const MISSING_TABLE = /PGRST205|42P01|schema cache|does not exist/i;

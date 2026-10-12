@@ -224,8 +224,8 @@ export async function deletePhotos(repo: Repository, job: PhotorealJob): Promise
 /**
  * A listing keeps one set of photos: its newest upload that has arrived. Older uploads' photos go
  * (those of older scans no longer match the model; an older upload of the same scan is the same
- * photos again), except while a job still waits for or trains on them. Run after an upload arrives
- * and after a job finishes.
+ * photos again), except while a job still waits for or works on them: a photoreal job, or a remaster
+ * job (lib/remaster.ts) that borrowed them. Run after an upload arrives and after a job finishes.
  */
 export async function pruneListingPhotos(repo: Repository, userId: string, propertyId: string): Promise<void> {
   const jobs = await repo.listPhotorealJobs(userId, propertyId);
@@ -233,6 +233,9 @@ export async function pruneListingPhotos(repo: Repository, userId: string, prope
   const newest = uploads.find((j) => j.status !== "uploading");
   if (!newest) return;
   const busy = new Set(jobs.filter((j) => j.status === "uploading" || j.status === "queued" || j.status === "running").map(photosJobId));
+  // A database without remaster jobs has none holding photos.
+  const remasters = await repo.listRemasterJobs(userId, propertyId).catch(() => []);
+  for (const r of remasters) if ((r.status === "queued" || r.status === "running") && r.inputsJobId) busy.add(r.inputsJobId);
   for (const old of uploads) {
     if (old.id === newest.id || busy.has(old.id) || old.createdAt > newest.createdAt) continue;
     await deletePhotos(repo, old).catch((e) => console.error(`photoreal: could not delete the photos of job ${old.id}:`, (e as Error).message));

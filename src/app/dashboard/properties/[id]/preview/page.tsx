@@ -30,6 +30,7 @@ export default async function PreviewPage(props: PageProps<"/dashboard/propertie
     <TourViewer
       data={data}
       splatVersions={versions}
+      compareRemaster={!!data.remasterUrl}
       shareUrl={live ? `/tour/${bundle.property.slug}` : null}
       banner={
         <div className="glass-strong flex items-center gap-3 rounded-full py-1.5 pl-4 pr-1.5 text-[13px] text-white">

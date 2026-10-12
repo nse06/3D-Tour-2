@@ -176,6 +176,12 @@ billing on, add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in Vercel and po
 `https://<your site>/api/stripe/webhook`. Stripe's products and prices are created on first use. The steps, the
 events to send, and how listings are covered are in [docs/billing.md](docs/billing.md).
 
+### Remastered models
+
+A separate GPU process rebuilds a photo scan's painted model from the photos kept on the server (skins learned from
+every photo, spots no photo saw filled in by an AI); the realtor compares it in the preview and chooses what buyers
+see. Its own Modal app and `REMASTER_GPU_URL`: [docs/remaster.md](docs/remaster.md).
+
 ---
 
 ## Project structure

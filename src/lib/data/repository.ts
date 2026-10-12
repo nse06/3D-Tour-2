@@ -9,6 +9,8 @@ import type {
   PhotorealJob,
   PhotorealJobUpdate,
   Property,
+  RemasterJob,
+  RemasterJobUpdate,
   PropertyBundle,
   PropertyInput,
   PropertySummary,
@@ -55,6 +57,19 @@ export interface Repository {
   attachSplats(job: PhotorealJob, splatUrl: string, spots: SplatSpot[] | null): Promise<boolean>;
   /** Which version of the splats buyers see (another version of the same photos: the spots stay). */
   setSplatUrl(userId: string, propertyId: string, splatUrl: string): Promise<void>;
+
+  // Remastered models (docs/remaster.md): separate jobs, the photos borrowed from a photoreal upload.
+  /** A new job for the property's current tour from `inputsJobId`'s photos, or null without a tour. */
+  createRemasterJob(userId: string, propertyId: string, inputsJobId: string): Promise<RemasterJob | null>;
+  /** Any job by id: callers check it against the worker's secret. */
+  getRemasterJob(jobId: string): Promise<RemasterJob | null>;
+  updateRemasterJob(jobId: string, update: RemasterJobUpdate): Promise<RemasterJob | null>;
+  /** The latest job for the scan the listing shows now. */
+  latestRemasterJob(userId: string, propertyId: string): Promise<RemasterJob | null>;
+  /** Every job of the listing, newest first (older scans' too). */
+  listRemasterJobs(userId: string, propertyId: string): Promise<RemasterJob[]>;
+  /** Puts a finished remastered model on the job's tour; false if that tour has since been replaced. */
+  attachRemaster(job: RemasterJob, modelUrl: string): Promise<boolean>;
 }
 
 let repo: Promise<Repository> | null = null;
@@ -120,8 +135,10 @@ export function bundleToTourData(bundle: PropertyBundle): TourData | null {
     cleanAssetUrl: tour.cleanAssetUrl ?? null,
     splatUrl: tour.splatUrl ?? null,
     splatSpots: tour.splatUrl ? (tour.splatSpots ?? null) : null,
+    remasterUrl: tour.remasterUrl ?? null,
     source: tour.source,
-    appearance: tour.appearance ?? "studio",
+    // A look whose model is missing falls back to the painted one.
+    appearance: tour.appearance === "remastered" && !tour.remasterUrl ? "captured" : (tour.appearance ?? "studio"),
     space,
   };
 }

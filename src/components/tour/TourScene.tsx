@@ -26,6 +26,12 @@ export interface TourSceneProps {
   onShowingClean?: (clean: boolean) => void;
   /** The model asked for by a switch couldn't be loaded; the starting one stays on screen. */
   onSwitchError?: (message: string) => void;
+  /** The painted model rebuilt by the remaster GPU (docs/remaster.md), in the same frame. */
+  remasterUrl?: string | null;
+  /** Show the remastered model in place of the painted one (loaded the first time it's asked for). */
+  remastered?: boolean;
+  /** The remastered model couldn't be loaded; the model before stays on screen. */
+  onRemasterError?: (message: string) => void;
   /** Photoreal Gaussian splats (.spz) in the model's frame (docs/photoreal.md). */
   splatUrl?: string | null;
   /** Show the splats instead of the models (loaded the first time it's asked for). */
@@ -80,6 +86,10 @@ export default function TourScene(props: TourSceneProps) {
   );
 }
 
+/** The models of the same rooms a tour can show: painted (photos on), clean (photos off), remastered. */
+type ModelSlot = "painted" | "clean" | "remaster";
+const MODEL_SLOTS: ModelSlot[] = ["painted", "clean", "remaster"];
+
 function configureLoader(loader: GLTFLoader) {
   const draco = new DRACOLoader();
   draco.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.7/");
@@ -120,6 +130,9 @@ function PropertyModel({
   photos = true,
   onShowingClean,
   onSwitchError,
+  remasterUrl = null,
+  remastered = false,
+  onRemasterError,
   splatUrl = null,
   photoreal = false,
   onSplatState,
@@ -145,22 +158,32 @@ function PropertyModel({
   const modelRef = useRef<THREE.Object3D | null>(null);
   // The models, shown unless the photoreal splats cover them (SplatLayer decides frame by frame).
   const modelsRef = useRef<THREE.Group>(null);
-  // The model asked for at the start loads with the scene (and drives the progress bar); the
-  // other one loads the first time the visitor switches, while this one stays on screen.
+  // Up to three models of the same rooms: the painted one, the clean one (photos off) and the
+  // remastered one. The one asked for at the start loads with the scene (and drives the progress
+  // bar); the others load the first time the visitor switches, while the one before stays on screen.
   const wantClean = !!cleanAssetUrl && !photos;
-  const [primaryIsClean] = useState(wantClean);
-  const primaryUrl = primaryIsClean && cleanAssetUrl ? cleanAssetUrl : assetUrl;
-  const alternateUrl = primaryIsClean ? assetUrl : cleanAssetUrl;
-  const gltf = useLoader(GLTFLoader, primaryUrl, configureLoader, (event) => {
+  const wanted: ModelSlot = wantClean ? "clean" : remasterUrl && remastered ? "remaster" : "painted";
+  const [primarySlot] = useState<ModelSlot>(wanted);
+  const urlOf = (slot: ModelSlot) => (slot === "clean" ? cleanAssetUrl : slot === "remaster" ? remasterUrl : assetUrl);
+  const gltf = useLoader(GLTFLoader, urlOf(primarySlot) ?? assetUrl, configureLoader, (event) => {
     if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
   });
-  const [alternate, setAlternate] = useState<THREE.Object3D | null>(null);
-  const [alternateAsked, setAlternateAsked] = useState(false);
-  const [alternateFailed, setAlternateFailed] = useState(false);
-  if (wantClean !== primaryIsClean && !alternateAsked && !alternateFailed) setAlternateAsked(true);
-  const showingClean = wantClean === primaryIsClean || !alternate ? primaryIsClean : wantClean;
-  const showingPrimary = showingClean === primaryIsClean;
-  const onScreen = showingPrimary ? gltf.scene : alternate;
+  const [others, setOthers] = useState<Partial<Record<ModelSlot, THREE.Object3D>>>({});
+  const [asked, setAsked] = useState<Partial<Record<ModelSlot, boolean>>>({});
+  const [failed, setFailed] = useState<Partial<Record<ModelSlot, boolean>>>({});
+  if (wanted !== primarySlot && !asked[wanted] && !failed[wanted] && urlOf(wanted)) setAsked((a) => ({ ...a, [wanted]: true }));
+  const scenes: Partial<Record<ModelSlot, THREE.Object3D>> = { ...others, [primarySlot]: gltf.scene };
+  const showing: ModelSlot = scenes[wanted] ? wanted : primarySlot;
+  const showingClean = showing === "clean";
+  const onScreen = scenes[showing] ?? gltf.scene;
+  // One stable callback per model (AlternateModel reports once per load).
+  const onReady = useMemo(
+    () =>
+      Object.fromEntries(
+        MODEL_SLOTS.map((slot) => [slot, (scene: THREE.Object3D) => setOthers((o) => (o[slot] === scene ? o : { ...o, [slot]: scene }))]),
+      ) as Record<ModelSlot, (scene: THREE.Object3D) => void>,
+    [],
+  );
 
   useLayoutEffect(() => {
     modelRef.current = onScreen;
@@ -180,13 +203,18 @@ function PropertyModel({
   }, [gltf]);
 
   // With a clean model to switch to, the photo model always shows as captured (unlit); without
-  // one, `appearance` picks its lighting.
-  const photoScene = primaryIsClean ? alternate : gltf.scene;
-  const photoLook: TourAppearance = cleanAssetUrl ? "captured" : appearance;
+  // one, `appearance` picks its lighting. The remastered model is a photo model too.
+  const photoScene = scenes.painted ?? null;
+  const remasterScene = scenes.remaster ?? null;
+  const photoLook: TourAppearance = cleanAssetUrl || appearance === "remastered" ? "captured" : appearance;
   useLayoutEffect(() => {
     if (!photoScene || photoLook !== "captured") return;
     return showUnlit(photoScene);
   }, [photoScene, photoLook]);
+  useLayoutEffect(() => {
+    if (!remasterScene) return;
+    return showUnlit(remasterScene);
+  }, [remasterScene]);
 
   // Photoreal splats load the first time they're asked for; until they're ready (or if they
   // fail) the models stay on screen. The models keep doing the walking either way: the rig picks
@@ -197,30 +225,36 @@ function PropertyModel({
   if (photoreal && splatUrl && !splatAsked) setSplatAsked(true);
   const showSplats = photoreal && splatReady;
 
-  const captured = showSplats || (showingClean ? "studio" : photoLook) === "captured";
+  const captured = showSplats || showing === "remaster" || (showingClean ? "studio" : photoLook) === "captured";
   return (
     <>
       {!captured && <EnvironmentLighting intensity={hasLights ? 0.9 : 1.15} />}
       {!captured && <hemisphereLight args={["#fff8ee", "#b9ab98", hasLights ? 0.5 : 0.75]} />}
       <group ref={modelsRef}>
-        <group visible={showingPrimary}>
+        <group visible={showing === primarySlot}>
           <Bvh firstHitOnly>
             <primitive object={gltf.scene} />
           </Bvh>
         </group>
-        {alternateAsked && alternateUrl && (
-          <SceneErrorBoundary
-            onError={(message) => {
-              setAlternateFailed(true);
-              setAlternateAsked(false);
-              onSwitchError?.(message);
-            }}
-          >
-            <Suspense fallback={null}>
-              <AlternateModel url={alternateUrl} visible={!showingPrimary} onReady={setAlternate} />
-            </Suspense>
-          </SceneErrorBoundary>
-        )}
+        {MODEL_SLOTS.map((slot) => {
+          const url = urlOf(slot);
+          if (slot === primarySlot || !asked[slot] || !url) return null;
+          return (
+            <SceneErrorBoundary
+              key={slot}
+              onError={(message) => {
+                setFailed((f) => ({ ...f, [slot]: true }));
+                setAsked((a) => ({ ...a, [slot]: false }));
+                if (slot === "remaster" && onRemasterError) onRemasterError(message);
+                else onSwitchError?.(message);
+              }}
+            >
+              <Suspense fallback={null}>
+                <AlternateModel url={url} visible={showing === slot} onReady={onReady[slot]} />
+              </Suspense>
+            </SceneErrorBoundary>
+          );
+        })}
       </group>
       {splatAsked && splatUrl && (
         <SplatLayer

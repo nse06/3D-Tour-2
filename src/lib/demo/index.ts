@@ -32,6 +32,7 @@ export function sampleTour(): TourData {
     cleanAssetUrl: null,
     splatUrl: null,
     splatSpots: null,
+    remasterUrl: null,
     source: "demo",
     appearance: "studio",
     space: manifestToSpace(demoManifest(), (kind, key) => `${kind}-${key}`),
