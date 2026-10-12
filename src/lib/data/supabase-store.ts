@@ -571,6 +571,14 @@ export class SupabaseRepository implements Repository {
     });
   }
 
+  async setSplatUrl(userId: string, propertyId: string, splatUrl: string): Promise<void> {
+    const db = await this.client();
+    await this.ownedProperty(db, userId, propertyId);
+    const tour = await this.latestTour(db, propertyId);
+    if (!tour) throw new NotFoundError("Tour");
+    check(await db.from("tours").update({ splat_url: splatUrl }).eq("id", tour.id).eq("property_id", propertyId));
+  }
+
   async listPhotorealJobs(userId: string, propertyId: string): Promise<PhotorealJob[]> {
     const db = await this.client();
     return withMigrations(async () => {

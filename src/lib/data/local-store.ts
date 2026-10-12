@@ -355,6 +355,15 @@ export class LocalRepository implements Repository {
     return jobs.map(withJobDefaults).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  setSplatUrl(userId: string, propertyId: string, splatUrl: string): Promise<void> {
+    return mutate((db) => {
+      owned(db, userId, propertyId);
+      const tour = db.tours.find((t) => t.propertyId === propertyId);
+      if (!tour) throw new NotFoundError("Tour");
+      tour.splatUrl = splatUrl;
+    });
+  }
+
   attachSplats(job: PhotorealJob, splatUrl: string, spots: SplatSpot[] | null): Promise<boolean> {
     return mutate((db) => {
       const tour = db.tours.find((t) => t.id === job.tourId && t.propertyId === job.propertyId);

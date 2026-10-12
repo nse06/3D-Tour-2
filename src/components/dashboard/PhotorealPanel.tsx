@@ -1,11 +1,12 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Eye, Loader2, Play, RefreshCw, RotateCcw, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Loader2, Play, RefreshCw, RotateCcw, Sparkles, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { deletePhotorealPhotosAction, retrainPhotorealAction, startPhotorealAction, type ActionResult } from "@/app/dashboard/actions";
+import { choosePhotorealVersionAction, deletePhotorealPhotosAction, retrainPhotorealAction, startPhotorealAction, type ActionResult } from "@/app/dashboard/actions";
 import { Button, ButtonLink } from "@/components/ui";
 import { PHOTOREAL_UNPAID, type PhotorealPricing } from "@/lib/billing/plans";
+import type { PhotorealVariant } from "@/lib/data/types";
 
 export interface PhotorealJobView {
   id: string;
@@ -20,6 +21,8 @@ export interface PhotorealJobView {
   startedAt: string | null;
   finishedAt: string | null;
   stats: Record<string, unknown> | null;
+  /** The AI-enhanced version of the same photos (docs/photoreal.md §3.1). */
+  ai: PhotorealVariant | null;
 }
 
 const POLL_MS = 5000;
@@ -46,6 +49,7 @@ export function PhotorealPanel({
   hasPhotoScan,
   pricing,
   photos,
+  buyersSee,
 }: {
   propertyId: string;
   initialJob: PhotorealJobView | null;
@@ -55,13 +59,15 @@ export function PhotorealPanel({
   pricing: PhotorealPricing | null;
   /** The latest job's photos: still on the server (for training again), and how big. */
   photos: { kept: boolean; bytes: number } | null;
+  /** Which of the job's versions buyers see (null: neither, e.g. a newer scan since). */
+  buyersSee: "faithful" | "ai" | null;
 }) {
   const router = useRouter();
   const [job, setJob] = useState(initialJob);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [leaving, setLeaving] = useState(false);
-  const moving = job && (job.status === "uploading" || job.status === "queued" || job.status === "running");
+  const moving = job && (job.status === "uploading" || job.status === "queued" || job.status === "running" || job.ai?.status === "running");
 
   // While the job moves, follow it; once it's done, show the new look on the page.
   useEffect(() => {
@@ -72,8 +78,11 @@ export function PhotorealPanel({
       if (stopped || !res?.ok) return;
       const next = (await res.json()).job as PhotorealJobView | null;
       if (!next) return;
-      setJob(next);
-      if (next.status === "done") router.refresh();
+      setJob((previous) => {
+        // Done, or its AI-enhanced version just finished: show the new look on the page.
+        if ((next.status === "done" && previous?.status !== "done") || (next.ai?.status !== "running" && previous?.ai?.status === "running")) router.refresh();
+        return next;
+      });
     }, POLL_MS);
     return () => {
       stopped = true;
@@ -97,6 +106,7 @@ export function PhotorealPanel({
       router.refresh();
     });
   const start = () => run(startPhotorealAction, "The GPU didn't take the job.");
+  const choose = (version: "faithful" | "ai") => run((id) => choosePhotorealVersionAction(id, version), "That version couldn't be chosen.");
   const retrain = () => run(retrainPhotorealAction, "The GPU didn't take the job.");
   const deletePhotos = () => {
     if (!window.confirm("Delete the photos kept for training again? The walkthrough stays; training again would need the photos sent from the phone.")) return;
@@ -198,6 +208,7 @@ export function PhotorealPanel({
           <ButtonLink href={`/dashboard/properties/${propertyId}/preview`} variant="secondary" size="sm">
             <Eye className="size-3.5" /> Walk through it
           </ButtonLink>
+          {job.ai && <AiVersion ai={job.ai} buyersSee={buyersSee} busy={busy} onChoose={choose} />}
           <TrainAgain photos={photos} gpuReady={gpuReady} busy={busy} pay={pay} payLabel={pricing?.payLabel} onRetrain={retrain} onDelete={deletePhotos} />
         </div>
       )}
@@ -216,6 +227,67 @@ export function PhotorealPanel({
       )}
 
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * The AI-enhanced version (docs/photoreal.md §3.1): on its way, or ready to compare with the faithful
+ * one and choose for buyers.
+ */
+function AiVersion({
+  ai,
+  buyersSee,
+  busy,
+  onChoose,
+}: {
+  ai: PhotorealVariant;
+  buyersSee: "faithful" | "ai" | null;
+  busy: boolean;
+  onChoose: (version: "faithful" | "ai") => void;
+}) {
+  return (
+    <div className="space-y-2 border-t border-linen pt-3">
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-ink">
+        <Wand2 className="size-3.5" /> AI-enhanced version
+      </p>
+      {ai.status === "running" && (
+        <>
+          <p className="flex items-center gap-2 text-xs text-neutral-600">
+            <Loader2 className="size-3.5 animate-spin" /> On its way — {Math.round(ai.progress * 100)}%. An AI model cleans up the views between the photo spots (haze,
+            smears, gaps) and the walkthrough learns from them; about 15 minutes.
+          </p>
+          <div className="h-1 overflow-hidden rounded-full bg-linen">
+            <div className="h-full rounded-full bg-gold transition-all" style={{ width: `${Math.max(3, ai.progress * 100)}%` }} />
+          </div>
+        </>
+      )}
+      {ai.status === "failed" && (
+        <p className="text-xs text-amber-700">It couldn&apos;t be made this time ({ai.message ?? "unknown error"}). The faithful version above is unaffected.</p>
+      )}
+      {ai.status === "done" && (
+        <>
+          <p className="text-xs text-neutral-500">
+            Two versions from the same photos. <b className="font-semibold text-neutral-700">Faithful</b> shows only what the photos saw;{" "}
+            <b className="font-semibold text-neutral-700">AI-enhanced</b> had an AI clean up the views between the photo spots, so it&apos;s smoother there and may
+            invent small details. Compare them in the walkthrough, then pick what buyers see:
+          </p>
+          <div className="inline-flex rounded-full bg-linen p-0.5" role="group" aria-label="What buyers see">
+            {(["faithful", "ai"] as const).map((version) => (
+              <button
+                key={version}
+                type="button"
+                onClick={() => buyersSee !== version && onChoose(version)}
+                disabled={busy}
+                aria-pressed={buyersSee === version}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${buyersSee === version ? "bg-white text-ink shadow-sm" : "text-neutral-500 hover:text-ink"}`}
+              >
+                {version === "ai" ? "AI-enhanced" : "Faithful"}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -251,7 +323,7 @@ function TrainAgain({
     <div className="space-y-2 border-t border-linen pt-3">
       <p className="text-xs text-neutral-500">
         The scan&apos;s photos ({megabytes(photos.bytes)}) are kept on the server, so this walkthrough can be trained again with the newest trainer — no
-        rescan. Buyers keep seeing this one until the new one is ready (about 45 minutes).
+        rescan. Buyers keep seeing this one until the new one is ready (45–60 minutes).
       </p>
       <div className="flex flex-wrap items-center gap-3">
         {gpuReady && (

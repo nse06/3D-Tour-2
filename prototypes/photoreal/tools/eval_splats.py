@@ -7,6 +7,10 @@ apartment from the evaluation viewpoints (tools/eval_views.py, scene/render_view
 
 The first variant listed is the reference the "most changed" sheet compares the last one with.
 
+The AI variants ("ai", "ai-strong": the AI-enhanced version, enhance.py) need a fixer: on Modal the
+real one (tools/eval_modal.py); here only the stand-in (--stand-in-fixer), to check the plumbing. One
+training run gives two results: "<variant>-faithful", the splats before the AI phase, and "<variant>".
+
 On a GPU that is a real run (minutes per variant). On a CPU only a tiny one, to check the plumbing:
 --steps 100 --long-side 64 --seeds 3000 --eval-scale 0.15. tools/eval_modal.py runs it on Modal, a
 GPU per variant.
@@ -52,6 +56,13 @@ VARIANTS = {
     "priors-sh1": {"sh_degree": 1},  # less view-dependent color to overfit with
     "priors-500k": {"max_gaussians": 500_000},
 }
+# The AI-enhanced version (enhance.py) on top of the defaults: EnhanceConfig fields. Views about the
+# synthetic photos' size (480 x 360), as the real ones (1024 x 576) are against a phone's 1920 px photos.
+AI_VARIANTS = {
+    "ai": {"width": 512, "height": 288},
+    # The cleaned views count as much as a photo, half the steps, and reach further from the photos.
+    "ai-strong": {"width": 512, "height": 288, "view_weight": 1.0, "view_share": 0.5, "max_offset": 1.5},
+}
 
 
 def ssim(a, b) -> float:
@@ -82,16 +93,57 @@ def lpips_model(device):
         return None
 
 
-def run_variant(capture_dir, views_dir, variant: str, steps: int, long_side: int, device: str, seeds: int = 0, eval_scale: float = 1.0, log=print) -> dict:
-    """Trains one variant and scores it on every view: {variant, config, stats, views: [...], renders: {file: jpeg}}."""
-    import torch
+class Recording:
+    """A fixer that keeps a few of the views it cleaned up each round, before and after, to look at."""
 
-    from atrium_photoreal.capture import load, opencv_camtoworld
-    from atrium_photoreal.render import rasterize
+    def __init__(self, fixer, keep: int = 4):
+        self.fixer, self.keep, self.name, self.pairs = fixer, keep, fixer.name, []
+
+    def prepare(self):
+        if hasattr(self.fixer, "prepare"):
+            self.fixer.prepare()
+
+    def __call__(self, images):
+        fixed = self.fixer(images)
+        every = max(1, len(images) // self.keep)
+        self.pairs += [(_jpeg(images[k]), _jpeg(fixed[k])) for k in range(0, len(images), every)][: self.keep]
+        return fixed
+
+
+def _jpeg(image: np.ndarray) -> bytes:
+    buffer = io.BytesIO()
+    Image.fromarray(image).save(buffer, "JPEG", quality=90)
+    return buffer.getvalue()
+
+
+def run_variant(
+    capture_dir,
+    views_dir,
+    variant: str,
+    steps: int,
+    long_side: int,
+    device: str,
+    seeds: int = 0,
+    eval_scale: float = 1.0,
+    log=print,
+    fixer=None,
+    ai_overrides: dict | None = None,
+) -> list[dict]:
+    """Trains one variant and scores it on every view: [{variant, config, stats, views: [...], renders:
+    {file: jpeg}}], with the faithful version first for an AI variant (which needs `fixer`;
+    `ai_overrides`: EnhanceConfig fields on top of the variant's, for a tiny run)."""
+    from atrium_photoreal.capture import load
+    from atrium_photoreal.enhance import AIVersion, EnhanceConfig
     from atrium_photoreal.train import TrainConfig, train
 
     capture_dir, views_dir = Path(capture_dir), Path(views_dir)
-    overrides = VARIANTS[variant]
+    overrides = VARIANTS.get(variant, {})
+    ai, mains = None, []
+    if variant in AI_VARIANTS:
+        if fixer is None:
+            raise ValueError(f"{variant} needs a fixer (tools/eval_modal.py, or --stand-in-fixer)")
+        fixer = Recording(fixer)
+        ai = AIVersion(fixer=fixer, config=EnhanceConfig(**{**AI_VARIANTS[variant], **(ai_overrides or {})}), on_main=mains.append)
     capture = load(capture_dir)
     if seeds and seeds < len(capture.seeds_xyz):
         total = len(capture.seeds_xyz)
@@ -100,11 +152,36 @@ def run_variant(capture_dir, views_dir, variant: str, steps: int, long_side: int
         capture.seed_spacing *= float(np.sqrt(total / len(pick)))
     cfg = TrainConfig(steps=steps, long_side=long_side, holdout_every=0, progress_every=max(1, steps // 10), **overrides)
     started = time.time()
-    result = train(capture, cfg, device=device, log=lambda m: log(f"[{variant}] {m}"), progress=lambda v, m: log(f"[{variant}] {v:6.1%} {m}"))
-    splats = {k: v.to(device) for k, v in result.splats.items()}
+    result = train(
+        capture,
+        cfg,
+        device=device,
+        log=lambda m: log(f"[{variant}] {m}"),
+        progress=lambda v, m: log(f"[{variant}] {v:6.1%} {m}"),
+        ai=ai,
+        ai_progress=lambda v, m: log(f"[{variant}] AI {v:6.1%} {m}"),
+    )
+    minutes = round((time.time() - started) / 60, 1)
     net = lpips_model(device)
-
     views = json.loads((views_dir / "views.json").read_text())
+    config = {k: getattr(cfg, k) for k in ("steps", "long_side", "max_gaussians", "sh_degree", "shell_snap", "shell_thickness", "max_anisotropy", "floater_radius")}
+    scored = [score(name, r, config, views, views_dir, device, eval_scale, net) for name, r in ([(f"{variant}-faithful", mains[0])] if mains else []) + [(variant, result)]]
+    for entry in scored:
+        entry["stats"]["evalMinutes"] = minutes
+    if ai:
+        scored[-1]["config"] = {**config, "ai": AI_VARIANTS[variant]}
+        scored[-1]["pairs"] = fixer.pairs
+    return scored
+
+
+def score(variant: str, result, config: dict, views: list[dict], views_dir: Path, device: str, eval_scale: float, net) -> dict:
+    """One trained result rendered from every view and compared with the real apartment there."""
+    import torch
+
+    from atrium_photoreal.capture import opencv_camtoworld
+    from atrium_photoreal.render import rasterize
+
+    splats = {k: v.to(device) for k, v in result.splats.items()}
     rows, renders = [], {}
     for v in views:
         truth = Image.open(views_dir / v["file"]).convert("RGB")
@@ -126,8 +203,7 @@ def run_variant(capture_dir, views_dir, variant: str, steps: int, long_side: int
         buffer = io.BytesIO()
         Image.fromarray((pred.cpu().numpy() * 255).round().astype(np.uint8)).save(buffer, "JPEG", quality=90)
         renders[v["file"]] = buffer.getvalue()
-    config = {k: getattr(cfg, k) for k in ("steps", "long_side", "max_gaussians", "sh_degree", "shell_snap", "shell_thickness", "max_anisotropy", "floater_radius")}
-    return {"variant": variant, "config": config, "stats": {**result.stats, "evalMinutes": round((time.time() - started) / 60, 1)}, "views": rows, "renders": renders}
+    return {"variant": variant, "config": config, "stats": dict(result.stats), "views": rows, "renders": renders}
 
 
 def summarize(results: list[dict]) -> dict:
@@ -173,7 +249,17 @@ def write_results(out: Path, views_dir: Path, results: list[dict]):
         folder.mkdir(exist_ok=True)
         for f, jpeg in r["renders"].items():
             (folder / f.replace(".png", ".jpg")).write_bytes(jpeg)
-    plain = [{k: v for k, v in r.items() if k != "renders"} for r in results]
+    for r in results:
+        if r.get("pairs"):
+            # What the fixer made of some views, round by round: before | after.
+            first = Image.open(io.BytesIO(r["pairs"][0][0]))
+            w, h = first.size
+            canvas = Image.new("RGB", (2 * w, h * len(r["pairs"])), "white")
+            for k, (before, after) in enumerate(r["pairs"]):
+                canvas.paste(Image.open(io.BytesIO(before)).convert("RGB"), (0, k * h))
+                canvas.paste(Image.open(io.BytesIO(after)).convert("RGB"), (w, k * h))
+            canvas.save(out / f"fixer-{r['variant']}.jpg", quality=88)
+    plain = [{k: v for k, v in r.items() if k not in ("renders", "pairs")} for r in results]
     summary = summarize(results)
     (out / "results.json").write_text(json.dumps({"summary": summary, "variants": plain}, indent=1))
 
@@ -213,15 +299,21 @@ def main():
     p.add_argument("--seeds", type=int, default=0)
     p.add_argument("--eval-scale", type=float, default=1.0)
     p.add_argument("--cpu", action="store_true")
+    p.add_argument("--stand-in-fixer", action="store_true", help="the AI variants with enhance.SmoothingFixer (plumbing only)")
+    p.add_argument("--ai-small", action="store_true", help="a tiny AI phase (2 rounds of 10 steps, 6 views of 96 x 54) for a CPU")
     a = p.parse_args()
     import torch
 
+    from atrium_photoreal.enhance import SmoothingFixer
+
     device = "cpu" if a.cpu or not torch.cuda.is_available() else "cuda"
     names = [n for n in a.variants.split(",") if n]
-    unknown = [n for n in names if n not in VARIANTS]
+    unknown = [n for n in names if n not in VARIANTS and n not in AI_VARIANTS]
     if unknown:
-        raise SystemExit(f"unknown variants {unknown}; known: {list(VARIANTS)}")
-    results = [run_variant(a.capture, a.views, n, a.steps, a.long_side, device, a.seeds, a.eval_scale) for n in names]
+        raise SystemExit(f"unknown variants {unknown}; known: {list(VARIANTS) + list(AI_VARIANTS)}")
+    fixer = SmoothingFixer() if a.stand_in_fixer else None
+    small = {"rounds": 2, "steps_per_round": 10, "views": 6, "width": 96, "height": 54} if a.ai_small else None
+    results = [r for n in names for r in run_variant(a.capture, a.views, n, a.steps, a.long_side, device, a.seeds, a.eval_scale, fixer=fixer, ai_overrides=small)]
     write_results(a.out, a.views, results)
 
 

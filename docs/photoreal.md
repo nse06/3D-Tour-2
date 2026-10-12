@@ -2,8 +2,9 @@
 
 A photoreal walkthrough shows the home the way the scan's photos saw it: window views, reflections,
 plants, the texture of a sofa. It is made from the same photos the phone paints onto the 3D model, by
-a cloud GPU that trains 3D Gaussian splats on them (20–35 minutes). Buyers switch to it with the
-**Photoreal** button in the walkthrough, and the realtor can make it the look buyers start with. The
+a cloud GPU that trains 3D Gaussian splats on them (35–50 minutes). Buyers switch to it with the
+**Photoreal** button in the walkthrough, and the realtor can make it the look buyers start with. Each job makes a
+faithful version and an AI-enhanced one (§3.1), and the realtor picks which buyers see. The
 painted model stays loaded underneath: it does the walking, floors and sight lines, and it is what
 shows until the splats arrive or if they can't load.
 
@@ -132,6 +133,48 @@ no time, and leaves the door frame as clean as before. The synthetic apartment i
 photos are 480 px across: a real, textured scan at 1920 px is the real test. `stats` adds `smearPx` (median, 90th percentile, largest, at training size), `blurModel`,
 `smearedPhotosMatched` and, with "sample", `photosLeftToSharper`.
 
+### 3.1 The AI-enhanced version (`enhance.py`)
+
+Every job makes two versions of the splats from the same photos, so the realtor can see which looks better and
+choose what buyers see:
+
+* **Faithful**: the training above, only what the photos show. Delivered first, as before.
+* **AI-enhanced**: training goes on for 4,500 more steps with a diffusion model in the loop. Between and around the
+  photo spots the splats have to guess, and the guesses show as haze, smears, floaters and holes. NVIDIA's
+  [Fixer](https://huggingface.co/nvidia/Fixer) (Cosmos-Predict2's 0.6B image model, trained to turn a render of a 3D
+  reconstruction into a clean picture in one denoising step; the commercially licensed successor of
+  [Difix3D+](https://research.nvidia.com/labs/toronto-ai/difix3d/)) looks at the splats from where buyers walk and
+  cleans each view up, and the splats then train on the cleaned views next to the photos.
+
+The views: up to 120, each starting at a photo's spot and ending 0.25–1 m away across the room at eye height (1.35–1.65 m
+above the room's floor), turned up to 35°, nearly level, 1024 × 576 (Fixer's size) with a 75° field of view; each
+ends clear of every surface the photos saw (0.3 m) and gets there without passing through or brushing past one. Three
+rounds of 1,500 steps: round *r* renders the views *r*/3 of the way from their photo to where they end, has the Fixer
+clean them up, and adds them to the training (Difix3D+'s progressive distillation: each clean-up only has a little
+to fix, so the cleaned views agree with each other). A cleaned view is drawn on 30% of the steps and counts half as
+much as a photo; dead splats may move again (MCMC relocation) to where the cleaned views want something. The cleaned
+views are compared with the splats' own colors, with no photo's exposure correction or smear.
+
+What it costs and risks: about 10–15 more minutes on the trainer's A10G and a few on the Fixer's (one A10G of its own,
+kept up between rounds, shared by jobs at the same time), about $0.25 a home. Where the photos say nothing, the cleaned
+views make something up: the AI version can tidy a corner that wasn't tidy or invent a little texture. That's why both
+are kept and the realtor picks.
+
+Flow: the site asks for it (`options.aiVersion`, unless `PHOTOREAL_AI_VERSION=off`); a worker from before it ignores
+the ask. After the faithful splats are `done` with `pending: ["ai"]`, the worker reports `{ event: "progress",
+variant: "ai" }`, uploads `splats-ai.spz` (`{ event: "upload", variant: "ai" }`) and ends with `{ event: "variant",
+name: "ai", status: "done", assetUrl, stats }` or `status: "failed"` (the faithful version stays either way). The job
+keeps it in `photoreal_jobs.variants.ai`. The listing page shows it on its way, then **Faithful | AI-enhanced** to pick
+what buyers see (`tours.splat_url`); the realtor's preview has the same switch next to **Photoreal** (in a row of its
+own on a phone), and buyers only ever see the chosen one. `stats` adds `variant`, `fixer`, `aiViews`, `aiRounds`,
+`aiSteps`, `aiCleanedViews` and `aiSeconds`.
+
+The Fixer runs in its own Modal image (`atrium_photoreal/remote.py`): Cosmos-Predict2 1.0.9 on PyTorch 2.6 with
+NVIDIA's prebuilt CUDA wheels (the versions of NVIDIA's Cosmos container, which needs an NGC login), the
+[Fixer repository](https://github.com/nv-tlabs/Fixer) at a fixed commit (Apache 2.0) and its weights (about 5.5 GB,
+NVIDIA Open Model License: commercial use allowed). The first deploy builds it, which takes a while. Difix3D+ itself
+is for non-commercial use only, so it isn't used.
+
 ## 4. In the walkthrough
 
 Splats are at their best near where the photos were taken, so the viewer shows them there and the painted model
@@ -182,6 +225,7 @@ In Vercel → the project → Settings → Environment Variables (Production), a
 |---|---|
 | `PHOTOREAL_GPU_URL` | the `start` URL from the deploy |
 | `PHOTOREAL_WORKER_SECRET` | the same secret as on Modal (at least 16 characters) |
+| `PHOTOREAL_AI_VERSION` | optional: `off` makes the faithful version only (§3.1) |
 
 Then redeploy. The worker reaches the site at `NEXT_PUBLIC_SITE_URL` (or the address the phone used), so it must be
 a public HTTPS address: a dashboard on a laptop can take uploads from a phone on the same Wi-Fi, but a cloud GPU
@@ -207,7 +251,7 @@ readable only through the signed links the GPU gets, and kept like in Supabase (
 ## 6. Costs and sizes
 
 * **GPU**: 30–50 minutes on an A10G at full-size photos (about $1.10 an hour on Modal): roughly $0.55–0.90 per
-  home. Nothing runs between jobs.
+  home, and about $0.25 more for the AI-enhanced version (§3.1). Nothing runs between jobs.
 * **Upload from the phone**: the photos, 100–400 MB for a home (best on Wi-Fi).
 * **Storage**: each listing keeps its latest photos, 100–400 MB, for training again (§2.1). Supabase's free plan
   holds 1 GB in all (tours, splats and photos together), a few homes' worth; Pro includes 100 GB, a few hundred.
@@ -231,6 +275,10 @@ readable only through the signed links the GPU gets, and kept like in Supabase (
   on an A10G (about $0.45). That was 30,000 steps to 1,000,000 splats, with training PSNR rising steadily to 28.1.
   The earlier trainer's collapse after a few thousand steps is gone. The room-shape rules found 10 walls plus the
   floor and ceiling, and cleared 159 floaters.
+* **The AI-enhanced version** (§3.1) is checked on a CPU with a stand-in for the Fixer (a median filter): views where
+  they belong, the faithful version identical with and without it, the job protocol, the site's panel, choice and
+  preview switch (end to end on a production build). It hasn't run with the real Fixer on a GPU yet: that's the
+  benchmark on the synthetic apartment (`tools/eval_modal.py --variants ai,ai-strong`) and then real homes.
 * Splats are weakest where no photo looked closely: a spot the phone only saw from far away or from above can show
   haze when a buyer walks right up to it. A scan whose coverage map is green everywhere gives the GPU the most to
   learn from.
@@ -241,8 +289,9 @@ readable only through the signed links the GPU gets, and kept like in Supabase (
 ```sh
 cd worker/photoreal
 pip install -r requirements.txt pytest
-python -m pytest tests -q                          # conventions, .spz, a small training run, the job protocol
+python -m pytest tests -q                          # conventions, .spz, a small training run, the job protocol, the AI version
 python run_local.py <capture dir> <out dir> --cpu --steps 200 --long-side 64   # a tiny run on a CPU
+modal run modal_app.py::fixer_smoke --images <folder of renders> --out <folder>   # the Fixer alone, on a GPU
 ```
 
 `ios/ci/mock_atrium_server.py` takes a photoreal upload like the site does; the simulator test in CI sends a

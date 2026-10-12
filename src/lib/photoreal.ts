@@ -261,6 +261,14 @@ export function workerSecret(): string | null {
   return secret && secret.length >= 16 ? secret : null;
 }
 
+/**
+ * Whether jobs also make the AI-enhanced version (docs/photoreal.md §3.1): on unless
+ * PHOTOREAL_AI_VERSION is "off". A worker from before it ignores the ask.
+ */
+export function aiVersionEnabled(): boolean {
+  return process.env.PHOTOREAL_AI_VERSION?.trim().toLowerCase() !== "off";
+}
+
 /** The GPU worker's start endpoint (the Modal deployment's URL), or null. */
 export function gpuUrl(): string | null {
   const url = process.env.PHOTOREAL_GPU_URL?.trim();
@@ -299,7 +307,7 @@ export async function dispatchJob(repo: Repository, job: PhotorealJob, baseUrl: 
     const response = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${secret}` },
-      body: JSON.stringify({ jobId: job.id, callback: `${baseUrl}/api/photoreal/jobs/${job.id}`, files }),
+      body: JSON.stringify({ jobId: job.id, callback: `${baseUrl}/api/photoreal/jobs/${job.id}`, files, options: { aiVersion: aiVersionEnabled() } }),
       signal: AbortSignal.timeout(30_000),
     });
     if (!response.ok) {
@@ -349,5 +357,6 @@ export function jobSummary(job: PhotorealJob) {
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,
     stats: job.stats,
+    ai: job.variants?.ai ?? null,
   };
 }

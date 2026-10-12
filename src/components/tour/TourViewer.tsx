@@ -31,12 +31,21 @@ import type { LivePose, ViewerApi } from "./viewer-types";
 
 const TourScene = dynamic(() => import("./TourScene"), { ssr: false });
 
+/** A version of the photoreal splats the realtor can compare (docs/photoreal.md §3.1). */
+export interface SplatVersion {
+  key: string;
+  label: string;
+  url: string;
+}
+
 interface Props {
   data: TourData;
   /** Optional banner (e.g. "Preview — not yet published"). */
   banner?: ReactNode;
   /** Public tour path/URL to share; defaults to the current page. `null` = not shareable yet (draft). */
   shareUrl?: string | null;
+  /** The realtor's preview: versions of the photoreal splats to switch between (buyers see one). */
+  splatVersions?: SplatVersion[];
 }
 
 const FALLBACK_START: Waypoint = { position: [0, 1.6, 0], yaw: 0, pitch: 0 };
@@ -58,7 +67,7 @@ const noopSubscribe = () => () => {};
 /** Seconds spent looking around each room during the guided autoplay. */
 const DWELL_MS = 5200;
 
-export default function TourViewer({ data, banner, shareUrl }: Props) {
+export default function TourViewer({ data, banner, shareUrl, splatVersions }: Props) {
   const { property, space } = data;
   const floors = useMemo(() => sortedFloors(space), [space]);
   const order = useMemo(() => walkthroughOrder(space), [space]);
@@ -97,10 +106,14 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
   const [switchFailed, setSwitchFailed] = useState(false);
   const hasClean = !!data.cleanAssetUrl && !switchFailed;
   const switching = hasClean && showingClean === photos;
-  // Photoreal splats (docs/photoreal.md): on top of the photo model, or what buyers see first.
+  // Photoreal splats (docs/photoreal.md): on top of the photo model, or what buyers see first. In the
+  // realtor's preview, one of several versions (starting with the one buyers see).
+  const versions = splatVersions && splatVersions.length > 1 ? splatVersions : null;
+  const [versionKey, setVersionKey] = useState(() => versions?.find((v) => v.url === data.splatUrl)?.key ?? versions?.[0]?.key ?? null);
+  const splatUrl = versions?.find((v) => v.key === versionKey)?.url ?? data.splatUrl;
   const [photoreal, setPhotoreal] = useState(!!data.splatUrl && data.appearance === "photoreal");
   const [splatState, setSplatState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
-  const hasSplats = !!data.splatUrl && splatState !== "failed";
+  const hasSplats = !!splatUrl && splatState !== "failed";
   const splatsLoading = photoreal && splatState !== "ready";
   const onSplatState = useCallback((state: "loading" | "ready" | "failed") => {
     setSplatState(state);
@@ -119,6 +132,29 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
       setToast("Up close: the photos painted on the model — photoreal returns as you step back");
     }
   }, []);
+  // The realtor's preview: which version of the photoreal splats (docs/photoreal.md §3.1). In the
+  // bottom bar on wide screens, in a row of its own above it on a phone's.
+  const versionSwitch =
+    hasSplats && photoreal && versions ? (
+      <div className="glass flex h-11 items-center gap-0.5 rounded-full p-1" role="group" aria-label="Photoreal version">
+        {versions.map((v) => (
+          <button
+            key={v.key}
+            onClick={() => {
+              if (v.key === versionKey) return;
+              setVersionKey(v.key);
+              setToast(`${v.label} version`);
+            }}
+            aria-pressed={v.key === versionKey}
+            aria-label={`${v.label} version`}
+            className={`h-9 rounded-full px-3 text-[12px] font-medium transition ${v.key === versionKey ? "bg-white text-neutral-900" : "text-white/80 hover:bg-white/15 hover:text-white"}`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+    ) : null;
+
   const pendingTitle = useRef<TourRoom | null>(null);
   const webgl = useSyncExternalStore(noopSubscribe, hasWebGL, () => true);
 
@@ -279,7 +315,7 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
             setToast(startWithPhotos ? "The clean model couldn't be loaded" : "The photos couldn't be loaded");
           }}
           appearance={data.appearance}
-          splatUrl={data.splatUrl}
+          splatUrl={splatUrl}
           photoreal={photoreal}
           onSplatState={onSplatState}
           splatSpots={data.splatSpots}
@@ -380,6 +416,8 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
         </div>
       )}
 
+      {entered && versionSwitch && <div className="absolute inset-x-0 bottom-[72px] z-20 flex justify-center md:hidden">{versionSwitch}</div>}
+
       {/* Bottom controls */}
       {entered && order.length > 0 && (
         <div className="absolute inset-x-0 bottom-4 z-20 flex items-end justify-center gap-2 px-4 md:bottom-8">
@@ -442,6 +480,7 @@ export default function TourViewer({ data, banner, shareUrl }: Props) {
               <span className="hidden sm:inline">Photoreal</span>
             </button>
           )}
+          {versionSwitch && <div className="hidden md:flex">{versionSwitch}</div>}
           {hasClean && !photoreal && (
             <button
               onClick={() => {

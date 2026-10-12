@@ -11,8 +11,11 @@ saved as `.spz` for the tour viewer. The whole pipeline is described in
 | `atrium_photoreal/shell.py` | The room's shape: splats on walls, floors and ceilings kept flat on them, no needles, floaters in front of the cameras cleared |
 | `atrium_photoreal/render.py` | gsplat's CUDA rasterizer; a dense PyTorch one on the CPU for tests |
 | `atrium_photoreal/spz.py` | SPZ v3 writer/reader (checked against three.js's `SPZLoader`) |
-| `atrium_photoreal/job.py` | One job: download, train, write the `.spz` (under 45 MB: the highest view-dependent color bands go first), upload, report to the Atrium site (with where each photo was taken) |
-| `modal_app.py` | The Modal app: `train_job` on a GPU, and the `start` endpoint the site calls |
+| `atrium_photoreal/sharpness.py` | Photos smeared by the phone moving: compared with the render smeared the same way |
+| `atrium_photoreal/enhance.py` | The AI-enhanced version: views where buyers walk, cleaned up by a fixer, trained on after the faithful version is delivered |
+| `atrium_photoreal/fixer.py`, `remote.py` | NVIDIA Fixer on a GPU (Cosmos-Predict2), its Modal image, and the trainer's client for it |
+| `atrium_photoreal/job.py` | One job: download, train, write the `.spz` (under 45 MB: the highest view-dependent color bands go first), upload, report to the Atrium site (with where each photo was taken); then the AI-enhanced version, when the site asks |
+| `modal_app.py` | The Modal app: `train_job` on a GPU, the `Fixer` on another, and the `start` endpoint the site calls |
 | `run_local.py` | Train a capture folder on this machine |
 
 ## Test (CPU)
@@ -20,7 +23,7 @@ saved as `.spz` for the tour viewer. The whole pipeline is described in
 ```sh
 cd worker/photoreal
 pip install -r requirements.txt pytest
-python -m pytest tests -q        # ~1.5 min: conventions, .spz, the room's shape, a small training run, the job protocol
+python -m pytest tests -q        # ~2.5 min: conventions, .spz, the room's shape, smeared photos, a small training run, the AI version (a stand-in fixer), the job protocol
 ```
 
 To judge a change to training where it matters (views no photo matches, close to walls), train it on the synthetic
@@ -42,5 +45,8 @@ cd worker/photoreal && modal deploy modal_app.py
 Then on the site (Vercel → Settings → Environment Variables): `PHOTOREAL_GPU_URL` = the `start`
 endpoint's URL the deploy printed, and `PHOTOREAL_WORKER_SECRET` = the same secret. Redeploy the site.
 
-A job runs 20–35 minutes on an A10G (`PHOTOREAL_GPU=L4` at deploy time for a cheaper, slower GPU),
-roughly $0.40–0.70 per home; Modal's free tier includes $30 a month.
+A job runs 35–50 minutes on an A10G for the faithful version (`PHOTOREAL_GPU=L4` at deploy time for a cheaper,
+slower GPU), roughly $0.55–0.90 per home, and 10–15 more for the AI-enhanced one, about $0.25 with the Fixer's
+minutes on its own A10G (`PHOTOREAL_FIXER_GPU`). Modal's free tier includes $30 a month. The first deploy builds the
+Fixer's image (Cosmos-Predict2, NVIDIA's CUDA wheels, 5.5 GB of weights from Hugging Face), which takes a while; to
+try the Fixer alone first: `modal run modal_app.py::fixer_smoke --images <folder of renders> --out <folder>`.

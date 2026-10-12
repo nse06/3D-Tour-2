@@ -133,6 +133,20 @@ modal run tools/eval_modal.py --capture eval-data/capture-rough-blur --views eva
     --variants even,priors,sample
 ```
 
+The AI-enhanced version (`worker/photoreal/atrium_photoreal/enhance.py`, docs/photoreal.md §3.1): `--variants ai`
+trains once and scores both versions, `ai-faithful` (the splats before the AI phase, the same as `priors`) and `ai`;
+`ai-strong` lets the cleaned views count as much as a photo, on half the steps, from up to 1.5 m away. They use
+NVIDIA's Fixer on an A10G of its own (the first run builds its image: Cosmos-Predict2 and 5.5 GB of weights), and
+write `fixer-<variant>.jpg`: some of the views it cleaned up each round, before | after. On a CPU the plumbing only,
+with a median filter standing in for the Fixer:
+
+```sh
+modal run tools/eval_modal.py --capture eval-data/capture-rough --views eval-data/views --out eval-data/results-ai \
+    --variants ai,ai-strong
+python tools/eval_splats.py eval-data/capture-rough eval-data/views /tmp/smoke-ai --variants priors,ai \
+    --steps 60 --long-side 64 --seeds 3000 --eval-scale 0.15 --cpu --stand-in-fixer --ai-small
+```
+
 ## How the splats are trained
 
 `splat/rasterize.cpp` is a CPU tile rasterizer (16 × 16 tiles, depth-sorted, early termination) with

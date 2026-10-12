@@ -337,6 +337,27 @@ export async function retrainPhotorealAction(propertyId: string): Promise<Action
   }
 }
 
+/**
+ * Which version of the photoreal walkthrough buyers see (docs/photoreal.md §3.1): "faithful", made
+ * only from the photos, or "ai", cleaned up by the AI where the photos say little.
+ */
+export async function choosePhotorealVersionAction(propertyId: string, version: "faithful" | "ai"): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    const repo = await getRepository();
+    const job = await repo.latestPhotorealJob(user.id, propertyId);
+    const ai = job?.variants?.ai;
+    const url = version === "ai" ? (ai?.status === "done" ? ai.splatUrl : null) : job?.status === "done" ? job.splatUrl : null;
+    if (!url) return { ok: false, error: "That version isn't ready." };
+    await repo.setSplatUrl(user.id, propertyId, url);
+    revalidatePath(`/dashboard/properties/${propertyId}`);
+    revalidatePath(`/dashboard/properties/${propertyId}/preview`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 /** Deletes the photos kept for training the listing again (the walkthrough itself stays). */
 export async function deletePhotorealPhotosAction(propertyId: string): Promise<ActionResult> {
   const user = await requireUser();

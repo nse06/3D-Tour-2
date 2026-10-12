@@ -184,6 +184,15 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
                 hasPhotoScan={!!tour.cleanAssetUrl}
                 pricing={photorealCost}
                 photos={photos}
+                buyersSee={
+                  !photorealJob || !tour.splatUrl
+                    ? null
+                    : tour.splatUrl === photorealJob.variants?.ai?.splatUrl
+                      ? "ai"
+                      : tour.splatUrl === photorealJob.splatUrl
+                        ? "faithful"
+                        : null
+                }
               />
             </Card>
           )}

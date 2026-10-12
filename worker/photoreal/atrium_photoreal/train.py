@@ -13,6 +13,9 @@ GPU), adapted to phone scans of homes:
 * the rooms' shape (shell.py): splats on a wall, floor or ceiling are kept flat on it, no splat is
   much longer than it is wide, and splats hanging in the air just in front of a camera are cleared,
   so the room holds together away from the spots the photos were taken from.
+
+Given an AIVersion, training goes on after its steps for the AI-enhanced version (enhance.py): the
+splats as they are then, the faithful version, go to `on_main` first.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ import torch.nn.functional as F
 from . import shell as room_shell
 from .capture import Capture, load_photo, training_size
 from .render import psnr, rasterize, rgb_to_sh, ssim
+from .enhance import AIVersion, between, choose_views, intrinsics
 from .sharpness import find_direction, line_kernel, photo_weights, smear_image
 
 
@@ -222,7 +226,11 @@ def train(
     device: torch.device | str | None = None,
     progress: Callable[[float, str], None] | None = None,
     log: Callable[[str], None] = print,
+    ai: AIVersion | None = None,
+    ai_progress: Callable[[float, str], None] | None = None,
 ) -> Result:
+    """Trains the splats. With `ai`, returns the AI-enhanced version, after handing the faithful one
+    to `ai.on_main` (and reports the AI phase's progress to `ai_progress`)."""
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     started = time.time()
     torch.manual_seed(cfg.seed)
@@ -261,6 +269,18 @@ def train(
             + (f"{len(smeared)} photos compared with the render smeared alike" if cfg.blur_model == "kernel" else "")
             + (f"{int((say[train_ids] < 0.5).sum())} of {len(train_ids)} photos mostly left to sharper ones" if cfg.blur_model == "sample" else "")
         )
+
+    # The AI phase (enhance.py): its own draws, so the steps before it are the same with it or without.
+    extra = ai.config.steps if ai else 0
+    total = cfg.steps + extra
+    if ai:
+        ai_rng = np.random.default_rng(ai.config.seed)
+        ai_order = ai_rng.choice(np.asarray(train_ids), size=extra, p=draw / draw.sum())
+        ai_cleaned = ai_rng.random(extra) < ai.config.view_share
+        ai_pick = ai_rng.integers(0, 1 << 30, size=extra)
+        view_K = torch.tensor(intrinsics(ai.config), dtype=torch.float32, device=device)
+    views, cleaned_views = [], []
+    ai_started = 0.0
 
     # The spread of the cameras sets the step size for positions (gsplat's scene scale).
     centers = camtoworlds[:, :3, 3]
@@ -325,7 +345,82 @@ def train(
     history: list[list[float]] = []  # [step, training PSNR], 50 times a run
     history_every = max(1, cfg.steps // 50)
     log(f"training {len(train_ids)} photos ({len(test_ids)} held out) at {cfg.long_side} px, {len(splats['means'])} splats to start, {kind} on {device}")
-    for step in range(cfg.steps):
+
+    def snapshot(steps: int) -> Result:
+        """The splats as they'd be delivered now: a copy, on the shell and without needles, with the stats."""
+        out = {k: v.detach().clone() for k, v in splats.items()}
+        on_shell = room_shell.snap_to_shell(out, shell, cfg.shell_snap, cfg.shell_thickness) if shell is not None else 0
+        if cfg.max_anisotropy > 0:
+            room_shell.limit_anisotropy(out["scales"], cfg.max_anisotropy)
+        stats = {
+            "steps": steps,
+            "gaussians": int(len(out["means"])),
+            "trainPsnr": round(float(np.mean(recent)), 2),
+            "seconds": round(time.time() - started, 1),
+            "photos": len(cams),
+            "longSide": cfg.long_side,
+            "strategy": kind,
+            "device": device.type,
+            "poseShiftCm": round(float(pose.embeds.weight[:, :3].detach().norm(dim=1).mean()) * 100, 2),
+            "unitsPerMeter": round(unit, 3),
+            "exposureModel": cfg.exposure_model,
+            "shellPlanes": 0 if shell is None else shell.walls + shell.flats,
+            "onShell": on_shell,
+            "floatersCleared": cleared,
+            "visibleAdam": selective,
+            "psnrHistory": history,
+        }
+        if not np.isnan(smear).all():
+            known = smear[~np.isnan(smear)]
+            stats["smearPx"] = {"median": round(float(np.median(known)), 2), "p90": round(float(np.percentile(known, 90)), 2), "max": round(float(known.max()), 2)}
+            stats["blurModel"] = cfg.blur_model
+            stats["smearedPhotosMatched"] = len(kernels)
+            stats["photosLeftToSharper"] = int((say[train_ids] < 0.5).sum()) if cfg.blur_model == "sample" else 0
+        if test_ids:
+            scores = []
+            with torch.no_grad():
+                for i in test_ids:
+                    image = photos[i].to(device).float() / 255.0
+                    height, width = image.shape[:2]
+                    render, _, _ = rasterize(out, torch.linalg.inv(camtoworlds[i]), Ks[i], width, height, cfg.sh_degree)
+                    scores.append(psnr(render[0].clamp(0, 1), image))
+            stats["testPsnr"] = round(float(np.mean(scores)), 2)
+            stats["testPhotos"] = len(test_ids)
+        return Result(splats={k: v.cpu() for k, v in out.items()}, sh_degree=cfg.sh_degree, stats=stats)
+
+    for step in range(total):
+        if ai and step == int(cfg.steps * 0.95) and hasattr(ai.fixer, "prepare"):
+            ai.fixer.prepare()  # e.g. start the fixer's GPU now, so it's up when it's needed
+        if ai and step == cfg.steps:
+            main = snapshot(cfg.steps)
+            log(f"faithful version: {main.stats}")
+            if ai.on_main:
+                ai.on_main(main)
+            ai_started = time.time()
+            views = choose_views(capture, ai.config, ai_rng)
+            if not views:
+                raise RuntimeError("no room to walk around in the capture for the AI-enhanced version")
+            log(f"AI version: {len(views)} views, {ai.config.rounds} rounds of {ai.config.steps_per_round} steps, {ai.fixer.name}")
+            if kind == "mcmc":
+                # Dead splats may move again, to where the cleaned views want something.
+                strategy.refine_stop_iter = total - ai.config.steps_per_round // 2
+        if ai and step >= cfg.steps and (step - cfg.steps) % ai.config.steps_per_round == 0:
+            # A round: the views a little further from the photos, rendered, cleaned up, trained on.
+            r = (step - cfg.steps) // ai.config.steps_per_round
+            poses = [between(v, (r + 1) / ai.config.rounds) for v in views]
+            renders = []
+            with torch.no_grad():
+                gray = torch.full((3,), 0.5, device=device)
+                for c2w in poses:
+                    shown, _, _ = rasterize(splats, torch.linalg.inv(torch.tensor(c2w, dtype=torch.float32, device=device)), view_K, ai.config.width, ai.config.height, cfg.sh_degree, background=gray)
+                    renders.append((shown[0].clamp(0, 1) * 255).round().byte().cpu().numpy())
+            fixed = ai.fixer(renders)
+            for c2w, image in zip(poses, fixed):
+                if image.shape != (ai.config.height, ai.config.width, 3):
+                    raise RuntimeError(f"the fixer answered {image.shape} for a {ai.config.width}x{ai.config.height} view")
+                viewmat = torch.linalg.inv(torch.tensor(c2w, dtype=torch.float32, device=device))
+                cleaned_views.append((viewmat, torch.from_numpy(np.array(image, dtype=np.uint8)).to(keep_on)))
+            log(f"AI round {r + 1}: {len(poses)} views cleaned up, {len(cleaned_views)} in all")
         if smeared and step in cfg.blur_direction_steps:
             # Which way each smeared photo is smeared: the direction that makes the render look most like it.
             with torch.no_grad():
@@ -335,29 +430,45 @@ def train(
                     keep = None if people[j] is None else (~people[j].to(device)).float()[..., None]
                     length = float(min(smear[j], cfg.blur_max_px))
                     kernels[j] = line_kernel(length, find_direction(exposure(shown[0], j), photo, length, cfg.blur_angles, keep), device)
-        i = int(order[step])
-        image = photos[i].to(device).float() / 255.0
-        height, width = image.shape[:2]
-        c2w = pose(camtoworlds[i], i)
-        viewmat = torch.linalg.inv(c2w)
+        view = None  # a cleaned view instead of a photo (the AI phase)
+        if step < cfg.steps:
+            i = int(order[step])
+        else:
+            j = step - cfg.steps
+            i = int(ai_order[j])
+            if ai_cleaned[j] and cleaned_views:
+                view = cleaned_views[int(ai_pick[j]) % len(cleaned_views)]
         degree = min(step // cfg.sh_degree_interval, cfg.sh_degree)
         background = torch.rand(3, device=device)
-        render, alpha, info = rasterize(splats, viewmat, Ks[i], width, height, degree, background=background)
-        strategy.step_pre_backward(splats, optimizers, state, step, info)
-        predicted = exposure(render[0], i)
-        if i in kernels:
-            predicted = smear_image(predicted, kernels[i])
-
-        mask = people[i]
-        if mask is not None:
-            keep = (~mask.to(device)).float()[..., None]
-            l1 = (torch.abs(predicted - image) * keep).sum() / (keep.sum() * 3).clamp(min=1)
-            # SSIM over people too would pull on them: show it the photo there instead.
-            compared = predicted * keep + image * (1 - keep)
-        else:
+        if view is not None:
+            # As the fixer cleaned it up: the splats' own colors, no photo's exposure or smear.
+            image = view[1].to(device).float() / 255.0
+            render, alpha, info = rasterize(splats, view[0], view_K, image.shape[1], image.shape[0], degree, background=background)
+            strategy.step_pre_backward(splats, optimizers, state, step, info)
+            predicted = render[0]
             l1 = torch.abs(predicted - image).mean()
-            compared = predicted
-        loss = (1 - cfg.ssim_lambda) * l1 + cfg.ssim_lambda * (1 - ssim(compared[None], image[None]))
+            loss = ai.config.view_weight * ((1 - cfg.ssim_lambda) * l1 + cfg.ssim_lambda * (1 - ssim(predicted[None], image[None])))
+        else:
+            image = photos[i].to(device).float() / 255.0
+            height, width = image.shape[:2]
+            c2w = pose(camtoworlds[i], i)
+            viewmat = torch.linalg.inv(c2w)
+            render, alpha, info = rasterize(splats, viewmat, Ks[i], width, height, degree, background=background)
+            strategy.step_pre_backward(splats, optimizers, state, step, info)
+            predicted = exposure(render[0], i)
+            if i in kernels:
+                predicted = smear_image(predicted, kernels[i])
+
+            mask = people[i]
+            if mask is not None:
+                keep = (~mask.to(device)).float()[..., None]
+                l1 = (torch.abs(predicted - image) * keep).sum() / (keep.sum() * 3).clamp(min=1)
+                # SSIM over people too would pull on them: show it the photo there instead.
+                compared = predicted * keep + image * (1 - keep)
+            else:
+                l1 = torch.abs(predicted - image).mean()
+                compared = predicted
+            loss = (1 - cfg.ssim_lambda) * l1 + cfg.ssim_lambda * (1 - ssim(compared[None], image[None]))
         if kind == "mcmc":
             loss = loss + cfg.opacity_reg * torch.sigmoid(splats["opacities"]).mean() + cfg.scale_reg * unit * torch.exp(splats["scales"]).mean()
         loss = loss + cfg.exposure_reg * exposure.penalty()
@@ -396,53 +507,30 @@ def train(
                     splats["opacities"][outside] = -10.0
             if shell is not None:
                 room_shell.snap_to_shell(splats, shell, cfg.shell_snap, cfg.shell_thickness)
-            if surfaces is not None and step < refine_stop:
+            if surfaces is not None and (step < refine_stop or step >= cfg.steps):
                 cleared += room_shell.clear_floaters(splats, train_centers, surfaces, cfg.floater_radius)
 
-        with torch.no_grad():
-            recent.append(psnr(predicted.clamp(0, 1), image))
-            recent = recent[-200:]
-        if step % history_every == 0 or step == cfg.steps - 1:
+        if view is None:  # how well the splats fit the photos
+            with torch.no_grad():
+                recent.append(psnr(predicted.clamp(0, 1), image))
+                recent = recent[-200:]
+        if step % history_every == 0 or step == total - 1:
             history.append([step + 1, round(float(np.mean(recent)), 2)])
-        if progress and (step % cfg.progress_every == 0 or step == cfg.steps - 1):
+        if step < cfg.steps and progress and (step % cfg.progress_every == 0 or step == cfg.steps - 1):
             progress((step + 1) / cfg.steps, f"step {step + 1} of {cfg.steps}, {len(splats['means'])} splats, {np.mean(recent):.1f} dB")
+        if step >= cfg.steps and ai_progress and ((step - cfg.steps) % cfg.progress_every == 0 or step == total - 1):
+            ai_progress((step - cfg.steps + 1) / extra, f"round {(step - cfg.steps) // ai.config.steps_per_round + 1} of {ai.config.rounds}, {np.mean(recent):.1f} dB on the photos")
 
-    on_shell = room_shell.snap_to_shell(splats, shell, cfg.shell_snap, cfg.shell_thickness) if shell is not None else 0
-    if cfg.max_anisotropy > 0:
-        room_shell.limit_anisotropy(splats["scales"], cfg.max_anisotropy)
-    stats = {
-        "steps": cfg.steps,
-        "gaussians": int(len(splats["means"])),
-        "trainPsnr": round(float(np.mean(recent)), 2),
-        "seconds": round(time.time() - started, 1),
-        "photos": len(cams),
-        "longSide": cfg.long_side,
-        "strategy": kind,
-        "device": device.type,
-        "poseShiftCm": round(float(pose.embeds.weight[:, :3].detach().norm(dim=1).mean()) * 100, 2),
-        "unitsPerMeter": round(unit, 3),
-        "exposureModel": cfg.exposure_model,
-        "shellPlanes": 0 if shell is None else shell.walls + shell.flats,
-        "onShell": on_shell,
-        "floatersCleared": cleared,
-        "visibleAdam": selective,
-        "psnrHistory": history,
-    }
-    if not np.isnan(smear).all():
-        known = smear[~np.isnan(smear)]
-        stats["smearPx"] = {"median": round(float(np.median(known)), 2), "p90": round(float(np.percentile(known, 90)), 2), "max": round(float(known.max()), 2)}
-        stats["blurModel"] = cfg.blur_model
-        stats["smearedPhotosMatched"] = len(kernels)
-        stats["photosLeftToSharper"] = int((say[train_ids] < 0.5).sum()) if cfg.blur_model == "sample" else 0
-    if test_ids:
-        scores = []
-        with torch.no_grad():
-            for i in test_ids:
-                image = photos[i].to(device).float() / 255.0
-                height, width = image.shape[:2]
-                render, _, _ = rasterize(splats, torch.linalg.inv(camtoworlds[i]), Ks[i], width, height, cfg.sh_degree)
-                scores.append(psnr(render[0].clamp(0, 1), image))
-        stats["testPsnr"] = round(float(np.mean(scores)), 2)
-        stats["testPhotos"] = len(test_ids)
-    log(f"done: {stats}")
-    return Result(splats={k: v.detach().cpu() for k, v in splats.items()}, sh_degree=cfg.sh_degree, stats=stats)
+    result = snapshot(total)
+    if ai:
+        result.stats.update(
+            variant="ai",
+            fixer=ai.fixer.name,
+            aiViews=len(views),
+            aiRounds=ai.config.rounds,
+            aiSteps=extra,
+            aiCleanedViews=len(cleaned_views),
+            aiSeconds=round(time.time() - ai_started, 1),
+        )
+    log(f"done: {result.stats}")
+    return result

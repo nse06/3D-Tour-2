@@ -53,6 +53,8 @@ export interface Repository {
   listPhotorealJobs(userId: string, propertyId: string): Promise<PhotorealJob[]>;
   /** Shows finished splats on the job's tour (with where their photos were taken); false if that tour has since been replaced. */
   attachSplats(job: PhotorealJob, splatUrl: string, spots: SplatSpot[] | null): Promise<boolean>;
+  /** Which version of the splats buyers see (another version of the same photos: the spots stay). */
+  setSplatUrl(userId: string, propertyId: string, splatUrl: string): Promise<void>;
 }
 
 let repo: Promise<Repository> | null = null;

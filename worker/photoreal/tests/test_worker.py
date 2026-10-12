@@ -11,6 +11,7 @@ import torch
 
 from atrium_photoreal import spz
 from atrium_photoreal.capture import load, load_photo
+from atrium_photoreal.enhance import SmoothingFixer
 from atrium_photoreal.job import run_job, write_splats
 from atrium_photoreal.render import psnr, rasterize
 from atrium_photoreal.train import TrainConfig, quats_from_normals, train
@@ -156,7 +157,8 @@ class _Site(http.server.BaseHTTPRequestHandler):
         answer = {"ok": True}
         if body["event"] == "upload":
             host = f"http://127.0.0.1:{self.server.server_address[1]}"
-            answer = {"url": f"{host}/upload/splats.spz", "method": "PUT", "headers": {"content-type": "application/octet-stream"}, "assetUrl": f"{host}/assets/splats.spz"}
+            name = "splats-ai.spz" if body.get("variant") == "ai" else "splats.spz"
+            answer = {"url": f"{host}/upload/{name}", "method": "PUT", "headers": {"content-type": "application/octet-stream"}, "assetUrl": f"{host}/assets/{name}"}
         data = json.dumps(answer).encode()
         self.send_response(200)
         self.send_header("content-type", "application/json")
@@ -197,6 +199,60 @@ def test_a_job_downloads_trains_uploads_and_reports(tmp_path):
     (tmp_path / "got.spz").write_bytes(uploaded)
     assert spz.read(tmp_path / "got.spz")["means"].shape[0] == stats["splats"] > 1000
     assert not (tmp_path / "work" / "job-1").exists(), "the job cleans up after itself"
+
+
+def _ai_job(tmp_path, fixer, ai=True):
+    folder = scene.write(tmp_path / "capture", cameras=6)
+    _Site.folder, _Site.events, _Site.uploads = folder, [], {}
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Site)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    host = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        names = ["cameras.json", "seeds.ply", *[f"frames/{p.name}" for p in sorted((folder / "frames").iterdir())]]
+        payload = {
+            "jobId": "job-ai",
+            "callback": f"{host}/callback",
+            "files": [{"name": n, "url": f"{host}/files/{n}"} for n in names],
+            "options": {"steps": 30, "longSide": 64, "maxGaussians": 50_000, "aiVersion": ai, "aiViews": 6, "aiRounds": 2, "aiStepsPerRound": 5, "aiWidth": 64, "aiHeight": 36},
+        }
+        return run_job(payload, secret="test-secret", workdir=tmp_path / "work", fixer=fixer)
+    finally:
+        server.shutdown()
+
+
+def test_a_job_delivers_the_faithful_version_then_the_ai_one(tmp_path):
+    stats = _ai_job(tmp_path, SmoothingFixer())
+    kinds = [(e["event"], e.get("variant") or e.get("name")) for e in _Site.events]
+    done = kinds.index(("done", None))
+    assert ("upload", None) in kinds[:done], "the faithful splats are uploaded before it's done"
+    assert _Site.events[done]["pending"] == ["ai"] and _Site.events[done]["assetUrl"].endswith("/assets/splats.spz")
+    after = kinds[done + 1 :]
+    assert ("progress", "ai") in after and ("upload", "ai") in after and after[-1] == ("variant", "ai"), kinds
+    final = _Site.events[-1]
+    assert final["status"] == "done" and final["assetUrl"].endswith("/assets/splats-ai.spz") and final["stats"]["variant"] == "ai"
+    assert set(_Site.uploads) == {"/upload/splats.spz", "/upload/splats-ai.spz"}
+    assert stats["ai"]["aiCleanedViews"] == 2 * stats["ai"]["aiViews"] and stats["steps"] == 30
+
+
+def test_the_ai_version_only_when_the_site_asks(tmp_path):
+    stats = _ai_job(tmp_path, SmoothingFixer(), ai=None)
+    kinds = [e["event"] for e in _Site.events]
+    assert kinds[-1] == "done" and "pending" not in _Site.events[-1] and "variant" not in kinds and "ai" not in stats
+
+
+def test_when_the_ai_version_fails_the_faithful_one_stays(tmp_path):
+    class Broken:
+        name = "broken"
+
+        def __call__(self, images):
+            raise RuntimeError("the fixer's GPU is gone")
+
+    stats = _ai_job(tmp_path, Broken())
+    kinds = [e["event"] for e in _Site.events]
+    assert "done" in kinds and "failed" not in kinds
+    final = _Site.events[-1]
+    assert final["event"] == "variant" and final["status"] == "failed" and "GPU is gone" in final["message"]
+    assert stats["steps"] == 30 and set(_Site.uploads) == {"/upload/splats.spz"}
 
 
 def test_a_failed_job_says_why(tmp_path):

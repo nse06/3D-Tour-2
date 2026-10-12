@@ -9,6 +9,12 @@
 Uploads the capture and the views to the Modal volume "atrium-photoreal-eval", trains every variant at
 once on an A10G each (the worker's GPU), and writes what tools/eval_splats.py writes into --out. The
 synthetic photos are 480 x 360, so a variant takes about 10-15 minutes, roughly $0.20-0.30.
+
+The AI variants ("ai", "ai-strong") also use NVIDIA's Fixer, on an A10G of its own shared by the
+variants (the same class as the worker's, atrium_photoreal/remote.py). Building its image the first
+time takes a while (Cosmos-Predict2 and 5.5 GB of weights); a variant adds about 5 minutes of training
+and a few of the Fixer's GPU. Each gives "<variant>-faithful" and "<variant>", and fixer-<variant>.jpg:
+some of the views the Fixer cleaned up, before | after.
 """
 
 import hashlib
@@ -21,6 +27,8 @@ import modal
 HERE = Path(__file__).resolve().parent
 if len(HERE.parents) > 2 and (HERE.parents[2] / "worker" / "photoreal").is_dir():
     sys.path[:0] = [str(HERE), str(HERE.parents[2] / "worker" / "photoreal")]
+
+from atrium_photoreal.remote import RemoteFixer, fixer_image  # noqa: E402  (after the path above)
 
 GPU = "A10G"
 app = modal.App("atrium-photoreal-eval")
@@ -35,11 +43,33 @@ image = (
 )
 
 
+@app.cls(image=fixer_image(modal), gpu=GPU, timeout=1800, memory=32768, scaledown_window=300, max_containers=1)
+class Fixer:
+    """NVIDIA Fixer, as in worker/photoreal/modal_app.py."""
+
+    @modal.enter()
+    def load(self):
+        from atrium_photoreal.fixer import FixerModel
+
+        self.model = FixerModel()
+
+    @modal.method()
+    def warm(self) -> bool:
+        return True
+
+    @modal.method()
+    def fix(self, jpegs: list[bytes]) -> list[bytes]:
+        from atrium_photoreal.fixer import fix_jpegs
+
+        return fix_jpegs(self.model, jpegs)
+
+
 @app.function(image=image, gpu=GPU, timeout=3 * 3600, memory=32768, volumes={"/data": volume})
-def evaluate(tag: str, variant: str, steps: int, long_side: int) -> dict:
+def evaluate(tag: str, variant: str, steps: int, long_side: int) -> list[dict]:
     import eval_splats
 
-    return eval_splats.run_variant(f"/data/{tag}/capture", f"/data/{tag}/views", variant, steps, long_side, device="cuda")
+    fixer = RemoteFixer(Fixer()) if variant in eval_splats.AI_VARIANTS else None
+    return eval_splats.run_variant(f"/data/{tag}/capture", f"/data/{tag}/views", variant, steps, long_side, device="cuda", fixer=fixer)
 
 
 @app.local_entrypoint()
@@ -47,9 +77,9 @@ def main(capture: str, views: str, out: str, variants: str = "base,base-matrix,b
     import eval_splats
 
     names = [n for n in variants.split(",") if n]
-    unknown = [n for n in names if n not in eval_splats.VARIANTS]
+    unknown = [n for n in names if n not in eval_splats.VARIANTS and n not in eval_splats.AI_VARIANTS]
     if unknown:
-        raise SystemExit(f"unknown variants {unknown}; known: {list(eval_splats.VARIANTS)}")
+        raise SystemExit(f"unknown variants {unknown}; known: {list(eval_splats.VARIANTS) + list(eval_splats.AI_VARIANTS)}")
     capture_dir, views_dir = Path(capture).resolve(), Path(views).resolve()
     # The same inputs go to the same place on the volume.
     tag = hashlib.sha1(f"{capture_dir}|{views_dir}".encode()).hexdigest()[:10]
@@ -59,11 +89,12 @@ def main(capture: str, views: str, out: str, variants: str = "base,base-matrix,b
         batch.put_directory(str(views_dir), f"/{tag}/views")
     print(f"training {', '.join(names)} ({steps} steps), a GPU each")
     results = []
-    for name, result in zip(names, evaluate.starmap([(tag, n, steps, long_side) for n in names], return_exceptions=True)):
-        if isinstance(result, BaseException):
-            print(f"{name} failed: {type(result).__name__}: {result}")
+    for name, scored in zip(names, evaluate.starmap([(tag, n, steps, long_side) for n in names], return_exceptions=True)):
+        if isinstance(scored, BaseException):
+            print(f"{name} failed: {type(scored).__name__}: {scored}")
             continue
-        print(f"{name}: {result['stats']}")
-        results.append(result)
+        for result in scored:
+            print(f"{result['variant']}: {result['stats']}")
+            results.append(result)
     if results:
         eval_splats.write_results(Path(out), views_dir, results)
