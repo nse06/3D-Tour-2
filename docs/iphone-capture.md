@@ -347,8 +347,10 @@ frames/frames.json   [{ file, t, transform[16], intrinsics[9], width, height, im
 frames/000123.jpg    RGB keyframes for photo texturing: full resolution (≤1920 px), at most every 0.8 s, up to
                      600, taken when the phone moves slowly enough for a sharp photo (build 11 on, ScanCore's
                      PhotoSharpness): predicted smear = turn rate × exposure × focal length, with walking added
-                     as speed × exposure × focal length ÷ 1.5 m, at most 3 px; after 4 s without such a
-                     moment, 6 px (a "soft" photo, weak on the coverage map). Builds 5–10 took them while
+                     as speed × exposure × focal length ÷ 2 m, at most 3 px; while it waits, the limit rises
+                     evenly to 6 px after 1.5 s (a "soft" photo, weak on the coverage map). Build 11 used
+                     ÷ 1.5 m and waited 4 s before settling for 6 px: a living room got 57 photos where build 10
+                     took 171, too few angles for photoreal. Builds 5–10 took them while
                      turning < 0.2 rad/s and moving < 0.3 m/s, limits growing up to elevenfold while the phone
                      kept moving. Kept on the phone: package.zip leaves the JPEGs out (the walkthrough carries
                      the painted photos); older builds took one every 1.5 s at ≤1280 px

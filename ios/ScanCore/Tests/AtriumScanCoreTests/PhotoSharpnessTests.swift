@@ -9,22 +9,33 @@ final class PhotoSharpnessTests: XCTestCase {
     func testSmearIsTurnRateTimesExposureTimesFocalLength() {
         // ARKit's 1920 px photos have a focal length of about 1450 px; 1/60 s indoors.
         XCTAssertEqual(PhotoSharpness.smear(turnRate: 0.2, speed: nil, exposure: 1.0 / 60, fx: 1450), 0.2 / 60 * 1450, accuracy: 1e-4)
-        // Walking at 0.3 m/s past things 1.5 m away smears as much as turning at 0.2 rad/s.
+        // Walking at 0.4 m/s past things 2 m away smears as much as turning at 0.2 rad/s.
         XCTAssertEqual(
-            PhotoSharpness.smear(turnRate: 0, speed: 0.3, exposure: 1.0 / 60, fx: 1450),
+            PhotoSharpness.smear(turnRate: 0, speed: 0.4, exposure: 1.0 / 60, fx: 1450),
             PhotoSharpness.smear(turnRate: 0.2, speed: nil, exposure: 1.0 / 60, fx: 1450), accuracy: 1e-4)
         // Both at once add up like a vector's sides.
-        XCTAssertEqual(PhotoSharpness.smear(turnRate: 0.2, speed: 0.3, exposure: 1.0 / 60, fx: 1450), 0.2 / 60 * 1450 * Float(2).squareRoot(), accuracy: 1e-3)
+        XCTAssertEqual(PhotoSharpness.smear(turnRate: 0.2, speed: 0.4, exposure: 1.0 / 60, fx: 1450), 0.2 / 60 * 1450 * Float(2).squareRoot(), accuracy: 1e-3)
         // Without an exposure time: PhotoTexturing's 1/50 s.
         XCTAssertEqual(PhotoSharpness.smear(turnRate: 0.1, speed: nil, exposure: nil, fx: 1000), 0.1 * 0.02 * 1000, accuracy: 1e-4)
         XCTAssertEqual(PhotoSharpness.smear(turnRate: .nan, speed: .infinity, exposure: 1.0 / 60, fx: 1450), 0)
     }
 
-    func testThePhoneWaitsForASteadyMomentThenSettlesForASoftPhoto() {
+    func testThePhoneWaitsBrieflyForASteadyMomentThenSettlesForASoftPhoto() {
         XCTAssertEqual(PhotoSharpness.decide(smear: 2.5, waited: 0), .sharp)
-        XCTAssertNil(PhotoSharpness.decide(smear: 4.8, waited: 1), "a slow turn indoors: wait for a steadier moment")
-        XCTAssertEqual(PhotoSharpness.decide(smear: 4.8, waited: PhotoSharpness.patience), .soft)
+        XCTAssertNil(PhotoSharpness.decide(smear: 4.8, waited: 0.2), "a slow turn indoors: a moment for a steadier frame")
+        // The limit rises evenly from 3 px to 6 px over 1.5 s: 4.8 px is fine after 0.9 s.
+        XCTAssertEqual(PhotoSharpness.limit(waited: 0), PhotoSharpness.sharp)
+        XCTAssertEqual(PhotoSharpness.limit(waited: PhotoSharpness.patience / 2), 4.5, accuracy: 1e-5)
+        XCTAssertEqual(PhotoSharpness.limit(waited: 60), PhotoSharpness.soft)
+        XCTAssertNil(PhotoSharpness.decide(smear: 4.8, waited: 0.85))
+        XCTAssertEqual(PhotoSharpness.decide(smear: 4.8, waited: 0.95), .soft)
         XCTAssertNil(PhotoSharpness.decide(smear: 20, waited: 60), "never a smeared photo, however long it waits")
+        // Walking slowly while turning a little, as people do scanning: a photo every second or two, not
+        // every 4 s or more (build 11).
+        let smear = PhotoSharpness.smear(turnRate: 0.15, speed: 0.3, exposure: 1.0 / 60, fx: 1450)
+        XCTAssertGreaterThan(smear, PhotoSharpness.sharp)
+        let wait = stride(from: 0.0, through: 10, by: 0.05).first { PhotoSharpness.decide(smear: smear, waited: $0) != nil }
+        XCTAssertLessThan(try XCTUnwrap(wait), 1.5)
     }
 
     func testAFramesSmearUsesItsSavedSize() {

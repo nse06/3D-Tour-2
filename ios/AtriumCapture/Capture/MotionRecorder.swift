@@ -8,9 +8,10 @@ import simd
 /// Records the phone's path and full-resolution photos while the AR session
 /// runs — between rooms too, so the path links the rooms. A photo is taken as
 /// soon as the phone moves slowly enough for it to come out sharp (ScanCore's
-/// PhotoSharpness: under 3 px of motion smear), at most every 0.8 s. After 4 s
-/// without such a moment it settles for 6 px, which the coverage map counts as
-/// weak, and "hold still" shows. Each photo records how fast the phone was
+/// PhotoSharpness: under 3 px of motion smear), at most every 0.8 s. While it
+/// waits it accepts a little more, up to 6 px after 1.5 s (a photo the coverage
+/// map counts as weak); when even that doesn't come, "hold still" shows, so
+/// photos keep coming every second or two. Each photo records how fast the phone was
 /// turning and moving and its exposure time, so painting and photoreal training
 /// can prefer the sharpest.
 ///
@@ -50,8 +51,8 @@ final class MotionRecorder {
 
     /// Photos are at least this far apart, and sharp (PhotoSharpness).
     static let keyframeInterval: TimeInterval = 0.8
-    /// "Hold still" after waiting this long for a sharp moment.
-    static let holdStillAfter: TimeInterval = 1.5
+    /// "Hold still" after waiting this long for a sharp moment: when even a soft photo hasn't come.
+    static let holdStillAfter: TimeInterval = PhotoSharpness.patience
     /// "Slow down" above these.
     static let fastTurnRate: Float = 0.7
     static let fastSpeed: Float = 0.8

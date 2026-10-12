@@ -114,7 +114,7 @@ needle or a blob hanging off a wall. Training keeps three rules on top of the re
 `stats` adds `shellPlanes`, `onShell` (splats on them at the end) and `floatersCleared`.
 
 **Smeared photos** (`sharpness.py`). A photo taken while the phone turns is smeared by about turn rate × exposure ×
-focal length pixels (plus speed × exposure × focal length ÷ 1.5 m for walking): indoors the camera runs at its longest
+focal length pixels (plus speed × exposure × focal length ÷ 2 m for walking): indoors the camera runs at its longest
 exposure (1/60 s), where a slow 0.2 rad/s turn smears 5 px across a 1920 px photo, and builds before 11 also took
 photos while the phone kept moving. Trained on every photo as it is, the splats average the smeared photos in and come
 out soft, while the painted model takes each spot from its sharpest photo. So a photo smeared 1 px or more (at training

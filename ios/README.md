@@ -98,10 +98,13 @@ a full-resolution photo whenever the phone is still enough for it to come out sh
 about one a second), so pause for a moment on each stretch of wall, then on the floor and
 ceiling, rather than sweeping continuously. The scan screen counts the photos, says **Slow down
 for sharp photos** when you're moving too fast, and **Hold still a moment for a sharp photo** when
-it has been waiting for a steady moment (build 11 on: it only keeps photos it expects to be sharp;
-if you never stop, it settles for a slightly soft one after a few seconds and the map keeps that
-spot amber). Turn the lights on and open the curtains: indoors the camera already uses its
-longest exposure, so in dim light every movement smears. Get close-ish (1–3 m) to furniture and
+it has been waiting for a steady moment (build 11 on: it keeps photos it expects to be sharp;
+build 12 on: while it waits for one it takes a slightly soft one after a second or so, and the map
+keeps that spot amber, so you get a photo every second or two as you move slowly; build 11 waited
+several seconds and took too few photos). Turn the TV off: a picture that changes from photo to
+photo comes out as streaks in the photoreal walkthrough. Scan in daylight with the lights on and
+the curtains open: indoors the camera already uses its longest exposure, so in dim light every
+movement smears, and dark windows give the photoreal model little to hold on to. Get close-ish (1–3 m) to furniture and
 look at it straight on from a couple of sides. Surfaces no photo saw are filled in from their
 surroundings; the scan's page says how much your photos covered.
 

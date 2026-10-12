@@ -32,7 +32,7 @@ from .capture import Camera
 # ScanCore's guess when a photo has no exposure time (PhotoTexturing: 1/50 s).
 DEFAULT_EXPOSURE = 0.02
 # How far away what's in view is taken to be for the smear of walking (ScanCore's PhotoSharpness).
-ASSUMED_DISTANCE = 1.5
+ASSUMED_DISTANCE = 2.0
 
 
 def smear_px(camera: Camera, scale: float = 1.0) -> float | None:
