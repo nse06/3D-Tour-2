@@ -572,11 +572,20 @@ def peaks(score: np.ndarray, depth: np.ndarray, positions: np.ndarray, share: fl
     return out
 
 
-def box_fronts(mesh: Mesh, chart: np.ndarray, flat: list[int], box: Box, layout: Layout, cfg: CabinetConfig) -> list[tuple[int, np.ndarray]]:
+def chart_centers(mesh: Mesh, chart: np.ndarray) -> np.ndarray:
+    """(charts, 3) each chart's center (area weighted): a chart wholly in a box has its center in it."""
+    areas = mesh.face_areas
+    middles = mesh.vertices[mesh.faces].astype(np.float64).mean(1)
+    weight = np.maximum(np.bincount(chart, weights=areas), 1e-12)
+    return np.stack([np.bincount(chart, weights=areas * middles[:, k]) for k in range(3)], 1) / weight[:, None]
+
+
+def box_fronts(mesh: Mesh, chart: np.ndarray, flat: list[int], centers: np.ndarray, box: Box, layout: Layout, cfg: CabinetConfig) -> list[tuple[int, np.ndarray]]:
     """The box's vertical faces that face the room: the ones opposite a wall it stands against (all
-    of them if it stands free)."""
+    of them if it stands free). `centers`: chart_centers, to look only at the flat charts in the box."""
     faces_in = []
-    for c in flat:
+    flat = np.asarray(flat, np.int64)
+    for c in flat[box.contains(centers[flat], 0.03)] if len(flat) else []:
         faces = np.flatnonzero(chart == c)
         if not box.contains(mesh.vertices[mesh.faces[faces]].reshape(-1, 3), 0.03).all():
             continue
@@ -609,6 +618,7 @@ def cabinets(mesh: Mesh, layout: Layout, cfg: CabinetConfig = CabinetConfig(), l
 
     chart = mesh.charts()
     flat = flat_charts(mesh, chart, 10.0)
+    centers = chart_centers(mesh, chart)
     texels = mesh.texel_size()
     remove = np.zeros(len(mesh.faces), bool)
     additions: list[Addition] = []
@@ -616,7 +626,7 @@ def cabinets(mesh: Mesh, layout: Layout, cfg: CabinetConfig = CabinetConfig(), l
     for b in layout.objects:
         if b.category not in cfg.categories or b.lidar:
             continue
-        for c, n in box_fronts(mesh, chart, flat, b, layout, cfg):
+        for c, n in box_fronts(mesh, chart, flat, centers, b, layout, cfg):
             frame = upright_frame(mesh, chart, c, n)
             s_lo, y_lo, s_hi, y_hi = frame.outline.bounds
             if s_hi - s_lo < 0.2 or y_hi - y_lo < 0.2:

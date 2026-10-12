@@ -103,6 +103,28 @@ def test_cleaned_views_where_buyers_walk_feed_the_skins(tmp_path):
     assert held_out_error(truth, result.mesh) < 0.8 * held_out_error(truth, mesh)
 
 
+def test_the_job_asks_the_fixer_only_when_told_to(tmp_path):
+    """On the synthetic apartment the Fixer's views gained nothing for a GPU more: they're opt-in."""
+    from atrium_photoreal.enhance import SmoothingFixer
+    from atrium_remaster.job import Services, remaster
+
+    room.write(tmp_path)
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    capture = load(tmp_path / "capture")
+    calls = []
+
+    class Counting(SmoothingFixer):
+        def __call__(self, images):
+            calls.append(len(images))
+            return super().__call__(images)
+
+    options = {"steps": 10, "batch": 2, "tile": 128, "longSide": 160, "fill": False, "trim": False, "depth": False, "fixerViewCount": 4, "fixerWidth": 96, "fixerHeight": 54}
+    _, stats = remaster(mesh, capture, options, Services(fixer=Counting()), "cpu", lambda *a: None, log=lambda _: None)
+    assert not calls and "extraViews" not in stats
+    _, stats = remaster(mesh, capture, {**options, "fixerViews": True}, Services(fixer=Counting()), "cpu", lambda *a: None, log=lambda _: None)
+    assert len(calls) == 2 and stats["extraRounds"] == 2
+
+
 def test_coverage_counts_each_pixels_bilinear_taps():
     """The coverage count (one view at a time, no autograd) is what grid_sample's gradient says: the
     skins' bilinear taps of every pixel that says something, weighted by its view."""

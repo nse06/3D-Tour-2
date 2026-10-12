@@ -62,6 +62,8 @@ class SkinConfig:
     align: bool = True  # learn each photo's small shift, turn and zoom
     color_prior: float = 0.05  # how strongly a photo's color correction stays near what it started at
     huber: float = 0.03
+    anneal: float = 0.1  # the learning rate eases down to this share of itself by the last step (cosine)
+    confidence: float = 0.0  # texels whose photos' weight is below about this keep the painting's colors (0: off)
     seed: int = 0
     progress_every: int = 100
 
@@ -326,6 +328,7 @@ class LazyAdam:
         self.groups = [(list(params), lr) for params, lr in groups]
         self.b1, self.b2 = betas
         self.eps = eps
+        self.scale = 1.0  # the schedule's share of each group's learning rate, this step
         self.state: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
 
     def zero_grad(self) -> None:
@@ -351,7 +354,7 @@ class LazyAdam:
                 mi = self.b1 * m[idx] + (1 - self.b1) * gi
                 vi = self.b2 * v[idx] + (1 - self.b2) * gi * gi
                 n[idx], m[idx], v[idx] = ni, mi, vi
-                step = lr * (mi / (1 - self.b1**ni)) / ((vi / (1 - self.b2**ni)).sqrt() + self.eps)
+                step = lr * self.scale * (mi / (1 - self.b1**ni)) / ((vi / (1 - self.b2**ni)).sqrt() + self.eps)
                 p.view(-1).index_add_(0, idx, -step)
 
 
@@ -442,6 +445,7 @@ def train(
                 v.angle = find_direction(render, v.photo(device), v.smear, keep=v.valid.to(device)[..., None].float())
 
     for step in range(cfg.steps):
+        opt.scale = cfg.anneal + (1 - cfg.anneal) * 0.5 * (1 + math.cos(math.pi * step / max(1, cfg.steps)))
         if step in (cfg.steps // 5, cfg.steps // 2):
             find_directions()
         if step in rounds:
@@ -525,6 +529,12 @@ def train(
     if str(device).startswith("cuda"):
         torch.cuda.empty_cache()
     seen = coverage(views, sizes, device)
+    if cfg.confidence > 0:
+        # What few photos say is mostly their noise: such texels lean back to the painting.
+        for a, (atlas, weight) in enumerate(zip(atlases, seen)):
+            painted = np.asarray(Image.fromarray((np.clip(mesh.atlases[a], 0, 1) * 255 + 0.5).astype(np.uint8)).resize(atlas.shape[:2][::-1], Image.BICUBIC), np.float32) / 255
+            trust = (weight / (weight + cfg.confidence))[..., None]
+            atlases[a] = (painted + trust * (atlas - painted)).astype(np.float32)
     trained = Mesh(mesh.vertices, mesh.uvs, mesh.faces, mesh.face_atlas, mesh.face_color, atlases, mesh.extras)
     stats = {
         "skinSteps": cfg.steps,
@@ -532,7 +542,7 @@ def train(
         "skinLoss": round(loss_ema or 0.0, 5),
         "skinAtlases": sizes,
         "skinViews": len(views),
-        "skinSeenShare": round(float(np.mean([(s > 0).mean() for s in seen])) if seen else 0.0, 4),
+        "skinSeenShare": round(sum(int((s > 0).sum()) for s in seen) / max(1, sum(s.size for s in seen)), 4),  # of all texels
         "photoShiftPx": shift,
         "photoGainSpread": round(float(gain.std(0).mean()), 4) if len(gain) else 0.0,
     }

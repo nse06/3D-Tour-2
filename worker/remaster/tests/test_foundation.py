@@ -39,6 +39,15 @@ def test_node_transforms_are_applied_and_flat_materials_kept():
     assert (mesh.face_atlas == -1).all() and np.allclose(mesh.face_color[0], scene.srgb_of_linear(np.float32(0.2)), atol=1e-6)
 
 
+def test_triangle_normals_and_areas_are_worked_out_once():
+    """Trim asks for them chart by chart (thousands of charts in a home): once per mesh, read-only."""
+    prim = glb.Primitive(np.array([[0, 0, 0], [2, 0, 0], [0, 1, 0]], np.float32), np.array([[0, 1, 2]]), None, 0, "tri")
+    mesh = scene.from_model(glb.Model([prim], [glb.Material("grey", color=(0.2, 0.2, 0.2, 1.0), unlit=False)]))
+    assert mesh.face_normals is mesh.face_normals and mesh.face_areas is mesh.face_areas
+    assert np.allclose(mesh.face_normals[0], [0, 0, 1]) and np.isclose(mesh.face_areas[0], 1.0)
+    assert not mesh.face_normals.flags.writeable and not mesh.face_areas.flags.writeable
+
+
 def test_rays_find_the_surface_and_where_on_it(tmp_path):
     truth = room.write(tmp_path)
     mesh = truth["mesh"]

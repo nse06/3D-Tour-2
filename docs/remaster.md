@@ -13,13 +13,13 @@ left on the server (docs/photoreal.md §2.1), so either can be switched off, red
 
 | Idea | Stage | Status |
 |---|---|---|
-| Train the skins on every photo | `skins.py` (§2) | built, CPU tests on a synthetic room; GPU eval next |
+| Train the skins on every photo | `skins.py` (§2) | built; GPU eval on the synthetic apartment (round 2): within about 1 dB of the painting on plain walls, 0.7–1 dB better on textured spots and at an angle |
 | Fill spots no photo saw | `fill.py` (§3), LaMa | built (LaMa on the GPU, pull-push in tests) |
 | Clean up the photos (sharpen, TV off, windows) | `cleanup.py` (§4.1), NAFNet | built |
-| The Fixer's cleaned views feed the skins | `fixviews.py` (§4.2) | built |
+| The Fixer's cleaned views feed the skins | `fixviews.py` (§4.2) | built; off unless asked (`fixerViews`): nothing gained on the synthetic apartment, for a GPU more |
 | Sharper depth from AI | `depth.py`, `fuse.py` (§4.3), Prompt Depth Anything | built: photo pixels where the shape is wrong say nothing; the LiDAR's pieces fused anew from it |
 | AI-made furniture | `furniture.py` (§4.4), SAM 2.1, TripoSG | built: fitting tested on CPU; TripoSG's GPU run next |
-| Trim: doors and windows set into their walls, baseboards, crown moldings, casings, cabinet doors | `trim.py` (§4.5) | built |
+| Trim: doors and windows set into their walls, baseboards, crown moldings, casings, cabinet doors | `trim.py` (§4.5) | built; the doors, windows, casings and cabinets wait for a build-13 scan; white baseboards on off-white walls are mostly too faint in the phone's painting to be found |
 | The room layout from the phone (walls, doors, windows, furniture boxes) | build 13, `cameras.json` `layout` (docs/photoreal.md §1) | done |
 | Photo spots (Matterport-style) | `spots.py`, viewer's `PhotoSpots` (§4.6) | built: tested on CPU and in Chromium on a synthetic room |
 
@@ -68,6 +68,10 @@ the photos at once, by gradient descent, like the splats, except that nothing ca
   pyramid of coarser layers on top (a layer's texel a block of the finest), that turned the synthetic apartment's
   665-photo skins into colored blotches (round 1: 18 dB where the painting has 24). The pyramid is gone too
   (`levels` 1).
+* **The last steps**: the learning rate eases down (a cosine) to a tenth of itself by the last step (`anneal`), so
+  the skins settle on what all the photos say rather than on the last few steps' photos. On the synthetic room that
+  took a sixth off the grain on plain walls and a little off the error on new viewpoints. Leaning texels few photos
+  saw back to the painting (`confidence`) took more grain off but added error on new viewpoints, so it's off.
 * **What no photo saw** keeps the phone's colors exactly; the coverage map goes on to the fill (§3).
 
 On a synthetic room with exact ground truth (`worker/remaster/tests/room.py`: a painted atlas softened, with a
@@ -75,6 +79,13 @@ different brightness per chart and a flat patch; 16 photos with different exposu
 skins cut the error on new viewpoints from 0.129 to 0.074 (the truth at the phone's texel size: 0.055); with 96 photos,
 each step one small tile (seldom seen texels), from 0.130 to 0.084, their color left as the photos have it (the old
 optimizer: 0.124, with blotches).
+
+On a GPU (an A10G), on the synthetic apartment (665 photos, the eval views of docs/photoreal.md;
+`prototypes/photoreal/results/remaster-round-2`), the skins take about 3 minutes and come within about 1 dB of the
+painting on plain walls (a wall at 0.6 m: 25.2 dB where the painting has 26.3; at 1.2 m: 24.4 and 24.5) and beat it
+where there's texture and at an angle (the sofa, rug and kitchen: 21.0 and 20.1 dB; walls at 45°: 24.6 and 23.9).
+AI depth (§4.3) adds 0.1–0.2 dB for 3 minutes more; the fill, the sharpening and trim change little there (its photos
+aren't smeared and it has no layout), and the Fixer's views (§4.2) nothing.
 
 ## 3. Spots no photo saw (`fill.py`)
 
@@ -99,7 +110,9 @@ keeping their frames. Nothing else about the home changes.
 Twice during training (at 45% and 85% of the steps), 80 views from where buyers walk (each round further from the
 photos) are rendered from the skins so far, cleaned up by NVIDIA's Fixer (on a GPU of its own), tone-locked to the
 render (its broad shading put back: the Fixer may tidy detail, not relight) and added to training at half a photo's
-weight, a quarter of each batch. They don't count as seen for the fill.
+weight, a quarter of each batch. They don't count as seen for the fill. It runs only when the job's `fixerViews` is
+true: on the synthetic apartment it changed nothing measurable in two GPU rounds (within 0.1 dB either way), for
+2 minutes and a second GPU more.
 
 ### 4.3 Sharper depth (`depth.py`)
 **Prompt Depth Anything** (ViT-L) turns the model's own depth at each photo (rendered at the LiDAR's 256×192) into
@@ -156,6 +169,12 @@ surfaces (reveals, the slabs' sides, the grooves' sides) share one new atlas (xa
 are learned from the photos like the rest. Scans from before build 13 have no layout: only baseboards and crown
 moldings are looked for.
 
+On the synthetic apartment (white baseboards 9 cm tall on off-white walls in five of its six rooms), trim finds one
+baseboard, a true one: in the phone's painting the others differ from their walls by 0.01–0.06 (the bar is 0.07) and
+shift by a few centimeters from photo to photo. Reading them from the trained skins (sharper, lined up) after
+training, with a lower bar held up by how evenly the band runs along the wall, is the next step for it. Trim takes
+seconds there.
+
 ### 4.6 Photo spots (`spots.py`, the viewer's `PhotoSpots.tsx`)
 Where the photos were taken, buyers see the photos, as in Matterport and Zillow tours. The photos taken within 1 m
 of each other (across the floor, in the order they were taken) make a spot, at the middle of where they were taken,
@@ -198,13 +217,13 @@ another scan don't), runs the stages and reports to the callback with the same s
 
 Options (all optional):
 
-* Skins: `steps` (3000), `scale` (2), `maxTexels` (40 M), `longSide` (1920), `batch` (4), `tile` (768), `levels` (4),
-  `maxMip` (4), `align` (true).
+* Skins: `steps` (3000), `scale` (2), `maxTexels` (40 M), `longSide` (1920), `batch` (4), `tile` (768), `levels` (1),
+  `maxMip` (4), `align` (true), `anneal` (0.1), `confidence` (0: off).
 * Cleanup: `deblur` (true), `deblurMinSmear` (1.5 px), `deblurResidual` (0.3), `tvOff` (true), `windows` (true).
 * Trim: `trim` (true: all of it), `recessDepth` (0.1 m), `baseboards`, `crowns`, `casings`, `cabinets` (true).
 * Furniture: `furniture` (true), `furnitureMinFit` (0.6), `furnitureViews` (5), `furnitureLongSide` (960),
   `furnitureInFrame` (0.9).
-* Depth: `depth` (true), `fuse` (true). Fixer views: `fixerViews` (true), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
+* Depth: `depth` (true), `fuse` (true). Fixer views: `fixerViews` (false), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
   (1024), `fixerHeight` (576), `fixerWeight` (0.5), `fixerShare` (0.25), `fixerToneLock` (0.012).
 * Photo spots: `spots` (true), `spotFace` (1024), `spotSpacing` (1 m), `spotLongSide` (1920).
 * `fill` (true), `jpegQuality` (90).
@@ -261,7 +280,7 @@ Fixer's views add to it (the Fixer the most, on a second GPU).
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 42 tests (below)
+python -m pytest tests -q        # CPU, 46 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

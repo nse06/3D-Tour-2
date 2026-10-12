@@ -47,18 +47,20 @@ VARIANTS: dict[str, dict | None] = {
     "full": {**OFF, "fill": True, "deblur": True},  # ... and the smeared photos sharpened first
     "full-residual0": {**OFF, "fill": True, "deblur": True, "deblurResidual": 0.0},  # ... counting the sharpened photos as sharp
     "full+depth": {**OFF, "fill": True, "deblur": True, "depth": True},  # ... and photo pixels the AI's depth puts off the model's shapes left out
-    "full+trim": {"fixerViews": False},  # ... and trim (baseboards, crowns; doors, windows, casings and cabinets with a layout)
-    "full+fixer": {},  # ... and the Fixer's cleaned views where buyers walk: the job's defaults
+    "full+trim": {},  # ... and trim (baseboards, crowns; doors, windows, casings and cabinets with a layout): the job's defaults
+    "full+fixer": {"fixerViews": True},  # ... and the Fixer's cleaned views where buyers walk
     "skins-1x": {**OFF, "scale": 1.0},  # skins at the phone's texel size
     "skins-noalign": {**OFF, "align": False},  # ... without each photo's shift, turn and zoom
     "skins-long": {**OFF, "steps": 6000},  # ... twice the steps
+    "skins-noanneal": {**OFF, "anneal": 1.0},  # ... the learning rate kept up to the last step (round 2)
+    "skins-confident": {**OFF, "confidence": 1.0},  # ... texels few photos saw leaning back to the painting
 }
 
 
 def uses_fixer(variant: str) -> bool:
     """Whether a variant learns from the Fixer's views (then it needs the Fixer on a GPU)."""
     config = VARIANTS.get(variant)
-    return config is not None and config.get("fixerViews", True) is not False and "fixer" in variant
+    return config is not None and bool(config.get("fixerViews", False))
 
 
 def render_views(mesh, views: list[dict], views_dir: Path, eval_scale: float):

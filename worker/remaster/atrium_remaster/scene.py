@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass, field
+from functools import cached_property
 
 import numpy as np
 from PIL import Image
@@ -31,15 +32,18 @@ class Mesh:
     atlases: list[np.ndarray] = field(default_factory=list)  # (S, S, 3) float32 sRGB 0-1
     extras: dict = field(default_factory=dict)  # the GLB scene's extras (the scan manifest)
 
-    @property
+    # A mesh is a value: edits make new ones (edit.apply), never change its arrays. So its triangles'
+    # normals and areas are worked out once (code asks for them chart by chart, thousands of times),
+    # and are read-only.
+    @cached_property
     def face_normals(self) -> np.ndarray:
         a, b, c = (self.vertices[self.faces[:, k]].astype(np.float64) for k in range(3))
         n = np.cross(b - a, c - a)
-        return (n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)).astype(np.float32)
+        return read_only((n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)).astype(np.float32))
 
-    @property
+    @cached_property
     def face_areas(self) -> np.ndarray:
-        return glb.triangle_area(self.vertices.astype(np.float64), self.faces)
+        return read_only(glb.triangle_area(self.vertices.astype(np.float64), self.faces))
 
     def texel_size(self) -> np.ndarray:
         """Each triangle's texel size in meters (inf for flat ones): how much of the surface one texel
@@ -68,6 +72,11 @@ class Mesh:
         key = labels.astype(np.int64) * (len(self.atlases) + 2) + (self.face_atlas + 1)
         _, chart = np.unique(key, return_inverse=True)
         return chart
+
+
+def read_only(a: np.ndarray) -> np.ndarray:
+    a.setflags(write=False)
+    return a
 
 
 def decode(image: glb.Image) -> np.ndarray:

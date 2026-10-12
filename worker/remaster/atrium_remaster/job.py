@@ -98,6 +98,8 @@ def config_from(options: dict) -> skins.SkinConfig:
         levels=int(options.get("levels", d.levels)),
         max_mip=int(options.get("maxMip", d.max_mip)),
         align=bool(options.get("align", d.align)),
+        anneal=float(options.get("anneal", d.anneal)),
+        confidence=float(options.get("confidence", d.confidence)),
     )
 
 
@@ -198,7 +200,9 @@ def remaster(
     report("skins", 0.0, "lining up the photos with the model")
     # Hundreds of photos at full size can outgrow the GPU: then they wait in memory (skins.storage).
     fixer_pixels = 0
-    if services.fixer is not None and options.get("fixerViews", True):
+    # Off unless asked: on the synthetic apartment they changed nothing, for a GPU more (docs/remaster.md §4.2).
+    fixer_on = services.fixer is not None and bool(options.get("fixerViews", False))
+    if fixer_on:
         d = fixviews.FixerViewsConfig()
         fixer_pixels = int(options.get("fixerRounds", d.rounds)) * int(options.get("fixerViewCount", d.views)) * int(options.get("fixerWidth", d.width)) * int(options.get("fixerHeight", d.height))
     store = skins.storage(capture, cfg, device, fixer_pixels)
@@ -208,7 +212,7 @@ def remaster(
     stats["skinViewsOn"] = "memory" if store == "cpu" and str(device) != "cpu" else "gpu" if str(device).startswith("cuda") else "cpu"
     report("skins", 0.02, f"{len(views)} photos")
     extra = None
-    if services.fixer is not None and options.get("fixerViews", True):
+    if fixer_on:
         d = fixviews.FixerViewsConfig()
         fix_cfg = fixviews.FixerViewsConfig(
             rounds=int(options.get("fixerRounds", d.rounds)),
