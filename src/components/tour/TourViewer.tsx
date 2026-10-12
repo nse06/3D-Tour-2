@@ -16,6 +16,7 @@ import {
   Minimize2,
   Pause,
   Play,
+  Ruler,
   Share2,
   Sparkles,
   X,
@@ -24,8 +25,9 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { cityLine, formatBaths, formatNumber, formatPrice } from "@/lib/format";
 import { useMediaQuery, useQueryParam } from "@/lib/hooks";
+import { distance, formatFeetInches, formatMeters, formatSquareFeet, polygonArea } from "@/lib/tour/measure";
 import { sortedFloors, walkthroughOrder } from "@/lib/tour/navigation";
-import type { TourData, TourRoom, Waypoint } from "@/lib/tour/types";
+import type { TourData, TourRoom, Vec3, Waypoint } from "@/lib/tour/types";
 import { FloorPlan } from "./FloorPlan";
 import type { LivePose, ViewerApi } from "./viewer-types";
 
@@ -101,6 +103,18 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
   const [fullscreen, setFullscreen] = useState(false);
   const [titleCard, setTitleCard] = useState<{ room: TourRoom; key: number } | null>(null);
   const [playing, setPlaying] = useState(false);
+  // The measuring tool: taps mark two points on any surface; a third tap starts again.
+  const [measuring, setMeasuring] = useState(false);
+  const [measurePoints, setMeasurePoints] = useState<Vec3[]>([]);
+  const onMeasurePick = useCallback((point: Vec3) => setMeasurePoints((pts) => (pts.length === 1 ? [pts[0], point] : [point])), []);
+  const toggleMeasuring = () => {
+    setMeasurePoints([]);
+    setMeasuring(!measuring);
+    if (!measuring) {
+      setPlaying(false);
+      setHint(false);
+    }
+  };
   // Photo scans with a clean model: photos on or off. The realtor's default view picks the start.
   const [startWithPhotos] = useState(!(data.cleanAssetUrl && data.appearance === "studio"));
   const [photos, setPhotos] = useState(startWithPhotos);
@@ -257,6 +271,8 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
       if (e.key === "Escape") {
         setInfoOpen(false);
         setRoomsOpen(false);
+        setMeasuring(false);
+        setMeasurePoints([]);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -335,6 +351,9 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
   };
 
   const roomsOnPlanFloor = planFloor ? space.rooms.filter((r) => r.floorId === planFloor.id) : [];
+  // The scanned rooms' floor area on this floor (approximate: inside the walls, scanned rooms only).
+  const planFloorArea = roomsOnPlanFloor.reduce((sum, r) => sum + (r.footprint && r.footprint.length >= 3 ? polygonArea(r.footprint) : 0), 0);
+  const measured = measurePoints.length === 2 ? distance(measurePoints[0], measurePoints[1]) : null;
   const currentFloor = currentRoom ? floorsById.get(currentRoom.floorId) : null;
 
   return (
@@ -377,6 +396,9 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
           }}
           onError={setError}
           effects={effects}
+          measuring={measuring}
+          onMeasurePick={onMeasurePick}
+          measurePoints={measurePoints}
         />
       )}
 
@@ -406,6 +428,9 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
         </IconButton>
         <IconButton label="Property details" onClick={() => setInfoOpen(true)}>
           <Info className="size-[18px]" />
+        </IconButton>
+        <IconButton label={measuring ? "Stop measuring" : "Measure"} onClick={toggleMeasuring} active={measuring}>
+          <Ruler className="size-[18px]" />
         </IconButton>
         <IconButton label={fullscreen ? "Exit full screen" : "Full screen"} onClick={toggleFullscreen} className="hidden md:flex">
           {fullscreen ? <Minimize2 className="size-[18px]" /> : <Maximize2 className="size-[18px]" />}
@@ -452,6 +477,45 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
             onRoomClick={goToRoom}
             className="h-56 w-full md:h-60"
           />
+          {planFloorArea > 0 && (
+            <p className="px-1 pt-1 text-[11px] text-white/55" title="Measured inside the walls of the scanned rooms. Approximate: not an official square footage.">
+              About {formatSquareFeet(planFloorArea)} scanned · sizes approximate
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Measuring tool */}
+      {entered && measuring && (
+        <div className={`absolute inset-x-0 top-28 z-20 flex justify-center px-4 md:top-8 ${banner ? "mt-10" : ""}`}>
+          <div className="glass-strong flex items-center gap-3 rounded-2xl py-2 pl-4 pr-2" role="status" aria-live="polite">
+            <Ruler className="size-4 shrink-0 text-[#d6b67c]" />
+            <div className="min-w-0">
+              {measured !== null ? (
+                <>
+                  <p className="text-[17px] font-semibold leading-tight [font-variant-numeric:tabular-nums]">
+                    {formatFeetInches(measured)} <span className="text-[13px] font-normal text-white/60">· {formatMeters(measured)}</span>
+                  </p>
+                  <p className="text-[11px] text-white/55">Approximate · {isTouch ? "tap" : "click"} to measure again</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[14px] font-medium leading-tight">
+                    {measurePoints.length === 1 ? `Now ${isTouch ? "tap" : "click"} the second point` : `${isTouch ? "Tap" : "Click"} two points to measure`}
+                  </p>
+                  <p className="text-[11px] text-white/55">Drag to look around · approximate, a few cm</p>
+                </>
+              )}
+            </div>
+            {measurePoints.length > 0 && (
+              <button onClick={() => setMeasurePoints([])} className="rounded-full px-3 py-1.5 text-[12px] font-medium text-white/80 hover:bg-white/10 hover:text-white">
+                Clear
+              </button>
+            )}
+            <button onClick={toggleMeasuring} className="grid size-8 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white" aria-label="Stop measuring">
+              <X className="size-4" />
+            </button>
+          </div>
         </div>
       )}
 

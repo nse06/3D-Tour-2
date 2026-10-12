@@ -29,6 +29,9 @@ interface Props {
   photoScan?: boolean;
   /** Photo spots (PhotoSpots): a click on the floor near one goes exactly there. */
   snapTo?: Vec3[] | null;
+  /** The measuring tool is on: a tap marks a point on any surface (onMeasurePick) instead of walking. */
+  measuring?: boolean;
+  onMeasurePick?: (point: Vec3) => void;
 }
 
 interface Motion {
@@ -70,6 +73,7 @@ const TURN_SPEED = 1.7;
 const tmpV = new THREE.Vector3();
 const ndc = new THREE.Vector2();
 const normalMatrix = new THREE.Matrix3();
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
 function wrapAngle(a: number) {
   while (a > Math.PI) a -= Math.PI * 2;
@@ -106,6 +110,8 @@ export function CameraRig({
   onUserInteract,
   photoScan = false,
   snapTo = null,
+  measuring = false,
+  onMeasurePick,
 }: Props) {
   const { camera, gl, raycaster, scene, size } = useThree();
   const baseFov = baseFovFor(size.width / size.height, photoScan);
@@ -113,6 +119,7 @@ export function CameraRig({
   baseFovRef.current = baseFov;
   const cam = camera as THREE.PerspectiveCamera;
   const cursorRef = useRef<THREE.Group>(null);
+  const measureCursorRef = useRef<THREE.Group>(null);
 
   const s = useRef({
     yaw: startWaypoint.yaw + 0.55,
@@ -132,8 +139,8 @@ export function CameraRig({
     started: false,
   });
 
-  const latest = useRef({ onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract, snapTo });
-  latest.current = { onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract, snapTo };
+  const latest = useRef({ onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract, snapTo, measuring, onMeasurePick });
+  latest.current = { onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract, snapTo, measuring, onMeasurePick };
 
   // Initial placement (before the visitor enters, the camera slowly drifts).
   useEffect(() => {
@@ -308,6 +315,27 @@ export function CameraRig({
     return hit.point.clone();
   };
 
+  /** The point (and its surface's normal) under the pointer, on any surface of the model. */
+  const pickSurface = (clientX: number, clientY: number): { point: THREE.Vector3; normal: THREE.Vector3 } | null => {
+    const model = modelRef.current;
+    if (!model) return null;
+    const rect = gl.domElement.getBoundingClientRect();
+    ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    raycaster.far = 30;
+    const hit = raycaster.intersectObject(model, true).find((h) => (h.object as THREE.Mesh).isMesh && !h.object.userData.noPick);
+    raycaster.far = Infinity;
+    if (!hit) return null;
+    const normal = new THREE.Vector3(0, 1, 0);
+    if (hit.face) {
+      normalMatrix.getNormalMatrix(hit.object.matrixWorld);
+      normal.copy(hit.face.normal).applyMatrix3(normalMatrix).normalize();
+      // Face the camera, whichever way the triangle was wound.
+      if (normal.dot(raycaster.ray.direction) > 0) normal.negate();
+    }
+    return { point: hit.point.clone(), normal };
+  };
+
   const isWalkable = (x: number, z: number, floorId: string | null, margin: number) => {
     const sp = latest.current.space;
     const rooms = sp.rooms.filter((r) => (floorId ? r.floorId === floorId : true) && r.footprint && r.footprint.length >= 3);
@@ -376,7 +404,11 @@ export function CameraRig({
       st.pointers.delete(e.pointerId);
       el.style.cursor = "";
       const quick = performance.now() - st.downAt.time < 450;
-      if (st.pointers.size === 0 && quick && st.downAt.moved < 8 && !st.motion) {
+      // Measuring works mid-glide too: the points are fixed in the house, not on the screen.
+      if (st.pointers.size === 0 && quick && st.downAt.moved < 8 && latest.current.measuring) {
+        const hit = pickSurface(e.clientX, e.clientY);
+        if (hit) latest.current.onMeasurePick?.([hit.point.x, hit.point.y, hit.point.z]);
+      } else if (st.pointers.size === 0 && quick && st.downAt.moved < 8 && !st.motion) {
         const target = pickFloor(e.clientX, e.clientY);
         // Near a photo spot: to the spot itself, where its photos line up.
         let spot: Vec3 | null = null;
@@ -536,10 +568,24 @@ export function CameraRig({
       cam.updateProjectionMatrix();
     }
 
-    // Hover cursor on walkable floor (desktop).
+    // Hover cursor (desktop): on walkable floor, or with the measuring tool on any surface.
     const cursor = cursorRef.current;
-    if (cursor) {
-      const hit = st.hover && !st.motion && st.started && st.pointers.size === 0 ? pickFloor(st.hover.x, st.hover.y) : null;
+    const measureCursor = measureCursorRef.current;
+    const hovering = st.hover && !st.motion && st.started && st.pointers.size === 0 ? st.hover : null;
+    if (latest.current.measuring) {
+      if (cursor) cursor.visible = false;
+      const hit = st.hover && st.started && st.pointers.size === 0 ? pickSurface(st.hover.x, st.hover.y) : null;
+      if (measureCursor) {
+        measureCursor.visible = !!hit;
+        if (hit) {
+          measureCursor.position.copy(hit.point).addScaledVector(hit.normal, 0.004);
+          measureCursor.quaternion.setFromUnitVectors(Z_AXIS, hit.normal);
+        }
+      }
+      gl.domElement.style.cursor = st.pointers.size ? "grabbing" : "crosshair";
+    } else if (cursor) {
+      if (measureCursor) measureCursor.visible = false;
+      const hit = hovering ? pickFloor(hovering.x, hovering.y) : null;
       cursor.visible = !!hit;
       if (hit) cursor.position.set(hit.x, hit.y + 0.01, hit.z);
       gl.domElement.style.cursor = hit ? "pointer" : st.pointers.size ? "grabbing" : "grab";
@@ -565,15 +611,24 @@ export function CameraRig({
   });
 
   return (
-    <group ref={cursorRef} visible={false}>
-      <mesh rotation-x={-Math.PI / 2} renderOrder={10}>
-        <ringGeometry args={[0.2, 0.25, 48]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthWrite={false} />
-      </mesh>
-      <mesh rotation-x={-Math.PI / 2} renderOrder={10}>
-        <circleGeometry args={[0.2, 48]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={0.18} depthWrite={false} />
-      </mesh>
-    </group>
+    <>
+      <group ref={cursorRef} visible={false}>
+        <mesh rotation-x={-Math.PI / 2} renderOrder={10}>
+          <ringGeometry args={[0.2, 0.25, 48]} />
+          <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthWrite={false} />
+        </mesh>
+        <mesh rotation-x={-Math.PI / 2} renderOrder={10}>
+          <circleGeometry args={[0.2, 48]} />
+          <meshBasicMaterial color="#ffffff" transparent opacity={0.18} depthWrite={false} />
+        </mesh>
+      </group>
+      {/* The measuring tool's cursor: a small ring flat on whatever surface is under the pointer. */}
+      <group ref={measureCursorRef} visible={false}>
+        <mesh renderOrder={10}>
+          <ringGeometry args={[0.035, 0.05, 32]} />
+          <meshBasicMaterial color="#d6b67c" transparent opacity={0.95} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      </group>
+    </>
   );
 }

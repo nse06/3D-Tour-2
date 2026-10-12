@@ -2,7 +2,7 @@
 
 /* eslint-disable react-hooks/immutability -- three.js scene objects are mutated imperatively, as is idiomatic with React Three Fiber. */
 
-import { Bvh } from "@react-three/drei";
+import { Bvh, Html, Line } from "@react-three/drei";
 import { EffectComposer, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
@@ -12,7 +12,8 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import type { SplatSpot, TourAppearance, TourSpace, Waypoint } from "@/lib/tour/types";
+import { distance, formatFeetInches, formatMeters } from "@/lib/tour/measure";
+import type { SplatSpot, TourAppearance, TourSpace, Vec3, Waypoint } from "@/lib/tour/types";
 import { CameraRig } from "./CameraRig";
 import { makeSpotUniforms, PhotoSpots, spotsOf, withPhotoSpots } from "./PhotoSpots";
 import type { LivePose, ViewerApi, ViewerMode } from "./viewer-types";
@@ -63,6 +64,10 @@ export interface TourSceneProps {
   effects?: boolean;
   autoPan?: boolean;
   onUserInteract?: () => void;
+  /** The measuring tool: taps mark points (onMeasurePick) instead of walking; `measurePoints` are drawn. */
+  measuring?: boolean;
+  onMeasurePick?: (point: Vec3) => void;
+  measurePoints?: Vec3[];
 }
 
 /** Fully client-side WebGL scene. Loaded with next/dynamic (ssr: false). */
@@ -157,6 +162,9 @@ function PropertyModel({
   effects = false,
   autoPan = false,
   onUserInteract,
+  measuring = false,
+  onMeasurePick,
+  measurePoints = [],
 }: TourSceneProps) {
   // The camera rig picks floors and checks sight lines against the model on screen.
   const modelRef = useRef<THREE.Object3D | null>(null);
@@ -294,7 +302,10 @@ function PropertyModel({
         onUserInteract={onUserInteract}
         photoScan={photoLook === "captured"}
         snapTo={spotsOn ? spots.map((s) => s.position) : null}
+        measuring={measuring}
+        onMeasurePick={onMeasurePick}
       />
+      {measuring && measurePoints.length > 0 && <MeasureMarks points={measurePoints} />}
       {effects && !captured && (
         <EffectComposer multisampling={4}>
           <N8AO aoRadius={0.6} distanceFalloff={0.7} intensity={2.4} quality="medium" halfRes />
@@ -450,6 +461,36 @@ function SplatLayer({
     }
   });
   return null;
+}
+
+/**
+ * The measuring tool's marks: a dot on each picked point and, with two, the line between them and
+ * its length. Drawn over the model (no depth test) so walls in between don't hide them.
+ */
+function MeasureMarks({ points }: { points: Vec3[] }) {
+  const [a, b] = points;
+  const mid: Vec3 | null = a && b ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2] : null;
+  const length = a && b ? distance(a, b) : 0;
+  return (
+    <group renderOrder={20}>
+      {points.slice(0, 2).map((p, i) => (
+        <mesh key={i} position={p} renderOrder={20}>
+          <sphereGeometry args={[0.03, 16, 12]} />
+          <meshBasicMaterial color="#d6b67c" depthTest={false} depthWrite={false} transparent />
+        </mesh>
+      ))}
+      {a && b && (
+        <Line points={[a, b]} color="#d6b67c" lineWidth={2.5} depthTest={false} depthWrite={false} transparent renderOrder={19} />
+      )}
+      {mid && (
+        <Html position={mid} center zIndexRange={[15, 10]} style={{ pointerEvents: "none" }}>
+          <div className="whitespace-nowrap rounded-full bg-neutral-900/85 px-2.5 py-1 text-[13px] font-medium text-white shadow-lg ring-1 ring-[#d6b67c]/60 [font-variant-numeric:tabular-nums]">
+            {formatFeetInches(length)} <span className="text-white/55">· {formatMeters(length)}</span>
+          </div>
+        </Html>
+      )}
+    </group>
+  );
 }
 
 /** The model not shown at the start (photos or clean), loaded on first switch. */

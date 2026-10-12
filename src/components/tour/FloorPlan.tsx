@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
+import { formatRoomSize, roomSize } from "@/lib/tour/measure";
 import { polygonCentroid } from "@/lib/tour/navigation";
 import type { TourFloor, TourRoom, Vec2 } from "@/lib/tour/types";
 import type { LivePose } from "./viewer-types";
@@ -42,6 +43,22 @@ export function FloorPlan({ floor, rooms, currentRoomId, poseRef, onRoomClick, c
 
   const scale = Math.max(bounds.w, bounds.h) / 18; // keeps strokes/text proportional for small or huge plans
   const labelSize = 0.58 * scale;
+  const sizeLabelSize = labelSize * 0.78;
+
+  // Each room's size under its name, where it fits inside the room (closets and halls go without).
+  const sizes = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const r of rooms) {
+      const size = roomSize(r.footprint);
+      if (!size) continue;
+      const text = formatRoomSize(size);
+      // Rough text extents in plan units: ~0.55 em per character, two lines of labels.
+      const fitsWide = Math.max(text.length * sizeLabelSize, r.name.length * labelSize) * 0.55 < size.length * 0.9;
+      const fitsTall = labelSize + sizeLabelSize * 1.5 < size.width * 0.9;
+      if (fitsWide && fitsTall) out.set(r.id, text);
+    }
+    return out;
+  }, [rooms, labelSize, sizeLabelSize]);
 
   // Live position marker, updated every frame without React renders.
   useEffect(() => {
@@ -150,12 +167,27 @@ export function FloorPlan({ floor, rooms, currentRoomId, poseRef, onRoomClick, c
         const c: Vec2 = r.footprint && r.footprint.length >= 3 ? polygonCentroid(r.footprint) : [r.waypoint.position[0], r.waypoint.position[2]];
         const active = r.id === currentRoomId;
         const hasFootprint = !!r.footprint && r.footprint.length >= 3;
+        const size = sizes.get(r.id);
+        // With a size line under it, the name moves up so the pair stays centered.
+        const nameY = c[1] + labelSize * 0.35 - (size ? sizeLabelSize * 0.55 : 0);
         return (
           <g key={`label-${r.id}`} className="cursor-pointer" onClick={() => onRoomClick(r.id)}>
             {!hasFootprint && <circle cx={c[0]} cy={c[1] - labelSize * 1.1} r={0.22 * scale} fill={active ? "#d6b67c" : "rgba(255,255,255,0.8)"} />}
+            {size && (
+              <text
+                x={c[0]}
+                y={nameY + sizeLabelSize * 1.25}
+                fontSize={sizeLabelSize}
+                textAnchor="middle"
+                fill={active ? "rgba(246,231,200,0.85)" : "rgba(255,255,255,0.6)"}
+                style={{ fontVariantNumeric: "tabular-nums" }}
+              >
+                {size}
+              </text>
+            )}
             <text
               x={c[0]}
-              y={c[1] + labelSize * 0.35}
+              y={nameY}
               fontSize={labelSize}
               textAnchor="middle"
               fill={active ? "#f6e7c8" : "rgba(255,255,255,0.82)"}
