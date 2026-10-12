@@ -287,8 +287,10 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
 
 Each photo-textured build also writes what a cloud GPU needs to train a photoreal walkthrough (3D Gaussian splats),
 in `photoreal/`: `cameras.json` (every painted photo's intrinsics and pose, as painted after lining up, in the
-model's frame), `seeds.ply` (a point every 3 cm on the painted surfaces a photo saw, in their colors, with the
-surface normal) and `masks/` (where photos show people). Format and the rest of the pipeline: [photoreal.md](photoreal.md).
+model's frame; build 13 on, also the room layout: walls, doors and windows, furniture boxes), `seeds.ply` (a point
+every 3 cm on the painted surfaces a photo saw, in their colors, with the surface normal) and `masks/` (where photos
+show people). Format and the rest of the pipeline: [photoreal.md](photoreal.md); the layout is for the remastered
+model ([remaster.md](remaster.md)).
 `ProcessedScan.photoreal`; `scanproc paint … --photoreal <dir>`.
 
 ## 3. Atrium web API (phone ⇄ server)

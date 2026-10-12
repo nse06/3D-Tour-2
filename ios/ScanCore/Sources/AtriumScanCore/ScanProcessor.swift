@@ -208,7 +208,7 @@ public enum ScanProcessor {
         processed.photoPoses = baked.poses
         processed.photoreal = try PhotorealExport.make(
             frames: cameras.map(\.frame), poses: baked.poses, rooms: rooms, model: model, atlases: baked.atlases, seen: baked.seen,
-            atlasSize: photoOptions.atlasSize)
+            atlasSize: photoOptions.atlasSize, walls: walls, openings: scan.openings, objects: scan.objects)
         return processed
     }
 
