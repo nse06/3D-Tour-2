@@ -1,0 +1,8 @@
+# The remaster worker (docs/remaster.md). The photoreal worker's own requirements (worker/photoreal)
+# come along: it borrows atrium_photoreal's helpers.
+numpy
+scipy
+pillow
+torch
+open3d-cpu  # MIT; ray casting (Embree). Needs libegl1 and libgl1 on Linux.
+pytest
