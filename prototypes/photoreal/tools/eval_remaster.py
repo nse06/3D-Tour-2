@@ -38,17 +38,20 @@ sys.path.insert(0, str(HERE))
 from eval_splats import lpips_model, sheet, ssim, summarize  # noqa: E402
 
 # Each variant: the remaster job's options (atrium_remaster/job.py), or None for the painted model as it is.
+# Every stage off, then switched on one at a time (the job's options, docs/remaster.md §5).
+OFF = {"fill": False, "deblur": False, "depth": False, "trim": False, "fixerViews": False}
 VARIANTS: dict[str, dict | None] = {
     "painted": None,
-    "skins": {"fill": False, "deblur": False, "depth": False, "fixerViews": False},  # skins trained on every photo, twice the texels
-    "skins+fill": {"deblur": False, "depth": False, "fixerViews": False},  # ... and the unseen spots filled
-    "full": {"depth": False, "fixerViews": False},  # ... and the smeared photos sharpened first
-    "full-residual0": {"depth": False, "fixerViews": False, "deblurResidual": 0.0},  # ... counting the sharpened photos as sharp
-    "full+depth": {"fixerViews": False},  # ... and photo pixels the AI's depth puts off the model's shapes left out
+    "skins": dict(OFF),  # skins trained on every photo, twice the texels
+    "skins+fill": {**OFF, "fill": True},  # ... and the unseen spots filled
+    "full": {**OFF, "fill": True, "deblur": True},  # ... and the smeared photos sharpened first
+    "full-residual0": {**OFF, "fill": True, "deblur": True, "deblurResidual": 0.0},  # ... counting the sharpened photos as sharp
+    "full+depth": {**OFF, "fill": True, "deblur": True, "depth": True},  # ... and photo pixels the AI's depth puts off the model's shapes left out
+    "full+trim": {"fixerViews": False},  # ... and trim (baseboards, crowns; doors, windows, casings and cabinets with a layout)
     "full+fixer": {},  # ... and the Fixer's cleaned views where buyers walk: the job's defaults
-    "skins-1x": {"fill": False, "deblur": False, "depth": False, "fixerViews": False, "scale": 1.0},  # skins at the phone's texel size
-    "skins-noalign": {"fill": False, "deblur": False, "depth": False, "fixerViews": False, "align": False},  # ... without each photo's shift, turn and zoom
-    "skins-long": {"fill": False, "deblur": False, "depth": False, "fixerViews": False, "steps": 6000},  # ... twice the steps
+    "skins-1x": {**OFF, "scale": 1.0},  # skins at the phone's texel size
+    "skins-noalign": {**OFF, "align": False},  # ... without each photo's shift, turn and zoom
+    "skins-long": {**OFF, "steps": 6000},  # ... twice the steps
 }
 
 

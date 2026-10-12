@@ -75,7 +75,7 @@ def evaluate(tag: str, variant: str, steps: int) -> dict:
 
 
 @app.local_entrypoint()
-def main(capture: str, painted: str, views: str, out: str, variants: str = "painted,skins,skins+fill,full,full+depth,full+fixer", steps: int = 0):
+def main(capture: str, painted: str, views: str, out: str, variants: str = "painted,skins,skins+fill,full,full+depth,full+trim,full+fixer", steps: int = 0):
     import eval_remaster
 
     names = [n for n in variants.split(",") if n]
