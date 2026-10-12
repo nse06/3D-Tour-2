@@ -27,7 +27,7 @@ volume = modal.Volume.from_name("atrium-photoreal-eval", create_if_missing=True)
 # The remaster worker's image (worker/remaster/modal_app.py), plus LPIPS (torchvision's AlexNet).
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("libegl1", "libgl1", "libgomp1", "curl")
+    .apt_install("libegl1", "libgl1", "libgomp1", "libusb-1.0-0", "curl")
     .pip_install("torch==2.5.1", "torchvision==0.20.1", index_url="https://download.pytorch.org/whl/cu124")
     .pip_install("numpy<2.3", "scipy", "pillow>=10", "open3d-cpu==0.20.0", "lpips==0.1.4")
     .run_commands(f"mkdir -p /models && curl -fsSL -o {LAMA_PATH} {LAMA_URL} && sha256sum {LAMA_PATH}")

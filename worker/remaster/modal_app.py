@@ -31,11 +31,11 @@ GPU = os.environ.get("REMASTER_GPU", "A10G")
 
 app = modal.App("atrium-remaster")
 
-# PyTorch with CUDA, Open3D's CPU build for ray casting (it needs EGL and GL libraries to import),
+# PyTorch with CUDA, Open3D's CPU build for ray casting (it needs EGL, GL and libusb to import),
 # and LaMa's weights. Every container imports this file, so each image has both packages.
 gpu_image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("libegl1", "libgl1", "libgomp1", "curl")
+    .apt_install("libegl1", "libgl1", "libgomp1", "libusb-1.0-0", "curl")
     .pip_install("torch==2.5.1", index_url="https://download.pytorch.org/whl/cu124")
     .pip_install("numpy<2.3", "scipy", "pillow>=10", "open3d-cpu==0.20.0", "fastapi")
     .run_commands(f"mkdir -p /models && curl -fsSL -o {LAMA_PATH} {LAMA_URL} && sha256sum {LAMA_PATH}")
