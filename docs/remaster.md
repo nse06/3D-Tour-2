@@ -13,7 +13,7 @@ left on the server (docs/photoreal.md §2.1), so either can be switched off, red
 
 | Idea | Stage | Status |
 |---|---|---|
-| Train the skins on every photo | `skins.py` (§2) | built; GPU eval on the synthetic apartment (round 2): within about 1 dB of the painting on plain walls, 0.7–1 dB better on textured spots and at an angle |
+| Train the skins on every photo | `skins.py` (§2) | built; GPU eval on the synthetic apartment (round 3): better than the painting in PSNR on every kind of view but plain walls up close (25.8 vs 26.3 dB, where SSIM and LPIPS are better) |
 | Fill spots no photo saw | `fill.py` (§3), LaMa | built (LaMa on the GPU, pull-push in tests) |
 | Clean up the photos (sharpen, TV off, windows) | `cleanup.py` (§4.1), NAFNet | built |
 | The Fixer's cleaned views feed the skins | `fixviews.py` (§4.2) | built; off unless asked (`fixerViews`): nothing gained on the synthetic apartment, for a GPU more |
@@ -70,8 +70,9 @@ the photos at once, by gradient descent, like the splats, except that nothing ca
   (`levels` 1).
 * **The last steps**: the learning rate eases down (a cosine) to a tenth of itself by the last step (`anneal`), so
   the skins settle on what all the photos say rather than on the last few steps' photos. On the synthetic room that
-  took a sixth off the grain on plain walls and a little off the error on new viewpoints. Leaning texels few photos
-  saw back to the painting (`confidence`) took more grain off but added error on new viewpoints, so it's off.
+  took a sixth off the grain on plain walls; on the synthetic apartment it gained 0.3–0.6 dB on walls and between
+  the photo spots, 0.1 dB on the textured spots (round 3). Leaning texels few photos saw back to the painting (`confidence`) took more grain off but added error on
+  new viewpoints, so it's off.
 * **What no photo saw** keeps the phone's colors exactly; the coverage map goes on to the fill (§3).
 
 On a synthetic room with exact ground truth (`worker/remaster/tests/room.py`: a painted atlas softened, with a
@@ -81,11 +82,15 @@ each step one small tile (seldom seen texels), from 0.130 to 0.084, their color 
 optimizer: 0.124, with blotches).
 
 On a GPU (an A10G), on the synthetic apartment (665 photos, the eval views of docs/photoreal.md;
-`prototypes/photoreal/results/remaster-round-2`), the skins take about 3 minutes and come within about 1 dB of the
-painting on plain walls (a wall at 0.6 m: 25.2 dB where the painting has 26.3; at 1.2 m: 24.4 and 24.5) and beat it
-where there's texture and at an angle (the sofa, rug and kitchen: 21.0 and 20.1 dB; walls at 45°: 24.6 and 23.9).
-AI depth (§4.3) adds 0.1–0.2 dB for 3 minutes more; the fill, the sharpening and trim change little there (its photos
-aren't smeared and it has no layout), and the Fixer's views (§4.2) nothing.
+`prototypes/photoreal/results/remaster-round-3`), the job's defaults take about 6 minutes and make a 8.7 MB model
+that beats the painting on walls at 1.2 m (24.7 dB vs 24.5), at 45° (24.9 vs 23.9), between the photo spots (24.1 vs
+23.9) and on the sofa, rug and kitchen (21.2 vs 20.1), in PSNR and SSIM, and in LPIPS too but for a hair at 45°
+(0.213 vs 0.210). On plain walls at 0.6 m the painting keeps 0.5 dB (26.3 vs 25.8; SSIM and LPIPS are better in the
+skins): what's left there is a faint uneven tone, broad bands where one photo's share of a wall gives way to
+another's, at 33–43 dB where the painting has 43–46. AI depth (§4.3) with the fill and the sharpening improves SSIM and
+LPIPS on every kind of view and leaves PSNR within 0.15 dB, for 2.5 minutes more; trim changes nothing there (it has
+no layout) and the Fixer's views (§4.2) nothing. Views through a window show the outside ghosted (each photo sees it
+from elsewhere), where the painting shows one photo's view.
 
 ## 3. Spots no photo saw (`fill.py`)
 
