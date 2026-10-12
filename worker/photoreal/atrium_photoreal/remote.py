@@ -10,6 +10,14 @@ from __future__ import annotations
 # weights (Hugging Face nvidia/Fixer, about 5.5 GB) where Fixer's code looks for them.
 COSMOS_WHEELS = "https://nvidia-cosmos.github.io/cosmos-dependencies/cu126_torch260/simple"
 FIXER_COMMIT = "b39dfcaf4eeec90dc943b057ff368c16252c6c6e"
+# These three wheels' metadata leaves out the "+cu126.torch260" their file names have, so pip rejects
+# them when asked for that version: they are installed from their files instead.
+COSMOS_RELEASE = "https://github.com/nvidia-cosmos/cosmos-dependencies/releases/download/v1.1.0"
+COSMOS_FILES = [
+    "apex @ " + COSMOS_RELEASE + "/apex-0.1%2Bcu126.torch260-cp310-cp310-linux_x86_64.whl",
+    "flash-attn @ " + COSMOS_RELEASE + "/flash_attn-2.6.3%2Bcu126.torch260-cp310-cp310-linux_x86_64.whl",
+    "natten @ " + COSMOS_RELEASE + "/natten-0.21.0%2Bcu126.torch260-cp310-cp310-linux_x86_64.whl",
+]
 
 
 def fixer_image(modal):
@@ -20,9 +28,7 @@ def fixer_image(modal):
             "torch==2.6.0+cu126",
             "torchvision==0.21.0+cu126",
             "transformer-engine==1.13.0+cu126.torch260",
-            "flash-attn==2.6.3+cu126.torch260",
-            "apex==0.1+cu126.torch260",
-            "natten==0.21.0+cu126.torch260",
+            *COSMOS_FILES,
             extra_index_url=COSMOS_WHEELS,
         )
         .pip_install("cosmos-predict2==1.0.9", "natsort", "huggingface_hub[cli]>=0.32", extra_index_url=COSMOS_WHEELS)
