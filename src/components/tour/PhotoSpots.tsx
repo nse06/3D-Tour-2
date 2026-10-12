@@ -317,16 +317,15 @@ export function PhotoSpots({
         w0 /= sum;
         w1 /= sum;
       }
-      if (ea) {
-        uniforms.spotCube0.value = ea.cube;
-        uniforms.spotDist0.value = ea.distances!.texture;
-        uniforms.spotPos0.value.copy(positions[a]);
-      }
-      if (eb) {
-        uniforms.spotCube1.value = eb.cube;
-        uniforms.spotDist1.value = eb.distances!.texture;
-        uniforms.spotPos1.value.copy(positions[b]);
-      }
+      if (ea) uniforms.spotPos0.value.copy(positions[a]);
+      if (eb) uniforms.spotPos1.value.copy(positions[b]);
+      // A slot not in use lets go of its spot (which may be dropped from the cache).
+      uniforms.spotCube0.value = ea?.cube ?? null;
+      uniforms.spotDist0.value = ea?.distances?.texture ?? null;
+      uniforms.spotCube1.value = eb?.cube ?? null;
+      uniforms.spotDist1.value = eb?.distances?.texture ?? null;
+    } else {
+      uniforms.spotCube0.value = uniforms.spotDist0.value = uniforms.spotCube1.value = uniforms.spotDist1.value = null;
     }
     uniforms.spotWeight0.value = w0;
     uniforms.spotWeight1.value = w1;
