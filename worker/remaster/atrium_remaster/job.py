@@ -19,6 +19,7 @@ The photoreal splats (worker/photoreal) are a separate job; this one borrows its
 from __future__ import annotations
 
 import dataclasses
+import json
 
 import shutil
 import time
@@ -328,6 +329,8 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-remas
             raise RuntimeError(f"no upload target: {answer}")
         upload(targets["model.glb"], out_path)
         reporter.send({"event": "done", "modelUrl": targets["model.glb"]["assetUrl"], "stats": stats})
+        # For whoever watches the logs: the numbers only (an error's text can hold a signed URL).
+        print("remaster done: " + json.dumps({k: v for k, v in stats.items() if isinstance(v, (bool, int, float))}), flush=True)
         return stats
     except Exception as e:
         traceback.print_exc()

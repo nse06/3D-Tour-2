@@ -73,10 +73,12 @@ class Site:
 FAST = {"steps": 60, "batch": 4, "tile": 256, "levels": 3, "maxMip": 3, "spotFace": 32, "spotLongSide": 160}
 
 
-def test_a_job_downloads_rebuilds_uploads_and_reports(tmp_path):
+def test_a_job_downloads_rebuilds_uploads_and_reports(tmp_path, capsys):
     room.write(tmp_path / "site")
     site = Site(tmp_path / "site")
     stats = job.run_job(site.payload(FAST), SECRET, workdir=tmp_path / "work", device="cpu")
+    logged = [line for line in capsys.readouterr().out.splitlines() if line.startswith("remaster done: ")]
+    assert len(logged) == 1 and json.loads(logged[0].split(": ", 1)[1])["totalSeconds"] == stats["totalSeconds"], "the numbers, in the log"
     kinds = [e["event"] for e in site.events]
     assert kinds[0] == "progress" and kinds[-3:] == ["upload", "upload", "done"] and "failed" not in kinds
     spots_upload, model_upload, done = site.events[-3:]
