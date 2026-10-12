@@ -128,3 +128,18 @@ def test_coverage_counts_each_pixels_bilinear_taps():
     total.backward()
     for got, want in zip(skins.coverage(views_, sizes), seen):
         assert np.allclose(got, want.grad[0, 0].numpy(), atol=1e-4)
+
+
+def test_a_tile_warps_the_same_from_the_patch_around_it():
+    """Training moves only the patch around a tile to the GPU: its warp reads the same pixels there."""
+    import torch
+
+    rng = np.random.default_rng(2)
+    h, w = 120, 160
+    image = rng.integers(0, 256, size=(h, w, 3), dtype=np.uint8)
+    view = skins.View("p", torch.from_numpy(image), torch.ones(h, w, dtype=torch.bool), torch.zeros(h, w, dtype=torch.int16), torch.zeros(h, w, 2), torch.zeros(h, w, dtype=torch.int8))
+    warp = torch.tensor([3.0, -2.0, 0.01, 0.005])  # a few pixels, half a degree, half a percent
+    for box in ((10, 20, 40, 50), (0, 0, 30, 30), (80, 110, 40, 50)):
+        whole = skins.warp_image(view.photo("cpu"), warp, box, (h, w))
+        region, origin = view.region("cpu", box, 64)
+        assert torch.allclose(skins.warp_image(region, warp, box, (h, w), origin), whole, atol=1e-5)
