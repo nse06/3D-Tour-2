@@ -51,7 +51,8 @@ app = modal.App("atrium-remaster")
 gpu_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("libegl1", "libgl1", "libgomp1", "libusb-1.0-0", "curl")
-    .pip_install("torch==2.5.1", index_url="https://download.pytorch.org/whl/cu124")
+    # transformers 5.19 needs PyTorch 2.6 or later (torch.accelerator), whatever its metadata says.
+    .pip_install("torch==2.7.1", "torchvision==0.22.1", index_url="https://download.pytorch.org/whl/cu126")
     .pip_install("numpy<2.3", "scipy", "pillow>=10", "open3d-cpu==0.20.0", "transformers==5.19.0", "xatlas==0.0.11", "shapely==2.2.0", "mapbox-earcut==2.1.0", "fastapi")
     .env({"HF_HOME": "/models/hf"})
     .run_commands(

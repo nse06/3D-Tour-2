@@ -3,7 +3,7 @@
 numpy
 scipy
 pillow
-torch
+torch>=2.6  # transformers 5.19 needs torch.accelerator
 open3d-cpu  # MIT; ray casting (Embree). Needs libegl1, libgl1 and libusb-1.0-0 on Linux.
 xatlas  # MIT; UV charts for new shapes
 shapely  # BSD-3; cutting walls around doors and windows
