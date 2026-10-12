@@ -13,7 +13,6 @@ The inpainter (`Inpainter`) takes images and masks of what to fill: LaMa on a GP
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Protocol
 

@@ -20,7 +20,7 @@ from PIL import Image, ImageFilter
 
 from atrium_photoreal.enhance import look
 from atrium_remaster import glb, views
-from atrium_remaster.scene import Mesh, encode
+from atrium_remaster.scene import Mesh
 
 SIZE = (3.0, 2.5, 3.0)  # x, height, z
 TEXEL = 0.02

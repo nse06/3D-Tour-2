@@ -56,7 +56,6 @@ def test_edges_and_grazing_views_say_nothing(tmp_path):
     truth = room.write(tmp_path)
     capture = load(tmp_path / "capture")
     mesh = truth["mesh"]
-    cfg = skins.SkinConfig(**FAST)
     caster = views.Caster.of(mesh)
     cam = capture.cameras[0]
     hits = caster.view(cam.K, cam.camtoworld, cam.width, cam.height)

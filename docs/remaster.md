@@ -15,11 +15,11 @@ left on the server (docs/photoreal.md §2.1), so either can be switched off, red
 |---|---|---|
 | Train the skins on every photo | `skins.py` (§2) | built, CPU tests on a synthetic room; GPU eval next |
 | Fill spots no photo saw | `fill.py` (§3), LaMa | built (LaMa on the GPU, pull-push in tests) |
-| Clean up the photos (sharpen, denoise, TV off, windows) | §4.1 | planned |
-| The Fixer's cleaned views feed the skins | §4.2 | planned |
-| Sharper depth from AI | §4.3 | planned |
+| Clean up the photos (sharpen, TV off, windows) | `cleanup.py` (§4.1), NAFNet | built |
+| The Fixer's cleaned views feed the skins | `fixviews.py` (§4.2) | built |
+| Sharper depth from AI | `depth.py` (§4.3), Prompt Depth Anything | built: photo pixels where the shape is wrong say nothing; finer furniture shapes next |
 | AI-made furniture | §4.4 | planned (uses build 13's room layout) |
-| Trim, baseboards, door and window recesses | §4.5 | planned (uses build 13's room layout) |
+| Trim: doors and windows set into their walls, baseboards, crown moldings, casings, cabinet doors | `trim.py` (§4.5) | built |
 | The room layout from the phone (walls, doors, windows, furniture boxes) | build 13, `cameras.json` `layout` (docs/photoreal.md §1) | done |
 | Photo spots (Matterport-style) | §4.6 | planned |
 
@@ -77,24 +77,27 @@ ceiling's paint into them: **LaMa** (big-lama; IOPaint's TorchScript export) on 
 (pull-push) in tests. Charts over 2048 px are filled at that size and the filled part scaled back up. Curved charts
 (LiDAR furniture patches) keep the smooth fill: an image model would draw across their folds.
 
-## 4. Planned stages
+## 4. More stages
 
-### 4.1 Photo cleanup
-Before the skins learn from them, the photos are sharpened (motion blur) and denoised (dim rooms) by **NAFNet** (MIT;
-REDS/GoPro deblur, SIDD denoise), with **Restormer** (MIT since October 2025) to compare. A TV that's on shows a
-different picture in every photo: its screen (the room layout's TV box, or **SAM 3** asked for "television screen")
-is masked out of training and painted as a TV that's off. Dark or blown-out windows are evened out, not invented.
+### 4.1 Photo cleanup (`cleanup.py`, `nafnet.py`)
+Before the skins learn from them, photos the phone smeared by 1.5 px or more (at 1920 px, atrium_photoreal's estimate
+from how fast the phone turned) are sharpened by **NAFNet** (MIT; its REDS deblur weights, on the GPU in tiles), and
+the skins count what's left of the smear as 30% of it. With the room layout, a TV's screen (the faces inside
+RoomPlan's TV box, facing along its thinnest side) says nothing in training, since it shows a different picture in
+every photo, and is painted as a TV that's off; windows whose glass came out dark get a soft daylight gradient,
+keeping their frames. Nothing else about the home changes.
 
-### 4.2 The Fixer's views
-NVIDIA's Fixer (commercial license; already used by the photoreal AI version) cleans up renders of the remastered
-model from where buyers walk; the skins also learn from those views, at a low weight, with the render's broad
-shading put back (atrium_photoreal's tone lock).
+### 4.2 The Fixer's views (`fixviews.py`)
+Twice during training (at 45% and 85% of the steps), 80 views from where buyers walk (each round further from the
+photos) are rendered from the skins so far, cleaned up by NVIDIA's Fixer (on a GPU of its own), tone-locked to the
+render (its broad shading put back: the Fixer may tidy detail, not relight) and added to training at half a photo's
+weight, a quarter of each batch. They don't count as seen for the fill.
 
-### 4.3 Sharper depth
-**Prompt Depth Anything** (Apache-2.0, all sizes) turns the model's own depth at each photo (rendered at the LiDAR's
-192×256, like ARKit's) into sharp depth at the photo's resolution. First use: photo pixels where the model's shape
-disagrees with it say nothing (no color across furniture edges). Then: a finer mesh for furniture and clutter, fused
-from it (Open3D's TSDF).
+### 4.3 Sharper depth (`depth.py`)
+**Prompt Depth Anything** (ViT-L) turns the model's own depth at each photo (rendered at the LiDAR's 256×192) into
+sharp depth at 960 px. Where the two disagree by more than 4 cm + 4% (grown by 2 px), the photo's pixels say nothing:
+the model's shape is off there (a furniture edge, clutter the scan smoothed over) and its colors would land on the
+wrong surface. Next: a finer mesh for furniture and clutter, fused from it (Open3D's TSDF).
 
 ### 4.4 AI-made furniture
 For movable furniture (sofas, chairs, beds, tables; never built-ins), the sharpest photo's crop, cut out by **SAM
@@ -103,9 +106,26 @@ path only, which needs none of NVIDIA's non-commercial libraries) on an A10G, or
 its background remover swapped for BiRefNet and nvdiffrast kept out). The shape is turned to match the photos'
 silhouettes, scaled into the box RoomPlan measured, and skinned from the photos like the rest (§2).
 
-### 4.5 Trim
-From the room layout's doors and windows: doors and windows recessed into their walls with casings and sills; from
-the wall skins: baseboards and crown molding where the photos show them.
+### 4.5 Trim (`trim.py`, `edit.py`)
+With the room layout, every window and closed door is set 10 cm into its wall (`recessDepth`): the wall is cut
+around it (keeping its painted texels), the door or window sits back showing the texels painted for it (a door cut
+down to the floor) and its reveals are new surfaces. Then the skins as the phone painted them are read for trim, each
+piece a slab standing out of its wall with the texels painted there on its face:
+
+* **Baseboards**: a band 6–25 cm tall along the bottom of a wall, of one even color (all along the wall, and from
+  its bottom to its top) that differs from the wall above it, in at least half the wall's columns (furniture hides
+  the rest). 12 mm out of the wall; it stops at doors.
+* **Crown moldings**: the same along the top, 6–20 cm, 2 cm out.
+* **Casings**: a band 4–12 cm wide on both sides of a door or window and over it, of one width and color (and under
+  a window, if it has an apron), 15 mm out.
+* **Cabinet doors**: on the fronts of RoomPlan's storage boxes (the face away from the wall a box stands against),
+  thin dark lines from top to bottom are the gaps between doors, and across a column the gaps between drawers: each
+  becomes a groove 6 mm wide and 15 mm deep. A dark band along the bottom, the toe kick (6–16 cm), is set 6 cm back.
+
+What the skins don't clearly show stays flat (a checked wall isn't a baseboard, a blurred line isn't a band). The new
+surfaces (reveals, the slabs' sides, the grooves' sides) share one new atlas (xatlas, at the model's texel size) and
+are learned from the photos like the rest. Scans from before build 13 have no layout: only baseboards and crown
+moldings are looked for.
 
 ### 4.6 Photo spots
 At the spots where photos were taken, the real photos lined up on the model (a panorama per spot, the gaps from the
@@ -126,13 +146,20 @@ another scan don't), runs the stages and reports to the callback with the same s
 
 | Event | Answer |
 |---|---|
-| `{ event: "progress", stage, progress, message }` (stages: `downloading`, `skins`, `fill`, `uploading`) | the job |
+| `{ event: "progress", stage, progress, message }` (stages: `downloading`, `cleanup`, `shapes`, `depth`, `skins`, `fill`, `uploading`) | the job |
 | `{ event: "upload", files: [{ name: "model.glb", bytes }] }` | `{ targets: [{ name, url, method, headers, assetUrl }] }` |
 | `{ event: "done", modelUrl, stats }` | the job |
 | `{ event: "failed", message }` | the job |
 
-Options (all optional): `steps` (3000), `scale` (2), `maxTexels` (40 M), `longSide` (1920), `batch` (4), `tile`
-(768), `levels` (4), `maxMip` (4), `fill` (true), `jpegQuality` (90).
+Options (all optional):
+
+* Skins: `steps` (3000), `scale` (2), `maxTexels` (40 M), `longSide` (1920), `batch` (4), `tile` (768), `levels` (4),
+  `maxMip` (4), `align` (true).
+* Cleanup: `deblur` (true), `deblurMinSmear` (1.5 px), `deblurResidual` (0.3), `tvOff` (true), `windows` (true).
+* Trim: `trim` (true: all of it), `recessDepth` (0.1 m), `baseboards`, `crowns`, `casings`, `cabinets` (true).
+* Depth: `depth` (true). Fixer views: `fixerViews` (true), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
+  (1024), `fixerHeight` (576), `fixerWeight` (0.5), `fixerShare` (0.25), `fixerToneLock` (0.012).
+* `fill` (true), `jpegQuality` (90).
 
 The remastered model is a GLB like the phone's photo models: one unlit primitive per atlas (JPEG), the scan manifest
 in the scene's extras, so the viewer loads it in place of the painted one.
@@ -177,7 +204,8 @@ Kept out on purpose: nvdiffrast, nvdiffrec, diffoctreerast and the Inria Gaussia
    table (owners read their jobs; the server writes them) and the `remastered` look. Open `/setup`, or the site adds
    it on first use when it can reach Postgres directly.
 
-A job costs the GPU's time: the skins take a few minutes on an A10G for a room's photos; the planned stages add to it.
+A job costs the GPU's time: the skins take a few minutes on an A10G for a room's photos; sharpening, depth and the
+Fixer's views add to it (the Fixer the most, on a second GPU).
 
 ## 8. Develop and test
 

@@ -31,7 +31,7 @@ import torch.nn.functional as F
 from PIL import Image
 from scipy import ndimage
 
-from atrium_photoreal.capture import Capture, Camera, load_photo
+from atrium_photoreal.capture import Capture, load_photo
 from atrium_photoreal.sharpness import find_direction, line_kernel, smear_image, smear_px
 
 from .scene import Mesh

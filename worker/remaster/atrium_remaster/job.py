@@ -32,7 +32,6 @@ from atrium_photoreal.job import Reporter, download, upload
 from . import cleanup as cleanup_mod
 from . import depth as depth_mod
 from . import fill as fill_mod
-from . import edit as edit_mod
 from . import fixviews
 from . import glb, scene, skins
 from . import trim as trim_mod
@@ -123,15 +122,19 @@ def remaster(mesh: scene.Mesh, capture, options: dict, services: Services, devic
             traceback.print_exc()
             stats["cleanupError"] = f"{type(e).__name__}: {e}"[:200]
             sharpened = {}
-    # New shapes first (doors and windows set into their walls): the photos are lined up with the
-    # model the skins will paint.
-    if not layout.empty and options.get("trim", True):
-        report("shapes", 0.0, "setting doors and windows into their walls")
+    # New shapes first (doors and windows set into their walls, trim): the photos are lined up with
+    # the model the skins will paint.
+    if options.get("trim", True):
+        report("shapes", 0.0, "adding trim: doors and windows set into their walls, baseboards, casings")
         try:
-            remove, additions, trim_stats = trim_mod.recess(mesh, layout, trim_mod.TrimConfig(depth=float(options.get("recessDepth", 0.1))), log=log)
-            if additions:
-                mesh, edit_stats = edit_mod.apply(mesh, remove, additions)
-                trim_stats.update(edit_stats)
+            trim_cfg = trim_mod.TrimConfig(
+                depth=float(options.get("recessDepth", 0.1)),
+                baseboards=bool(options.get("baseboards", True)),
+                crowns=bool(options.get("crowns", True)),
+                casings=bool(options.get("casings", True)),
+                cabinets=bool(options.get("cabinets", True)),
+            )
+            mesh, trim_stats = trim_mod.run(mesh, layout, trim_cfg, log=log)
             stats.update(trim_stats)
         except Exception as e:  # the model keeps its flat walls
             traceback.print_exc()

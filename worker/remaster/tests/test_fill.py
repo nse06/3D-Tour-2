@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from atrium_remaster import fill, scene
+from atrium_remaster import fill
 
 from . import room
 

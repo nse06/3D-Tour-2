@@ -36,7 +36,7 @@ def test_the_models_depth_is_what_lidar_would_report(tmp_path):
 
 
 def test_pixels_where_the_depth_disagrees_say_nothing(tmp_path):
-    truth = room.write(tmp_path, cameras=6)
+    room.write(tmp_path, cameras=6)
     capture = load(tmp_path / "capture")
     mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
     cfg = depth.DepthConfig(long_side=160, prompt_size=(64, 48))
