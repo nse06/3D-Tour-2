@@ -5,7 +5,10 @@ of their kind of surface: a smudge where a wall's pattern, a floor's planks or a
 should go on. A flat surface's chart is a straight-on picture of it (walls, floors and ceilings are
 packed that way, PhotoTexturing.swift), so an inpainting model can continue what the photos showed
 into what they didn't. Curved charts (LiDAR furniture patches) keep the smooth fill: an image model
-would draw across their folds.
+would draw across their folds. So do holes in plain surfaces (a ceiling, a painted wall): there an image
+model has nothing to continue and makes up stripes, as LaMa did on the first real room's kitchen
+ceiling. The inpainter sees only the chart it fills (its neighbors in the atlas are other surfaces), and
+a fill busier than the surface around its hole is turned down for the smooth one.
 
 The inpainter (`Inpainter`) takes images and masks of what to fill: LaMa on a GPU (models.py), or
 `PullPush` without one (tests).
@@ -37,6 +40,21 @@ class FillConfig:
     max_share: float = 0.7  # nor are charts filled where the photos saw less than 30%: too much to make up
     planar_mm: float = 10.0  # a chart is flat if its corners are within this of one plane
     margin: int = 16  # texels of seen surroundings sent along with each hole
+    ring: int = 24  # the texels this close around a hole say what may go in it
+    plain: float = 0.008  # a hole ringed by less fine detail than this (sRGB, see `detail`) is filled smoothly
+    busier: float = 2.0  # an inpainter's fill with more than this many times its ring's detail (and `plain` more) is turned down
+
+
+def upsample(a: np.ndarray, n: int, axis: int) -> np.ndarray:
+    """`a` twice as fine along `axis` (`n` long): each pixel between the two coarse pixels nearest its
+    center (linear), so a pyramid's coarse levels come back up without blocks."""
+    pos = (np.arange(n) + 0.5) / 2 - 0.5
+    lo = np.floor(pos).astype(np.int64)
+    m = a.shape[axis]
+    shape = [1] * a.ndim
+    shape[axis] = n
+    t = (pos - lo).reshape(shape)
+    return np.take(a, np.clip(lo, 0, m - 1), axis) * (1 - t) + np.take(a, np.clip(lo + 1, 0, m - 1), axis) * t
 
 
 def pull_push(image: np.ndarray, known: np.ndarray) -> np.ndarray:
@@ -57,11 +75,30 @@ def pull_push(image: np.ndarray, known: np.ndarray) -> np.ndarray:
     filled = color / np.maximum(weight, 1e-9)[..., None]
     for c, k in reversed(levels[:-1]):
         h, wd = k.shape
-        up = np.repeat(np.repeat(filled, 2, 0), 2, 1)[:h, :wd]
+        up = upsample(upsample(filled, h, 0), wd, 1)
         own = c / np.maximum(k, 1e-9)[..., None]
         alpha = np.clip(k, 0, 1)[..., None]
         filled = alpha * own + (1 - alpha) * up
     return np.where(known[..., None], image, filled).astype(np.float32)
+
+
+def detail(image: np.ndarray, where: np.ndarray, size: int = 9) -> np.ndarray:
+    """(H, W): how far each texel of a float (H, W, 3) image is from the mean of the `size`-wide square
+    around it (sRGB, averaged over the channels), counting only texels in `where`; NaN where that square
+    isn't nearly all in `where`. A plain surface's photos leave little more than their noise in it."""
+    from scipy import ndimage
+
+    w = where.astype(np.float64)
+    count = ndimage.uniform_filter(w, size, mode="constant")
+    mean = np.stack([ndimage.uniform_filter(image[..., c] * w, size, mode="constant") for c in range(image.shape[2])], -1)
+    out = np.abs(image - mean / np.maximum(count, 1e-9)[..., None]).mean(-1)
+    return np.where(where & (count > 0.95), out, np.nan)
+
+
+def level(values: np.ndarray, where: np.ndarray, at_least: int = 50) -> float | None:
+    """The mean of `detail` over `where`, if it has enough texels to say."""
+    v = values[where & np.isfinite(values)]
+    return float(v.mean()) if len(v) >= at_least else None
 
 
 class PullPush:
@@ -160,13 +197,17 @@ def flat_charts(mesh: Mesh, chart: np.ndarray, planar_mm: float) -> list[int]:
 def fill(
     mesh: Mesh, seen: list[np.ndarray], inpainter: Inpainter, cfg: FillConfig = FillConfig(), log=print, painted: list[np.ndarray] | None = None
 ) -> tuple[Mesh, dict]:
-    """The mesh with what no photo saw on its flat charts filled in by the inpainter. `seen`: the photo
-    weight per texel the skins counted (skins.coverage); `painted`: the texels the phone painted from a
-    photo (painted_from_photos), which keep their colors even where the skins' stricter rules (no
-    edges, no grazing views) counted nothing."""
+    """The mesh with what no photo saw on its flat charts filled in: by the inpainter where the surface
+    around a hole has detail to continue, smoothly where it's plain. `seen`: the photo weight per texel
+    the skins counted (skins.coverage); `painted`: the texels the phone painted from a photo
+    (painted_from_photos), which keep their colors even where the skins' stricter rules (no edges, no
+    grazing views) counted nothing."""
+    from scipy import ndimage
+
     chart = mesh.charts()
     atlases = [a.copy() for a in mesh.atlases]
-    jobs = []  # (atlas, y0, x0, image, hole)
+    jobs = []  # (atlas, y0, x0, image, hole, smooth fill, the ring's detail)
+    charts = texels = smooth_charts = 0
     for c in flat_charts(mesh, chart, cfg.planar_mm):
         faces = np.flatnonzero(chart == c)
         a = int(mesh.face_atlas[faces[0]])
@@ -192,17 +233,34 @@ def fill(
         grown[:, 1:] |= hole[:, :-1]
         grown[:, :-1] |= hole[:, 1:]
         grown &= inside & ~keep
-        crop = (np.clip(atlas[y0:y1, x0:x1], 0, 1) * 255 + 0.5).astype(np.uint8)
-        jobs.append((a, y0, x0, crop, grown, inside))
-    filled_texels = 0
+        crop = np.clip(atlas[y0:y1, x0:x1], 0, 1).astype(np.float64)
+        known = inside & ~grown
+        # The chart's own seen texels carried smoothly over the hole and past its edges.
+        smooth = pull_push(crop, known)
+        near = known & (ndimage.distance_transform_edt(~grown) <= cfg.ring)
+        around = detail(crop, known)
+        ring = level(around, near) or level(around, known) or 0.0
+        charts += 1
+        texels += int(grown.sum())
+        if ring < cfg.plain:
+            atlas[y0:y1, x0:x1][grown] = smooth[grown]
+            smooth_charts += 1
+            continue
+        # The inpainter sees this chart alone: past its edges the atlas holds other surfaces.
+        image = (np.where(inside[..., None], crop, smooth) * 255 + 0.5).astype(np.uint8)
+        jobs.append((a, y0, x0, image, grown, smooth, ring))
+    turned_down = 0
     if jobs:
         results = inpainter([j[3] for j in jobs], [j[4] for j in jobs])
-        for (a, y0, x0, crop, hole, inside), result in zip(jobs, results):
-            if result.shape != crop.shape:
-                raise RuntimeError(f"the inpainter answered {result.shape} for {crop.shape}")
-            region = atlases[a][y0 : y0 + crop.shape[0], x0 : x0 + crop.shape[1]]
-            region[hole] = result[hole].astype(np.float32) / 255.0
-            filled_texels += int(hole.sum())
-    log(f"fill: {len(jobs)} charts, {filled_texels:,} texels made up ({inpainter.name})")
+        for (a, y0, x0, image, hole, smooth, ring), result in zip(jobs, results):
+            if result.shape != image.shape:
+                raise RuntimeError(f"the inpainter answered {result.shape} for {image.shape}")
+            made = result.astype(np.float64) / 255.0
+            busy = level(detail(made, hole), hole)
+            if busy is not None and busy > max(cfg.busier * ring, ring + cfg.plain):
+                made, turned_down = smooth, turned_down + 1  # stripes where the surface around is calm
+            region = atlases[a][y0 : y0 + image.shape[0], x0 : x0 + image.shape[1]]
+            region[hole] = made[hole]
+    log(f"fill: {charts} charts, {texels:,} texels made up ({inpainter.name} on {len(jobs) - turned_down}, smoothly on {smooth_charts + turned_down})")
     out = Mesh(mesh.vertices, mesh.uvs, mesh.faces, mesh.face_atlas, mesh.face_color, atlases, mesh.extras)
-    return out, {"filledCharts": len(jobs), "filledTexels": filled_texels, "inpainter": inpainter.name}
+    return out, {"filledCharts": charts, "filledTexels": texels, "inpainter": inpainter.name, "filledSmoothly": smooth_charts + turned_down, "fillTurnedDown": turned_down}

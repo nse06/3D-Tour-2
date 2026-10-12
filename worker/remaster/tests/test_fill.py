@@ -82,3 +82,73 @@ def test_texels_the_phone_painted_from_photos_are_never_made_up(tmp_path):
             assert mask.sum() < 0.5 * mask.size
     untouched = painted & ~np.isclose(out.atlases[0], 1.0).all(-1)
     assert untouched[painted].mean() > 0.99
+
+
+def test_holes_in_plain_surfaces_are_filled_smoothly(tmp_path):
+    """A plain surface (a ceiling, a painted wall): an image model has nothing to continue there and
+    makes up stripes, so the hole gets the smooth fill and the inpainter isn't asked."""
+    truth = room.write(tmp_path)
+    mesh = truth["mesh"]
+    x0, y0, w, h = truth["charts"][2].rect
+    paint = np.array([0.8, 0.79, 0.76], np.float32)
+    noise = np.random.default_rng(0).normal(0, 0.003, (h, w, 3)).astype(np.float32)
+    mesh.atlases[0][y0 : y0 + h, x0 : x0 + w] = paint + noise
+    seen = np.ones(mesh.atlases[0].shape[:2], np.float32)
+    seen[y0 + 40 : y0 + 60, x0 + 40 : x0 + 80] = 0
+    recording = Recording()
+    out, stats = fill.fill(mesh, [seen], recording, log=lambda _: None)
+    assert not recording.calls and stats["filledCharts"] == stats["filledSmoothly"] == 1, stats
+    assert np.abs(out.atlases[0][y0 + 41 : y0 + 59, x0 + 41 : x0 + 79] - paint).max() < 0.02
+
+
+class Stripes:
+    """An inpainter drawing stripes into every hole, as LaMa did on a real kitchen ceiling."""
+
+    name = "stripes"
+
+    def __call__(self, images, masks):
+        out = []
+        for image, mask in zip(images, masks):
+            rows = np.where((np.arange(image.shape[0]) // 2) % 2 == 1, 40, 230).astype(np.uint8)
+            out.append(np.where(mask[..., None], rows[:, None, None], image).astype(np.uint8))
+        return out
+
+
+def test_a_fill_busier_than_the_surface_around_it_is_turned_down(tmp_path):
+    truth = room.write(tmp_path)
+    mesh = truth["mesh"]
+    x0, y0, w, h = truth["charts"][2].rect
+    # A lightly textured wall: detail enough to ask the inpainter, nothing like stripes.
+    grain = np.random.default_rng(0).normal(0, 0.02, (h, w, 3)).astype(np.float32)
+    mesh.atlases[0][y0 : y0 + h, x0 : x0 + w] = np.array([0.8, 0.79, 0.76], np.float32) + grain
+    seen = np.ones(mesh.atlases[0].shape[:2], np.float32)
+    seen[y0 + 40 : y0 + 60, x0 + 40 : x0 + 80] = 0
+    out, stats = fill.fill(mesh, [seen], Stripes(), log=lambda _: None)
+    assert stats["fillTurnedDown"] == 1 and stats["filledSmoothly"] == 1, stats
+    hole = out.atlases[0][y0 + 42 : y0 + 58, x0 + 42 : x0 + 78].astype(np.float64)
+    everywhere = np.ones(hole.shape[:2], bool)
+    assert fill.level(fill.detail(hole, everywhere), everywhere, at_least=10) < 0.02, "no stripes"
+    # A checked wall is as busy as stripes: there the inpainter's fill stands.
+    checked = room.write(tmp_path / "checked")["mesh"]
+    _, stats = fill.fill(checked, [seen], Stripes(), log=lambda _: None)
+    assert stats["fillTurnedDown"] == 0 and stats["filledSmoothly"] == 0, stats
+
+
+def test_the_inpainter_sees_only_the_chart_it_fills(tmp_path):
+    """Past a chart's edges the atlas holds other surfaces (here all blue): the inpainter gets the
+    chart's own colors carried on there instead."""
+    truth = room.write(tmp_path)
+    mesh = truth["mesh"]
+    x0, y0, w, h = truth["charts"][2].rect
+    atlas = mesh.atlases[0]
+    own = atlas[y0 : y0 + h, x0 : x0 + w].copy()
+    atlas[:] = [0.0, 0.0, 1.0]
+    atlas[y0 : y0 + h, x0 : x0 + w] = own
+    atlas[y0 : y0 + room.PAD], atlas[y0 + h - room.PAD : y0 + h] = [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]  # its padding too
+    seen = np.ones(atlas.shape[:2], np.float32)
+    seen[y0 + 40 : y0 + 60, x0 + 40 : x0 + 80] = 0
+    recording = Recording()
+    fill.fill(mesh, [seen], recording, log=lambda _: None)
+    ((images, _),) = recording.calls
+    (image,) = images
+    assert image.shape[0] > h and not (image[..., 2].astype(int) - image[..., 0].astype(int) > 60).any()

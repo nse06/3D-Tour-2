@@ -14,7 +14,7 @@ left on the server (docs/photoreal.md §2.1), so either can be switched off, red
 | Idea | Stage | Status |
 |---|---|---|
 | Train the skins on every photo | `skins.py` (§2) | built; GPU eval on the synthetic apartment (round 3): better than the painting in PSNR on every kind of view but plain walls up close (25.8 vs 26.3 dB, where SSIM and LPIPS are better) |
-| Fill spots no photo saw | `fill.py` (§3), LaMa | built (LaMa on the GPU, pull-push in tests) |
+| Fill spots no photo saw | `fill.py` (§3), LaMa | built; plain surfaces get a smooth fill (LaMa drew stripes on a real ceiling), textured ones LaMa |
 | Clean up the photos (sharpen, TV off, windows) | `cleanup.py` (§4.1), NAFNet | built |
 | The Fixer's cleaned views feed the skins | `fixviews.py` (§4.2) | built; off unless asked (`fixerViews`): nothing gained on the synthetic apartment, for a GPU more |
 | Sharper depth from AI | `depth.py`, `fuse.py` (§4.3), Prompt Depth Anything | built: photo pixels where the shape is wrong say nothing; the LiDAR's pieces fused anew from it |
@@ -95,11 +95,20 @@ from elsewhere), where the painting shows one photo's view.
 ## 3. Spots no photo saw (`fill.py`)
 
 A flat surface's chart is a straight-on picture of it (walls, floors, ceilings, a cabinet's faces). Where the photos
-covered at least 30% of such a chart but left holes of 64 texels or more, the holes (grown by a texel) and 16 texels
-of their surroundings go to an inpainting model, which continues the wall's texture, the floor's planks or the
-ceiling's paint into them: **LaMa** (big-lama; IOPaint's TorchScript export) on the GPU, the phone's smooth fill
-(pull-push) in tests. Charts over 2048 px are filled at that size and the filled part scaled back up. Curved charts
-(LiDAR furniture patches) keep the smooth fill: an image model would draw across their folds.
+covered at least 30% of such a chart but left holes of 64 texels or more, each hole (grown by a texel) is filled by
+what's around it (the seen texels within 24 of it):
+
+* **Plain** (less fine detail than 0.008: the mean distance of a texel from its 9×9 neighborhood's mean, in sRGB; a
+  ceiling, a painted wall): smoothly, from the chart's own seen texels (pull-push, its coarse levels blended back up
+  linearly). An image model has nothing to continue there: on the first real room, LaMa drew blue stripes across a
+  kitchen ceiling the photos barely saw.
+* **Textured** (planks, tiles, a patterned wall): by an inpainting model, which continues the texture into the hole:
+  **LaMa** (big-lama; IOPaint's TorchScript export) on the GPU, the smooth fill in tests. It gets the chart and 16
+  texels past its edges, those carried on smoothly from the chart's own colors (past its edges the atlas holds other
+  surfaces). A fill with more than twice the fine detail of what's around its hole is turned down for the smooth one.
+  Charts over 2048 px are filled at that size and the filled part scaled back up.
+
+Curved charts (LiDAR furniture patches) keep the phone's smooth fill: an image model would draw across their folds.
 
 ## 4. More stages
 
@@ -287,7 +296,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 46 tests (below)
+python -m pytest tests -q        # CPU, 49 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```
