@@ -5,6 +5,7 @@ import type {
   CaptureInput,
   CaptureSession,
   CaptureSessionLookup,
+  NewPhotorealJob,
   PhotorealJob,
   PhotorealJobUpdate,
   Property,
@@ -42,12 +43,14 @@ export interface Repository {
 
   // Photoreal walkthroughs (docs/photoreal.md).
   /** A new job for the property's current tour, or null if the property has no tour yet. */
-  createPhotorealJob(userId: string, propertyId: string, input: { files: number; bytes: number }): Promise<PhotorealJob | null>;
+  createPhotorealJob(userId: string, propertyId: string, input: NewPhotorealJob): Promise<PhotorealJob | null>;
   /** Any job by id: callers check it against the phone's session or the worker's secret. */
   getPhotorealJob(jobId: string): Promise<PhotorealJob | null>;
   updatePhotorealJob(jobId: string, update: PhotorealJobUpdate): Promise<PhotorealJob | null>;
   /** The latest job for the scan the listing shows now (sending a new scan unlinks older jobs). */
   latestPhotorealJob(userId: string, propertyId: string): Promise<PhotorealJob | null>;
+  /** Every job of the listing, newest first (older scans' too). */
+  listPhotorealJobs(userId: string, propertyId: string): Promise<PhotorealJob[]>;
   /** Shows finished splats on the job's tour (with where their photos were taken); false if that tour has since been replaced. */
   attachSplats(job: PhotorealJob, splatUrl: string, spots: SplatSpot[] | null): Promise<boolean>;
 }

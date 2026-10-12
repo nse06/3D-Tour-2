@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { apiError, readJson, serverError } from "@/lib/capture-api";
 import { serverBaseUrl } from "@/lib/capture-sessions";
 import { getAdminRepository } from "@/lib/data/repository";
-import { checkSpots, deleteInputs, isWorkerRequest, jobSummary, workerSecret } from "@/lib/photoreal";
+import { checkSpots, isWorkerRequest, jobSummary, pruneListingPhotos, workerSecret } from "@/lib/photoreal";
 import { assetExists, createUploadTarget, isOwnedAssetUrl, UploadError } from "@/lib/storage";
 
 /**
@@ -52,18 +52,28 @@ export async function POST(request: Request, ctx: RouteContext<"/api/photoreal/j
           return apiError(400, "assetUrl must be the uploaded splats.");
         }
         const stats = body.stats && typeof body.stats === "object" && JSON.stringify(body.stats).length < 8192 ? (body.stats as Record<string, unknown>) : null;
-        const attached = await repo.attachSplats(job, assetUrl as string, checkSpots(body.spots));
+        // A newer job for the same scan that finished first (trained again, or sent again from the
+        // phone) keeps its splats.
+        const newer = (await repo.listPhotorealJobs(job.userId, job.propertyId)).some(
+          (j) => j.id !== job.id && j.tourId === job.tourId && j.status === "done" && j.createdAt > job.createdAt,
+        );
+        const attached = !newer && (await repo.attachSplats(job, assetUrl as string, checkSpots(body.spots)));
         const updated = await repo.updatePhotorealJob(job.id, {
           status: "done",
           stage: null,
           progress: 1,
-          message: attached ? null : "The scan was sent again since; send the new one through photoreal to see it.",
+          message: attached
+            ? null
+            : newer
+              ? "A newer photoreal walkthrough of this scan was ready first, so buyers see that one."
+              : "The scan was sent again since; send the new one through photoreal to see it.",
           splatUrl: assetUrl as string,
           stats,
           finishedAt: new Date().toISOString(),
         });
-        // The photos stay on the phone; the server keeps only the splats.
-        await deleteInputs(job).catch((e) => console.error("photoreal: could not delete the inputs:", (e as Error).message));
+        // The photos stay in storage, so the listing can be trained again without a rescan (older
+        // uploads' photos this job held on to go now).
+        await pruneListingPhotos(repo, job.userId, job.propertyId).catch((e) => console.error("photoreal: could not delete older photos:", (e as Error).message));
         revalidatePath(`/dashboard/properties/${job.propertyId}`);
         return Response.json(updated ? jobSummary(updated) : { ok: true });
       }
@@ -74,6 +84,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/photoreal/j
           message: text(body.message, 500) ?? "The GPU couldn't finish the job.",
           finishedAt: new Date().toISOString(),
         });
+        await pruneListingPhotos(repo, job.userId, job.propertyId).catch((e) => console.error("photoreal: could not delete older photos:", (e as Error).message));
         revalidatePath(`/dashboard/properties/${job.propertyId}`);
         return Response.json(updated ? jobSummary(updated) : { ok: true });
       }

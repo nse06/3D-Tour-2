@@ -6,7 +6,7 @@ import { apiError, resolveCaptureSession, serverError } from "@/lib/capture-api"
 import { serverBaseUrl } from "@/lib/capture-sessions";
 import type { Repository } from "@/lib/data/repository";
 import type { CaptureSessionLookup } from "@/lib/data/types";
-import { dispatchJob, inputNames, jobSummary } from "@/lib/photoreal";
+import { dispatchJob, inputNames, jobSummary, pruneListingPhotos } from "@/lib/photoreal";
 
 type Context = RouteContext<"/api/capture/sessions/[token]/photoreal/[job]">;
 
@@ -34,7 +34,7 @@ export async function GET(_request: Request, ctx: Context) {
 /**
  * The phone uploaded every file: check they arrived and hand the job to the GPU. When photoreal
  * has to be paid for first, the job waits; paying on the website starts it (the phone never shows
- * prices: payment happens on the website).
+ * prices: payment happens on the website). The listing's older photos go: these replace them.
  */
 export async function POST(_request: Request, ctx: Context) {
   const resolved = await sessionJob(ctx);
@@ -53,6 +53,7 @@ export async function POST(_request: Request, ctx: Context) {
     if (access.allowed) await claim(access);
     job = (await repo.updatePhotorealJob(job.id, { status: "queued", stage: null, progress: 0, message: access.allowed ? null : PHOTOREAL_UNPAID })) ?? job;
     if (access.allowed) job = await dispatchJob(repo, job, serverBaseUrl(await headers()).url);
+    await pruneListingPhotos(repo, job.userId, job.propertyId).catch((e) => console.error("photoreal: could not delete older photos:", (e as Error).message));
     revalidatePath(`/dashboard/properties/${lookup.property.id}`);
     return Response.json(jobSummary(job), { headers: { "cache-control": "no-store" } });
   } catch (e) {

@@ -2,7 +2,8 @@
 // (cameras.json, seeds.ply, frames/, masks/) straight to private storage, the server hands the job
 // to a cloud GPU (worker/photoreal, PHOTOREAL_GPU_URL), and the worker reports back to
 // /api/photoreal/jobs/<id> with the shared PHOTOREAL_WORKER_SECRET until the splats (.spz) are
-// stored next to the tour's other files.
+// stored next to the tour's other files. The photos stay in storage afterwards, so the listing can
+// be trained again without a rescan; a newer upload for the listing replaces them.
 
 import "server-only";
 import { timingSafeEqual } from "node:crypto";
@@ -15,7 +16,7 @@ import type { SplatSpot } from "@/lib/tour/types";
 import { CONTENT_TYPES, extensionOf, localUploadPath, localUploadUrl, signLocalRead } from "@/lib/storage";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-/** Private bucket the photos wait in while the GPU trains on them (created by the photoreal migration). */
+/** Private bucket the photos are kept in, for the GPU to train on (created by the photoreal migration). */
 export const PHOTOREAL_BUCKET = "photoreal";
 
 const FILE = /^(cameras\.json|seeds\.ply|frames\/[A-Za-z0-9_-]+\.(jpg|jpeg|png)|masks\/[A-Za-z0-9_-]+\.png)$/;
@@ -63,8 +64,13 @@ export function checkPhotorealFiles(value: unknown): { files: PhotorealFile[]; b
   return { files, bytes };
 }
 
+/** The job whose upload holds a job's photos: its own, or the one it was trained again from. */
+export function photosJobId(job: PhotorealJob): string {
+  return job.inputsJobId ?? job.id;
+}
+
 function folderOf(job: PhotorealJob): string {
-  return `${job.userId}/${job.propertyId}/photoreal-${job.id}`;
+  return `${job.userId}/${job.propertyId}/photoreal-${photosJobId(job)}`;
 }
 
 export function inputKey(job: PhotorealJob, name: string): string {
@@ -163,19 +169,90 @@ export async function inputDownloadLinks(job: PhotorealJob, names: string[], bas
   });
 }
 
-/** Frees the photos once the splats exist (they stay on the phone). */
-export async function deleteInputs(job: PhotorealJob): Promise<void> {
+/** Whether a job's photos are still in storage (cheap: looks for cameras.json). */
+export async function photosOnServer(job: PhotorealJob): Promise<boolean> {
+  const folder = folderOf(job);
   if (!isSupabaseConfigured()) {
-    await fs.rm(localUploadPath(folderOf(job)), { recursive: true, force: true });
+    return fs
+      .stat(/*turbopackIgnore: true*/ path.join(localUploadPath(folder), "cameras.json"))
+      .then(() => true)
+      .catch(() => false);
+  }
+  const { data, error } = await createSupabaseAdminClient().storage.from(PHOTOREAL_BUCKET).list(folder, { limit: 10, search: "cameras.json" });
+  if (error) throw new Error(error.message);
+  return !!data?.some((entry) => entry.id && entry.name === "cameras.json");
+}
+
+/** A finished job's photos as the dashboard shows them: still on the server (to train again), and how big. */
+export async function keptPhotos(repo: Repository, job: PhotorealJob): Promise<{ kept: boolean; bytes: number }> {
+  const upload = job.inputsJobId ? await repo.getPhotorealJob(job.inputsJobId) : job;
+  if (!upload || upload.inputsDeletedAt) return { kept: false, bytes: 0 };
+  return { kept: await photosOnServer(job), bytes: upload.bytes };
+}
+
+/** Removes everything in a folder of the photoreal bucket (the files at its top, in frames/ and in masks/). */
+async function deleteFolder(folder: string): Promise<void> {
+  if (!isSupabaseConfigured()) {
+    await fs.rm(/*turbopackIgnore: true*/ localUploadPath(folder), { recursive: true, force: true });
     return;
   }
-  const names = await inputNames(job);
   const bucket = createSupabaseAdminClient().storage.from(PHOTOREAL_BUCKET);
-  await inBatches(names, 1000, async (batch) => {
-    const { error } = await bucket.remove(batch.map((n) => inputKey(job, n)));
+  for (const sub of ["frames", "masks", ""]) {
+    const dir = sub ? `${folder}/${sub}` : folder;
+    // Removing shifts what's left: list from the start until nothing comes back.
+    for (;;) {
+      const { data, error } = await bucket.list(dir, { limit: 1000 });
+      if (error) throw new Error(error.message);
+      const files = (data ?? []).filter((entry) => entry.id).map((entry) => `${dir}/${entry.name}`);
+      if (!files.length) break;
+      const removed = await bucket.remove(files);
+      if (removed.error) throw new Error(removed.error.message);
+      if (files.length < 1000) break;
+    }
+  }
+}
+
+/**
+ * Deletes a job's photos (the upload they came with, which jobs trained again from it share) and
+ * notes it on that upload's job.
+ */
+export async function deletePhotos(repo: Repository, job: PhotorealJob): Promise<void> {
+  await deleteFolder(folderOf(job));
+  await repo.updatePhotorealJob(photosJobId(job), { inputsDeletedAt: new Date().toISOString() });
+}
+
+/**
+ * A listing keeps one set of photos: its newest upload that has arrived. Older uploads' photos go
+ * (those of older scans no longer match the model; an older upload of the same scan is the same
+ * photos again), except while a job still waits for or trains on them. Run after an upload arrives
+ * and after a job finishes.
+ */
+export async function pruneListingPhotos(repo: Repository, userId: string, propertyId: string): Promise<void> {
+  const jobs = await repo.listPhotorealJobs(userId, propertyId);
+  const uploads = jobs.filter((j) => !j.inputsJobId && !j.inputsDeletedAt);
+  const newest = uploads.find((j) => j.status !== "uploading");
+  if (!newest) return;
+  const busy = new Set(jobs.filter((j) => j.status === "uploading" || j.status === "queued" || j.status === "running").map(photosJobId));
+  for (const old of uploads) {
+    if (old.id === newest.id || busy.has(old.id) || old.createdAt > newest.createdAt) continue;
+    await deletePhotos(repo, old).catch((e) => console.error(`photoreal: could not delete the photos of job ${old.id}:`, (e as Error).message));
+  }
+}
+
+/** Deletes every photoreal photo of a listing (when the listing itself is deleted). */
+export async function deleteListingPhotos(userId: string, propertyId: string): Promise<void> {
+  const root = `${userId}/${propertyId}`;
+  let folders: string[];
+  if (!isSupabaseConfigured()) {
+    const entries = await fs.readdir(/*turbopackIgnore: true*/ localUploadPath(root), { withFileTypes: true }).catch(() => []);
+    folders = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  } else {
+    const { data, error } = await createSupabaseAdminClient().storage.from(PHOTOREAL_BUCKET).list(root, { limit: 1000 });
     if (error) throw new Error(error.message);
-    return [];
-  });
+    // Folders come back without an id.
+    folders = (data ?? []).filter((entry) => !entry.id).map((entry) => entry.name);
+  }
+  for (const name of folders) if (new RegExp(`^photoreal-${UUID}$`).test(name)) await deleteFolder(`${root}/${name}`);
 }
 
 /** The secret the GPU worker and this site share (at least 16 characters), or null. */
@@ -205,6 +282,8 @@ export function isWorkerRequest(request: Request): boolean {
 }
 
 export const WAITING_FOR_GPU = "Waiting for the GPU to be connected (PHOTOREAL_GPU_URL and PHOTOREAL_WORKER_SECRET on the server).";
+
+export const PHOTOS_GONE = "The photos are no longer on the server. Send them again from Atrium Capture (Make it photoreal again).";
 
 /**
  * Hands an uploaded job to the GPU. Without one configured the job waits in "queued" (it can be

@@ -14,7 +14,7 @@ import { adminRepositoryUnavailableReason, bundleToTourData, getAdminRepository,
 import type { PropertyInput } from "@/lib/data/types";
 import { DEMO_ASSET_URL, DEMO_COVER_URL, demoManifest } from "@/lib/demo";
 import { ingestCapture } from "@/lib/ingest";
-import { dispatchJob, gpuConfigured, inputNames, WAITING_FOR_GPU } from "@/lib/photoreal";
+import { deleteListingPhotos, deletePhotos, dispatchJob, gpuConfigured, inputNames, PHOTOS_GONE, photosJobId, photosOnServer, WAITING_FOR_GPU } from "@/lib/photoreal";
 import { manifestToSpace } from "@/lib/tour/scan-manifest";
 import { newId, parseSpace } from "@/lib/tour/space";
 import type { TourAppearance, TourData } from "@/lib/tour/types";
@@ -124,7 +124,12 @@ export async function updatePropertyAction(propertyId: string, _prev: PropertyFo
 
 export async function deletePropertyAction(propertyId: string): Promise<void> {
   const user = await requireUser();
-  await (await getRepository()).deleteProperty(user.id, propertyId);
+  const repo = await getRepository();
+  // Only the listing's owner gets this far (the property is looked up through their session).
+  if (await repo.getProperty(user.id, propertyId)) {
+    await deleteListingPhotos(user.id, propertyId).catch((e) => console.error("photoreal: could not delete the listing's photos:", (e as Error).message));
+  }
+  await repo.deleteProperty(user.id, propertyId);
   revalidatePath("/dashboard");
   redirect("/dashboard");
 }
@@ -265,7 +270,7 @@ export async function startPhotorealAction(propertyId: string): Promise<ActionRe
     if (job.status !== "queued" && job.status !== "failed")
       return { ok: false, error: `The photoreal walkthrough is already ${job.status === "done" ? "ready" : job.status}.` };
     if (!gpuConfigured()) return { ok: false, error: WAITING_FOR_GPU };
-    if ((await inputNames(job)).length < job.files) return { ok: false, error: "The photos are no longer on the server. Send them again from Atrium Capture." };
+    if ((await inputNames(job)).length < job.files) return { ok: false, error: PHOTOS_GONE };
     const address = (await repo.getProperty(user.id, propertyId))?.property.addressLine ?? "your listing";
     const origin = requestOrigin(await headers());
     const pay = await claimOrCheckout(
@@ -284,6 +289,66 @@ export async function startPhotorealAction(propertyId: string): Promise<ActionRe
     const started = await dispatchJob(await getAdminRepository(), job, serverBaseUrl(await headers()).url);
     revalidatePath(`/dashboard/properties/${propertyId}`);
     return started.status === "running" ? { ok: true } : { ok: false, error: started.message ?? "The GPU didn't take the job." };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/**
+ * Trains the listing's photoreal walkthrough again from the photos already on the server (a newer
+ * trainer, another version): a new job, no rescan. Photoreal paid for once covers it; otherwise the
+ * job waits and the realtor pays first, like the first time.
+ */
+export async function retrainPhotorealAction(propertyId: string): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    const repo = await getRepository();
+    const latest = await repo.latestPhotorealJob(user.id, propertyId);
+    if (!latest) return { ok: false, error: "No photos have been sent for a photoreal walkthrough yet." };
+    if (latest.status !== "done" && latest.status !== "failed") return { ok: false, error: "The photoreal walkthrough is already on its way." };
+    if (!gpuConfigured()) return { ok: false, error: WAITING_FOR_GPU };
+    const source = await repo.getPhotorealJob(photosJobId(latest));
+    if (!source || source.inputsDeletedAt || !(await photosOnServer(latest))) return { ok: false, error: PHOTOS_GONE };
+    // The admin repository: the job's columns are the server's to write.
+    const admin = await getAdminRepository();
+    const job = await admin.createPhotorealJob(user.id, propertyId, { files: source.files, bytes: source.bytes, inputsJobId: source.id });
+    if (!job) return { ok: false, error: "Send the scan to Atrium first, then make it photoreal." };
+    const address = (await repo.getProperty(user.id, propertyId))?.property.addressLine ?? "your listing";
+    const origin = requestOrigin(await headers());
+    const pay = await claimOrCheckout(
+      () => photorealAccess(user, propertyId),
+      (price) =>
+        checkoutUrl({
+          payer: user,
+          price,
+          propertyId,
+          description: `Photoreal walkthrough: ${address}`,
+          origin,
+          cancelPath: `/dashboard/properties/${propertyId}`,
+        }),
+    );
+    revalidatePath(`/dashboard/properties/${propertyId}`);
+    // Paying starts the waiting job (billing/stripe.ts).
+    if (pay) return { ok: false, checkoutUrl: pay };
+    const started = await dispatchJob(admin, job, serverBaseUrl(await headers()).url);
+    return started.status === "running" ? { ok: true } : { ok: false, error: started.message ?? "The GPU didn't take the job." };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/** Deletes the photos kept for training the listing again (the walkthrough itself stays). */
+export async function deletePhotorealPhotosAction(propertyId: string): Promise<ActionResult> {
+  const user = await requireUser();
+  try {
+    const latest = await (await getRepository()).latestPhotorealJob(user.id, propertyId);
+    if (!latest) return { ok: false, error: "There are no photos to delete." };
+    if (latest.status === "uploading" || latest.status === "queued" || latest.status === "running") {
+      return { ok: false, error: "The photos are in use: wait until the walkthrough is ready." };
+    }
+    await deletePhotos(await getAdminRepository(), latest);
+    revalidatePath(`/dashboard/properties/${propertyId}`);
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }

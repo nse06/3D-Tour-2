@@ -13,6 +13,7 @@ import type {
   CaptureSession,
   CaptureSessionLookup,
   FloorRecord,
+  NewPhotorealJob,
   PhotorealJob,
   PhotorealJobUpdate,
   Property,
@@ -34,6 +35,14 @@ interface Db {
 }
 
 const empty = (): Db => ({ version: 1, properties: [], tours: [], floors: [], rooms: [], captureSessions: [], photorealJobs: [] });
+
+/** A copy of a job, with the fields jobs saved before they existed. */
+const withJobDefaults = (job: PhotorealJob): PhotorealJob => ({
+  ...job,
+  inputsJobId: job.inputsJobId ?? null,
+  inputsDeletedAt: job.inputsDeletedAt ?? null,
+  variants: job.variants ?? null,
+});
 
 let queue: Promise<unknown> = Promise.resolve();
 
@@ -290,7 +299,7 @@ export class LocalRepository implements Repository {
     });
   }
 
-  createPhotorealJob(userId: string, propertyId: string, input: { files: number; bytes: number }): Promise<PhotorealJob | null> {
+  createPhotorealJob(userId: string, propertyId: string, input: NewPhotorealJob): Promise<PhotorealJob | null> {
     return mutate((db) => {
       owned(db, userId, propertyId);
       const tour = db.tours.find((t) => t.propertyId === propertyId);
@@ -300,7 +309,8 @@ export class LocalRepository implements Repository {
         propertyId,
         tourId: tour.id,
         userId,
-        status: "uploading",
+        // Trained again from photos already here: nothing to upload.
+        status: input.inputsJobId ? "queued" : "uploading",
         stage: null,
         progress: 0,
         message: null,
@@ -308,6 +318,9 @@ export class LocalRepository implements Repository {
         bytes: input.bytes,
         splatUrl: null,
         stats: null,
+        inputsJobId: input.inputsJobId ?? null,
+        inputsDeletedAt: null,
+        variants: null,
         createdAt: now(),
         updatedAt: now(),
         startedAt: null,
@@ -319,7 +332,8 @@ export class LocalRepository implements Repository {
   }
 
   async getPhotorealJob(jobId: string): Promise<PhotorealJob | null> {
-    return (await readDb()).photorealJobs.find((j) => j.id === jobId) ?? null;
+    const job = (await readDb()).photorealJobs.find((j) => j.id === jobId);
+    return job ? withJobDefaults(job) : null;
   }
 
   updatePhotorealJob(jobId: string, update: PhotorealJobUpdate): Promise<PhotorealJob | null> {
@@ -328,13 +342,17 @@ export class LocalRepository implements Repository {
       if (!job) return null;
       for (const [key, value] of Object.entries(update)) if (value !== undefined) Object.assign(job, { [key]: value });
       job.updatedAt = now();
-      return { ...job };
+      return withJobDefaults(job);
     });
   }
 
   async latestPhotorealJob(userId: string, propertyId: string): Promise<PhotorealJob | null> {
-    const jobs = (await readDb()).photorealJobs.filter((j) => j.propertyId === propertyId && j.userId === userId && j.tourId);
-    return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+    return (await this.listPhotorealJobs(userId, propertyId)).find((j) => j.tourId) ?? null;
+  }
+
+  async listPhotorealJobs(userId: string, propertyId: string): Promise<PhotorealJob[]> {
+    const jobs = (await readDb()).photorealJobs.filter((j) => j.propertyId === propertyId && j.userId === userId);
+    return jobs.map(withJobDefaults).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   attachSplats(job: PhotorealJob, splatUrl: string, spots: SplatSpot[] | null): Promise<boolean> {

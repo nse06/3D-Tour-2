@@ -12,7 +12,7 @@ Pieces:
 | Where | What |
 |---|---|
 | Phone (`ios/`, build 9 on) | Every photo scan writes `photoreal/` (§1). After the scan is sent, **Make it photoreal** uploads it with the photos |
-| Site (`src/lib/photoreal.ts`, `src/app/api/…/photoreal`) | Jobs (`photoreal_jobs`), signed uploads to the private `photoreal` bucket, hands the job to the GPU, takes the worker's reports, attaches the splats to the tour, deletes the photos |
+| Site (`src/lib/photoreal.ts`, `src/app/api/…/photoreal`) | Jobs (`photoreal_jobs`), signed uploads to the private `photoreal` bucket, hands the job to the GPU, takes the worker's reports, attaches the splats to the tour, keeps the photos for training again (§2.1) |
 | GPU worker (`worker/photoreal`, on [Modal](https://modal.com)) | Downloads the job, trains, writes `.spz`, uploads it, reports back |
 | Viewer (`src/components/tour/TourScene.tsx`) | Loads the `.spz` with [Spark](https://sparkjs.dev) 2.2.0 the first time Photoreal is switched on; hands over to the painted model up close and away from where the photos were taken (§4) |
 
@@ -52,11 +52,28 @@ Written by `PhotorealExport.swift` with each build (and `scanproc paint … --ph
      tour's other files);
    * `{ event: "done", assetUrl, stats, spots }`: the site attaches the splats to the tour (`tours.splat_url`, and
      `tours.splat_spots`: where each photo was taken, `[x, y, z, yaw, pitch]` in meters and radians in the model's
-     frame, yaw 0 looking along −z), marks the job `done` and deletes the photos (they stay on the phone);
+     frame, yaw 0 looking along −z) and marks the job `done`. The photos stay in storage (§2.1);
    * `{ event: "failed", message }`: the job is `failed`; the photos stay, and **Try again** in the dashboard hands
      them to the GPU again.
-4. **Dashboard** (listing page): the job's state, live; **Start** / **Try again**; when done, how big and how long.
-   **Rooms & viewpoints** offers *Photoreal* as the starting look.
+4. **Dashboard** (listing page): the job's state, live; **Start** / **Try again**; when done, how big and how long,
+   and **Train again** (§2.1). **Rooms & viewpoints** offers *Photoreal* as the starting look.
+
+### 2.1 Photos kept for training again
+
+A listing's photos stay in the `photoreal` bucket after training, so it can be trained again without a rescan: when
+the trainer improves, or for another version of the splats. **Train again** on the listing page makes a new job
+from them (`photoreal_jobs.inputs_job_id` names the job whose upload they came with, and so their folder), hands it
+to the GPU, and buyers keep seeing the current walkthrough until the new one is ready. A job that finishes after a
+newer one of the same scan doesn't replace its splats. Photoreal paid for once covers
+it ([billing.md](billing.md)). A listing keeps one set of photos:
+
+* a newer upload from the phone replaces them once it has arrived (older scans' photos no longer match the model;
+  photos a job still waits for or trains on are left alone until it finishes);
+* **Delete the photos** on the listing page deletes them (the walkthrough stays);
+* deleting the listing deletes them.
+
+`photoreal_jobs.inputs_deleted_at` notes when an upload's photos went. Jobs finished before photos were kept had
+theirs deleted: those listings say so and point to **Make it photoreal again** in the app, which sends them again.
 
 Sending the scan again replaces the listing's model, so it drops the splats too (and a job still running for the
 old model finishes without attaching them). Make the new scan photoreal again.
@@ -174,7 +191,8 @@ can't download from it.
 
 `supabase/migrations/20261010000000_photoreal.sql` adds `tours.splat_url`, the `photoreal_jobs` table (owners can
 read their jobs; the server writes them) and the private `photoreal` bucket; `20261011000000_photoreal_spots.sql`
-adds `tours.splat_spots`. Open `/setup` on the site, or apply them with the other migrations; the site also adds
+adds `tours.splat_spots`; `20261013000000_photoreal_versions.sql` adds `photoreal_jobs.inputs_job_id`,
+`inputs_deleted_at` (§2.1) and `variants` (other versions of the splats from the same photos). Open `/setup` on the site, or apply them with the other migrations; the site also adds
 what's missing on first use when it can reach Postgres directly. Without `splat_spots` the splats still attach,
 and the viewer goes by distance alone.
 
@@ -184,14 +202,16 @@ kept under 45 MB, so the defaults fit.
 ### 5.4 Without Supabase (local data folder)
 
 Everything works with the local store too: the photos go to `<data>/uploads/<user>/<listing>/photoreal-<job>/`,
-readable only through the signed links the GPU gets, and are deleted when the splats arrive.
+readable only through the signed links the GPU gets, and kept like in Supabase (§2.1).
 
 ## 6. Costs and sizes
 
 * **GPU**: 30–50 minutes on an A10G at full-size photos (about $1.10 an hour on Modal): roughly $0.55–0.90 per
   home. Nothing runs between jobs.
-* **Upload from the phone**: the photos, 100–400 MB for a home (best on Wi-Fi). They are deleted from storage once
-  the splats exist.
+* **Upload from the phone**: the photos, 100–400 MB for a home (best on Wi-Fi).
+* **Storage**: each listing keeps its latest photos, 100–400 MB, for training again (§2.1). Supabase's free plan
+  holds 1 GB in all (tours, splats and photos together), a few homes' worth; Pro includes 100 GB, a few hundred.
+  **Delete the photos** frees a listing's.
 * **Download for buyers**: the `.spz`, at most 45 MB, only when they switch to Photoreal (or start in it).
 
 ## 7. Status and limits

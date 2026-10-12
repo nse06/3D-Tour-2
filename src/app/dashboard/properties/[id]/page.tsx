@@ -13,7 +13,7 @@ import { requireUser } from "@/lib/auth";
 import { photorealPricing, publishPricing } from "@/lib/billing/labels";
 import { getRepository } from "@/lib/data/repository";
 import { cityLine, formatPrice } from "@/lib/format";
-import { gpuConfigured, jobSummary } from "@/lib/photoreal";
+import { gpuConfigured, jobSummary, keptPhotos } from "@/lib/photoreal";
 import { sortedFloors } from "@/lib/tour/navigation";
 import { updatePropertyAction } from "../../actions";
 
@@ -41,6 +41,14 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
     console.error("photoreal job lookup:", (e as Error).message);
     return null;
   });
+  // Whether the latest job's photos are still on the server, for training it again.
+  const photos =
+    photorealJob && (photorealJob.status === "done" || photorealJob.status === "failed")
+      ? await keptPhotos(repo, photorealJob).catch((e) => {
+          console.error("photoreal photos lookup:", (e as Error).message);
+          return null;
+        })
+      : null;
   const live = p.published && !!tour?.published;
   const floors = space ? sortedFloors(space) : [];
   const roomCount = space?.rooms.length ?? 0;
@@ -175,6 +183,7 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
                 gpuReady={gpuConfigured()}
                 hasPhotoScan={!!tour.cleanAssetUrl}
                 pricing={photorealCost}
+                photos={photos}
               />
             </Card>
           )}

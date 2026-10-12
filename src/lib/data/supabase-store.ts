@@ -15,8 +15,10 @@ import type {
   CaptureInput,
   CaptureSession,
   CaptureSessionLookup,
+  NewPhotorealJob,
   PhotorealJob,
   PhotorealJobUpdate,
+  PhotorealVariant,
   Property,
   PropertyBundle,
   PropertyInput,
@@ -86,6 +88,10 @@ interface PhotorealJobRow {
   bytes: number | string;
   splat_url: string | null;
   stats: Record<string, unknown> | null;
+  /** Added by migration 20261013000000 (photos kept for training again, more versions). */
+  inputs_job_id?: string | null;
+  inputs_deleted_at?: string | null;
+  variants?: Record<string, PhotorealVariant> | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -172,6 +178,9 @@ const toPhotorealJob = (r: PhotorealJobRow): PhotorealJob => ({
   bytes: Number(r.bytes),
   splatUrl: r.splat_url,
   stats: r.stats,
+  inputsJobId: r.inputs_job_id ?? null,
+  inputsDeletedAt: r.inputs_deleted_at ?? null,
+  variants: r.variants ?? null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   startedAt: r.started_at,
@@ -503,21 +512,16 @@ export class SupabaseRepository implements Repository {
     if (!row) throw new NotFoundError("Capture session");
   }
 
-  async createPhotorealJob(userId: string, propertyId: string, input: { files: number; bytes: number }): Promise<PhotorealJob | null> {
+  async createPhotorealJob(userId: string, propertyId: string, input: NewPhotorealJob): Promise<PhotorealJob | null> {
     const db = await this.client();
     await this.ownedProperty(db, userId, propertyId);
     const tour = await this.latestTour(db, propertyId);
     if (!tour) return null;
-    return withMigrations(async () => {
-      const row = check(
-        await db
-          .from("photoreal_jobs")
-          .insert({ property_id: propertyId, tour_id: tour.id, user_id: userId, status: "uploading", files: input.files, bytes: input.bytes })
-          .select("*")
-          .single(),
-      ) as PhotorealJobRow;
-      return toPhotorealJob(row);
-    });
+    const row: Record<string, unknown> = { property_id: propertyId, tour_id: tour.id, user_id: userId, status: "uploading", files: input.files, bytes: input.bytes };
+    // Trained again from photos already here: nothing to upload. (Only then the newer column, so a
+    // database from before it still takes the phone's uploads.)
+    if (input.inputsJobId) Object.assign(row, { status: "queued", inputs_job_id: input.inputsJobId });
+    return withMigrations(async () => toPhotorealJob(check(await db.from("photoreal_jobs").insert(row).select("*").single()) as PhotorealJobRow));
   }
 
   async getPhotorealJob(jobId: string): Promise<PhotorealJob | null> {
@@ -541,6 +545,8 @@ export class SupabaseRepository implements Repository {
     if (update.stats !== undefined) row.stats = update.stats;
     if (update.startedAt !== undefined) row.started_at = update.startedAt;
     if (update.finishedAt !== undefined) row.finished_at = update.finishedAt;
+    if (update.inputsDeletedAt !== undefined) row.inputs_deleted_at = update.inputsDeletedAt;
+    if (update.variants !== undefined) row.variants = update.variants;
     return withMigrations(async () => {
       const result = check(await db.from("photoreal_jobs").update(row).eq("id", jobId).select("*").maybeSingle()) as PhotorealJobRow | null;
       return result ? toPhotorealJob(result) : null;
@@ -562,6 +568,16 @@ export class SupabaseRepository implements Repository {
           .maybeSingle(),
       ) as PhotorealJobRow | null;
       return row ? toPhotorealJob(row) : null;
+    });
+  }
+
+  async listPhotorealJobs(userId: string, propertyId: string): Promise<PhotorealJob[]> {
+    const db = await this.client();
+    return withMigrations(async () => {
+      const rows = check(
+        await db.from("photoreal_jobs").select("*").eq("property_id", propertyId).eq("user_id", userId).order("created_at", { ascending: false }),
+      ) as PhotorealJobRow[];
+      return rows.map(toPhotorealJob);
     });
   }
 

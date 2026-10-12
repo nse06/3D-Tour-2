@@ -1,9 +1,9 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Eye, Loader2, Play, RotateCcw, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Loader2, Play, RefreshCw, RotateCcw, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { startPhotorealAction } from "@/app/dashboard/actions";
+import { deletePhotorealPhotosAction, retrainPhotorealAction, startPhotorealAction, type ActionResult } from "@/app/dashboard/actions";
 import { Button, ButtonLink } from "@/components/ui";
 import { PHOTOREAL_UNPAID, type PhotorealPricing } from "@/lib/billing/plans";
 
@@ -36,7 +36,8 @@ function megabytes(bytes: number) {
 
 /**
  * The listing's photoreal walkthrough (docs/photoreal.md): what the cloud GPU is doing with the
- * scan's photos, or how to start it from the phone.
+ * scan's photos, or how to start it from the phone; once it's done, training it again from the
+ * photos kept on the server.
  */
 export function PhotorealPanel({
   propertyId,
@@ -44,6 +45,7 @@ export function PhotorealPanel({
   gpuReady,
   hasPhotoScan,
   pricing,
+  photos,
 }: {
   propertyId: string;
   initialJob: PhotorealJobView | null;
@@ -51,6 +53,8 @@ export function PhotorealPanel({
   hasPhotoScan: boolean;
   /** What photoreal costs for this listing (null: nothing to say). */
   pricing: PhotorealPricing | null;
+  /** The latest job's photos: still on the server (for training again), and how big. */
+  photos: { kept: boolean; bytes: number } | null;
 }) {
   const router = useRouter();
   const [job, setJob] = useState(initialJob);
@@ -77,20 +81,27 @@ export function PhotorealPanel({
     };
   }, [moving, propertyId, router]);
 
-  const start = () =>
+  const run = (action: (propertyId: string) => Promise<ActionResult>, fallback: string) =>
     startTransition(async () => {
       setError(null);
-      const res = await startPhotorealAction(propertyId);
+      const res = await action(propertyId);
       if (res.checkoutUrl) {
         // Paid on Stripe's page; training starts when it comes back.
         setLeaving(true);
         window.location.assign(res.checkoutUrl);
         return;
       }
-      if (!res.ok) setError(res.error ?? "The GPU didn't take the job.");
+      if (!res.ok) setError(res.error ?? fallback);
       const latest = await fetch(`/api/properties/${propertyId}/photoreal`, { cache: "no-store" }).catch(() => null);
       if (latest?.ok) setJob((await latest.json()).job);
+      router.refresh();
     });
+  const start = () => run(startPhotorealAction, "The GPU didn't take the job.");
+  const retrain = () => run(retrainPhotorealAction, "The GPU didn't take the job.");
+  const deletePhotos = () => {
+    if (!window.confirm("Delete the photos kept for training again? The walkthrough stays; training again would need the photos sent from the phone.")) return;
+    run(deletePhotorealPhotosAction, "The photos couldn't be deleted.");
+  };
 
   const busy = pending || leaving;
   const pay = !!pricing?.pay;
@@ -187,6 +198,7 @@ export function PhotorealPanel({
           <ButtonLink href={`/dashboard/properties/${propertyId}/preview`} variant="secondary" size="sm">
             <Eye className="size-3.5" /> Walk through it
           </ButtonLink>
+          <TrainAgain photos={photos} gpuReady={gpuReady} busy={busy} pay={pay} payLabel={pricing?.payLabel} onRetrain={retrain} onDelete={deletePhotos} />
         </div>
       )}
 
@@ -204,6 +216,53 @@ export function PhotorealPanel({
       )}
 
       {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+    </div>
+  );
+}
+
+/** Training the listing again from the photos kept on the server, or why it can't be. */
+function TrainAgain({
+  photos,
+  gpuReady,
+  busy,
+  pay,
+  payLabel,
+  onRetrain,
+  onDelete,
+}: {
+  photos: { kept: boolean; bytes: number } | null;
+  gpuReady: boolean;
+  busy: boolean;
+  pay: boolean;
+  payLabel?: string;
+  onRetrain: () => void;
+  onDelete: () => void;
+}) {
+  if (!photos) return null;
+  if (!photos.kept) {
+    return (
+      <p className="border-t border-linen pt-3 text-xs text-neutral-500">
+        To train it again, open this scan in Atrium Capture and tap <b className="font-semibold">Make it photoreal again</b>: the photos aren&apos;t on the
+        server anymore.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2 border-t border-linen pt-3">
+      <p className="text-xs text-neutral-500">
+        The scan&apos;s photos ({megabytes(photos.bytes)}) are kept on the server, so this walkthrough can be trained again with the newest trainer — no
+        rescan. Buyers keep seeing this one until the new one is ready (about 45 minutes).
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        {gpuReady && (
+          <Button onClick={onRetrain} disabled={busy} size="sm" variant="secondary">
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} {pay && payLabel ? payLabel : "Train again"}
+          </Button>
+        )}
+        <button type="button" onClick={onDelete} disabled={busy} className="text-xs text-neutral-400 underline-offset-2 hover:text-neutral-600 hover:underline">
+          Delete the photos
+        </button>
+      </div>
     </div>
   );
 }

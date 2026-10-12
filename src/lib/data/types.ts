@@ -112,6 +112,18 @@ export interface CaptureSessionLookup {
 export type PhotorealStatus = "uploading" | "queued" | "running" | "done" | "failed";
 
 /**
+ * Another version of a job's splats from the same photos (docs/photoreal.md §3): "ai", the
+ * AI-enhanced one, which the GPU makes after the main one.
+ */
+export interface PhotorealVariant {
+  status: "running" | "done" | "failed";
+  progress: number;
+  splatUrl: string | null;
+  stats: Record<string, unknown> | null;
+  message: string | null;
+}
+
+/**
  * One photoreal training run (docs/photoreal.md): the phone uploads the scan's photos, the GPU
  * worker trains splats on them and reports back. `files`/`bytes`: what the phone said it uploads.
  */
@@ -129,13 +141,29 @@ export interface PhotorealJob {
   bytes: number;
   splatUrl: string | null;
   stats: Record<string, unknown> | null;
+  /** Trained again from photos another job uploaded: that job's id, which names their folder. */
+  inputsJobId: string | null;
+  /** When the job's own photos were deleted; null while they're kept (for training again). */
+  inputsDeletedAt: string | null;
+  /** Other versions of the splats from the same photos, by name ("ai"). */
+  variants: Record<string, PhotorealVariant> | null;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
 }
 
-export type PhotorealJobUpdate = Partial<Pick<PhotorealJob, "status" | "stage" | "progress" | "message" | "splatUrl" | "stats" | "startedAt" | "finishedAt">>;
+export type PhotorealJobUpdate = Partial<
+  Pick<PhotorealJob, "status" | "stage" | "progress" | "message" | "splatUrl" | "stats" | "startedAt" | "finishedAt" | "inputsDeletedAt" | "variants">
+>;
+
+/** A new photoreal job: the phone's upload, or a listing trained again from photos already uploaded. */
+export interface NewPhotorealJob {
+  files: number;
+  bytes: number;
+  /** Trained again: the job whose photos to use (the job starts "queued" instead of "uploading"). */
+  inputsJobId?: string;
+}
 
 export interface AppUser {
   id: string;
