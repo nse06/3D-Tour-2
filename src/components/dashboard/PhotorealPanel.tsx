@@ -138,7 +138,7 @@ export function PhotorealPanel({
           <p>
             {hasPhotoScan ? (
               <>
-                In <b className="font-semibold text-ink">Atrium Capture</b>, open this scan and tap <b className="font-semibold text-ink">Make it photoreal</b>.
+                In <b className="font-semibold text-ink">Atrium Capture</b>, open this scan and tap <b className="font-semibold text-ink">Make it AI-enhanced</b> (<i>Make it photoreal</i> before build 14).
                 It uploads the photos (a few hundred MB, best on Wi-Fi)
                 {remasterFirst
                   ? ". The remastered model starts from them by itself; photoreal is optional, started here once they're in (about half an hour)."
@@ -326,8 +326,8 @@ function TrainAgain({
   if (!photos.kept) {
     return (
       <p className="border-t border-linen pt-3 text-xs text-neutral-500">
-        To train it again, open this scan in Atrium Capture and tap <b className="font-semibold">Make it photoreal again</b>: the photos aren&apos;t on the
-        server anymore.
+        To train it again, open this scan in Atrium Capture and tap <b className="font-semibold">Send the photos again</b> (<i>Make it photoreal again</i> before build
+        14), then start photoreal here: the photos aren&apos;t on the server anymore.
       </p>
     );
   }

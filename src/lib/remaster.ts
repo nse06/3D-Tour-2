@@ -23,7 +23,7 @@ export function remasterConfigured(): boolean {
 
 export const WAITING_FOR_REMASTER_GPU = "Waiting for the remaster GPU to be connected (REMASTER_GPU_URL and PHOTOREAL_WORKER_SECRET on the server).";
 
-export const NO_PHOTOS = "Remastering works from the scan's photos on the server. In Atrium Capture, open the scan and tap Make it photoreal: that sends them.";
+export const NO_PHOTOS = "Remastering works from the scan's photos on the server. In Atrium Capture, open the scan and tap Make it AI-enhanced: that sends them.";
 
 /** Whether a job is still working on (or waiting for) its photos. */
 export function remasterBusy(job: Pick<RemasterJob, "status">): boolean {

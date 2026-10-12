@@ -327,7 +327,7 @@ final class AppModel: ObservableObject {
         guard building == nil, !isSending(id) else { return }
         // The splats go on the listing's current model, so they must come from the same scan.
         guard let delivery = record.delivery, delivery.propertyUrl.contains(pairing.propertyId) else {
-            photorealUploads[id] = .failed("Send this scan to \(pairing.propertyLabel) first, then make it photoreal.")
+            photorealUploads[id] = .failed("Send this scan to \(pairing.propertyLabel) first, then make it AI-enhanced.")
             return
         }
         photorealUploads[id] = .preparing

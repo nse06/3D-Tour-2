@@ -20,8 +20,8 @@ struct PhotorealFiles: Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .notReady: return "This scan isn't ready for photoreal yet. Rebuild the walkthrough first."
-            case let .tooFewPhotos(count): return "Photoreal needs the photos taken while scanning, and this scan has \(count). Scan the home again with photos on."
+            case .notReady: return "This scan isn't ready for AI enhancement yet. Rebuild the walkthrough first."
+            case let .tooFewPhotos(count): return "AI enhancement needs the photos taken while scanning, and this scan has \(count). Scan the home again with photos on."
             }
         }
     }

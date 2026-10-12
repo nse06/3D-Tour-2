@@ -22,11 +22,11 @@ export async function POST(request: Request, ctx: RouteContext<"/api/capture/ses
     if (typeof body?.assetUrl === "string") {
       const current = (await repo.getProperty(session.userId, property.id))?.tour?.assetUrl;
       if (current && current !== body.assetUrl) {
-        return apiError(409, "The listing shows a different scan now. Send this scan to Atrium again, then make it photoreal.");
+        return apiError(409, "The listing shows a different scan now. Send this scan to Atrium again, then make it AI-enhanced.");
       }
     }
     const job = await repo.createPhotorealJob(session.userId, property.id, { files: checked.files.length, bytes: checked.bytes });
-    if (!job) return apiError(409, "Send the scan to Atrium first, then make it photoreal.");
+    if (!job) return apiError(409, "Send the scan to Atrium first, then make it AI-enhanced.");
     const uploads = await inputUploadLinks(job, checked.files);
     return Response.json({ jobId: job.id, uploads }, { headers: { "cache-control": "no-store" } });
   } catch (e) {

@@ -329,7 +329,7 @@ export async function retrainPhotorealAction(propertyId: string): Promise<Action
     // The admin repository: the job's columns are the server's to write.
     const admin = await getAdminRepository();
     const job = await admin.createPhotorealJob(user.id, propertyId, { files: source.files, bytes: source.bytes, inputsJobId: source.id });
-    if (!job) return { ok: false, error: "Send the scan to Atrium first, then make it photoreal." };
+    if (!job) return { ok: false, error: "Send the scan to Atrium first, then make it AI-enhanced." };
     const address = (await repo.getProperty(user.id, propertyId))?.property.addressLine ?? "your listing";
     const origin = requestOrigin(await headers());
     const pay = await claimOrCheckout(

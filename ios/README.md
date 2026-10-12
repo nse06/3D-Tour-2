@@ -136,15 +136,16 @@ lined up with each other and whether the furniture was shaped from the LiDAR mes
 full-resolution photos; only scans made with build 7 or later have the LiDAR mesh, so real
 furniture shapes need a new scan.
 
-## Make it photoreal (build 9 on, beta)
+## Make it AI-enhanced (build 9 on, beta; "Make it photoreal" before build 14)
 
-Once a scan is sent, its page has a **Photoreal walkthrough** card: **Make it photoreal** uploads
+Once a scan is sent, its page has an **AI-enhanced model** card: **Make it AI-enhanced** uploads
 the scan's photos (it says how many and how big, typically 100–400 MB; use Wi-Fi and keep the app
-open until it's done), and a cloud GPU learns the home from them in about half an hour. Buyers
-then get a **Photoreal** button in the walkthrough, and in **Rooms & viewpoints** you can make it
-what they see first. The card and the listing's page in the dashboard follow the job. The site
-needs the GPU connected first ([docs/photoreal.md](../docs/photoreal.md)); until then the photos
-wait on the server. Sending the scan again replaces the walkthrough, photoreal included.
+open until it's done). The site then starts the remastered model from them by itself, about 20
+minutes ([docs/remaster.md](../docs/remaster.md)); the listing's page in the dashboard follows it
+and lets you choose what buyers see. A photoreal walkthrough ([docs/photoreal.md](../docs/photoreal.md))
+is optional now: **Start photoreal** on the listing's page trains it from the same photos (about
+half an hour). A site without the remaster GPU trains photoreal right away instead, as before
+build 14. Sending the scan again replaces the walkthrough.
 
 **No LiDAR?** **Create a demo scan** builds a sample two-bedroom apartment on the phone so you
 can try pairing and sending on any iPhone.

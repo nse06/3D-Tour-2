@@ -298,7 +298,7 @@ export function isWorkerRequest(request: Request): boolean {
 
 export const WAITING_FOR_GPU = "Waiting for the GPU to be connected (PHOTOREAL_GPU_URL and PHOTOREAL_WORKER_SECRET on the server).";
 
-export const PHOTOS_GONE = "The photos are no longer on the server. Send them again from Atrium Capture (Make it photoreal again).";
+export const PHOTOS_GONE = "The photos are no longer on the server. Send them again from Atrium Capture (Send the photos again).";
 
 /**
  * Hands an uploaded job to the GPU. Without one configured the job waits in "queued" (it can be

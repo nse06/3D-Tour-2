@@ -160,10 +160,10 @@ struct ScanDetailView: View {
             text = "Atrium Capture now paints people out of the walkthrough — someone walking through, or you reflected in a mirror — using the other photos of the same spot. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
         case 7:
             title = "Sharpen edges and line up the photos"
-            text = "Atrium Capture now lines your photos up with each other before painting (the phone's tracking drifts a centimeter or two), keeps furniture edges from smearing onto the walls behind them, gives LiDAR furniture finer, smoother shapes and draws TVs as thin screens. Rebuilding also gets the scan ready for a photoreal walkthrough. No rescanning needed. Afterwards, send it to Atrium again."
+            text = "Atrium Capture now lines your photos up with each other before painting (the phone's tracking drifts a centimeter or two), keeps furniture edges from smearing onto the walls behind them, gives LiDAR furniture finer, smoother shapes and draws TVs as thin screens. Rebuilding also gets the scan ready for an AI-enhanced model. No rescanning needed. Afterwards, send it to Atrium again."
         default:
-            title = "Thin TVs, and ready for photoreal"
-            text = "Atrium Capture now draws TVs as thin screens instead of thick boxes, and gives the sides of furniture no photo saw the color of the rest of the piece. Rebuilding also gets the scan ready for a photoreal walkthrough. No rescanning needed. Afterwards, send it to Atrium again."
+            title = "Thin TVs, and ready for AI enhancement"
+            text = "Atrium Capture now draws TVs as thin screens instead of thick boxes, and gives the sides of furniture no photo saw the color of the rest of the piece. Rebuilding also gets the scan ready for an AI-enhanced model. No rescanning needed. Afterwards, send it to Atrium again."
         }
         return VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: "wand.and.stars")
@@ -237,7 +237,7 @@ struct ScanDetailView: View {
 
     private func photorealCard(_ scan: ScanRecord) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Photoreal walkthrough", systemImage: "sparkles").font(.footnote.weight(.semibold)).foregroundStyle(Theme.stone)
+            Label("AI-enhanced model", systemImage: "sparkles").font(.footnote.weight(.semibold)).foregroundStyle(Theme.stone)
             switch model.photorealUploads[scan.id] {
             case .preparing?:
                 progressRow("Getting the photos ready…", nil)
@@ -254,7 +254,7 @@ struct ScanDetailView: View {
                 if let job = scan.photoreal {
                     photorealStatus(scan, job)
                 } else {
-                    Text("A cloud GPU learns the home from this scan's photos — window views, reflections, every plant — and buyers can switch to it in the walkthrough. It takes about half an hour after the upload.")
+                    Text("A cloud GPU rebuilds the 3D model from all of this scan's photos: sharper walls and floors, even colors, and spots no photo saw filled in. About 20 minutes after the upload; you choose in the Atrium dashboard whether buyers see it.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     if scan.delivery == nil {
@@ -263,7 +263,7 @@ struct ScanDetailView: View {
                         if let size = photorealSize {
                             Text("Uploads \(size.photos) photos (\(megabytes(size.bytes))). Best on Wi-Fi.").font(.footnote).foregroundStyle(.secondary)
                         }
-                        photorealButton(scan, title: "Make it photoreal")
+                        photorealButton(scan, title: "Make it AI-enhanced")
                     }
                 }
             }
@@ -288,10 +288,10 @@ struct ScanDetailView: View {
                 .foregroundStyle(.green)
             if model.pairing?.propertyId == sent.propertyId {
                 // Training improves; the photos are still on the phone, so a new run needs no rescan.
-                Text("Trains again on the same photos and replaces this photoreal walkthrough when it's done.")
+                Text("Sends the photos again for a new AI-enhanced model. Photoreal can be trained again from the Atrium dashboard.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                photorealButton(scan, title: "Make it photoreal again", primary: false)
+                photorealButton(scan, title: "Send the photos again", primary: false)
             }
         case "failed"?:
             Label("The cloud GPU couldn't finish: \(job?.message ?? "unknown error")", systemImage: "exclamationmark.triangle.fill")
