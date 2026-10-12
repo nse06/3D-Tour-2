@@ -79,26 +79,45 @@ def disagreement(predicted: np.ndarray, modeled: np.ndarray, cfg: DepthConfig) -
     return off
 
 
-def disagreements(mesh: Mesh, capture: Capture, model: DepthModel, cfg: DepthConfig, batch: int = 8, log=print) -> dict[str, np.ndarray]:
-    """Per photo (by camera name): where its depth disagrees with the model's shape, at `long_side`."""
+def estimate(mesh: Mesh, capture: Capture, model: DepthModel, cfg: DepthConfig, batch: int = 8, log=print) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Per photo (by camera name): the depth model's depth at `long_side`, prompted with the model's
+    own depth there, and the photo's intrinsics at that size."""
+    caster = Caster.of(mesh)
+    out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for k in range(0, len(capture.cameras), batch):
+        group = capture.cameras[k : k + batch]
+        images, prompts, Ks = [], [], []
+        for cam in group:
+            rgb, K, _ = load_photo(cam, cfg.long_side)
+            images.append(rgb)
+            prompts.append(model_depth(caster, cam.K, cam.camtoworld, cam.width, cam.height, cfg.prompt_size))
+            Ks.append(K)
+        for cam, image, pred, K in zip(group, images, model(images, prompts), Ks):
+            if pred.shape != image.shape[:2]:
+                raise RuntimeError(f"the depth model answered {pred.shape} for {image.shape[:2]}")
+            out[cam.name] = (np.asarray(pred, np.float32), K)
+    log(f"depth: {len(out)} photos measured ({model.name})")
+    return out
+
+
+def compare(mesh: Mesh, capture: Capture, depths: dict[str, tuple[np.ndarray, np.ndarray]], cfg: DepthConfig, log=print) -> dict[str, np.ndarray]:
+    """Per photo: where the depth model's depth disagrees with the model's shapes (as they are now)."""
     caster = Caster.of(mesh)
     out: dict[str, np.ndarray] = {}
     total = 0
-    for k in range(0, len(capture.cameras), batch):
-        group = capture.cameras[k : k + batch]
-        images, prompts, modeled = [], [], []
-        for cam in group:
-            rgb, K, _ = load_photo(cam, cfg.long_side)
-            h, w = rgb.shape[:2]
-            images.append(rgb)
-            prompts.append(model_depth(caster, cam.K, cam.camtoworld, cam.width, cam.height, cfg.prompt_size))
-            modeled.append(caster.view(K, cam.camtoworld, w, h).depth)
-        for cam, pred, mod in zip(group, model(images, prompts), modeled):
-            if pred.shape != mod.shape:
-                raise RuntimeError(f"the depth model answered {pred.shape} for {mod.shape}")
-            mask = disagreement(pred, mod, cfg)
-            out[cam.name] = mask
-            total += int(mask.sum())
+    for cam in capture.cameras:
+        if cam.name not in depths:
+            continue
+        pred, K = depths[cam.name]
+        h, w = pred.shape
+        mask = disagreement(pred, caster.view(K, cam.camtoworld, w, h).depth, cfg)
+        out[cam.name] = mask
+        total += int(mask.sum())
     share = total / max(1, sum(m.size for m in out.values()))
-    log(f"depth: {len(out)} photos, {share:.1%} of their pixels disagree with the model's shapes ({model.name})")
+    log(f"depth: {share:.1%} of the photos' pixels disagree with the model's shapes")
     return out
+
+
+def disagreements(mesh: Mesh, capture: Capture, model: DepthModel, cfg: DepthConfig, batch: int = 8, log=print) -> dict[str, np.ndarray]:
+    """Per photo (by camera name): where its depth disagrees with the model's shape, at `long_side`."""
+    return compare(mesh, capture, estimate(mesh, capture, model, cfg, batch, log), cfg, log)

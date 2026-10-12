@@ -35,6 +35,7 @@ from . import fill as fill_mod
 from . import fixviews
 from . import glb, scene, skins
 from . import furniture as furniture_mod
+from . import fuse as fuse_mod
 from . import trim as trim_mod
 from . import layout as layout_mod
 from .layout import Layout
@@ -156,17 +157,35 @@ def remaster(mesh: scene.Mesh, capture, options: dict, services: Services, devic
         except Exception as e:  # the scanned pieces stay
             traceback.print_exc()
             stats["furnitureError"] = f"{type(e).__name__}: {e}"[:200]
-    quiet = cleanup_mod.screen_faces(mesh, layout.objects_of("television")) if clean_cfg.tv_off else None
-    disagree = None
+    # The depth model's depth at every photo, prompted with the shapes so far: it reshapes what the
+    # LiDAR scanned (fuse.py), then marks where the photos and the final shapes disagree.
+    depths, disagree = None, None
+    depth_cfg = depth_mod.DepthConfig()
     if services.depth is not None and options.get("depth", True):
         report("depth", 0.0, "measuring the photos' depth")
         try:
-            disagree = depth_mod.disagreements(mesh, capture, services.depth, depth_mod.DepthConfig(), log=log)
-            stats["depthDisagreeShare"] = round(sum(int(m.sum()) for m in disagree.values()) / max(1, sum(m.size for m in disagree.values())), 4)
+            depths = depth_mod.estimate(mesh, capture, services.depth, depth_cfg, log=log)
         except Exception as e:  # the skins learn without it
             traceback.print_exc()
             stats["depthError"] = f"{type(e).__name__}: {e}"[:200]
+    if depths and layout.objects and options.get("fuse", True):
+        report("depth", 0.5, "finer shapes for what the LiDAR scanned")
+        try:
+            mesh, fuse_stats = fuse_mod.run(mesh, capture, layout, depths, fuse_mod.FuseConfig(), skip=stats.get("furnitureIds", ()), log=log)
+            stats.update(fuse_stats)
+        except Exception as e:  # the scanned shapes stay
+            traceback.print_exc()
+            stats["fuseError"] = f"{type(e).__name__}: {e}"[:200]
+    if depths:
+        try:
+            disagree = depth_mod.compare(mesh, capture, depths, depth_cfg, log=log)
+            stats["depthDisagreeShare"] = round(sum(int(m.sum()) for m in disagree.values()) / max(1, sum(m.size for m in disagree.values())), 4)
+        except Exception as e:
+            traceback.print_exc()
+            stats["depthError"] = f"{type(e).__name__}: {e}"[:200]
             disagree = None
+    depths = None  # a few hundred MB
+    quiet = cleanup_mod.screen_faces(mesh, layout.objects_of("television")) if clean_cfg.tv_off else None
     report("skins", 0.0, "lining up the photos with the model")
     views = skins.prepare_photos(
         mesh, capture, cfg, device=device, log=log, photos=sharpened, residual=clean_cfg.residual, quiet_faces=quiet, disagree=disagree

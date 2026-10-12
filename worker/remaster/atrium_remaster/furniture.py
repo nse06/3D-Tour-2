@@ -321,7 +321,7 @@ def run(
     from .fill import flat_charts
 
     pieces = [b for b in layout.objects if b.category in cfg.categories]
-    stats: dict = {"furnitureMade": 0, "furnitureKept": 0, "furnitureFit": {}}
+    stats: dict = {"furnitureMade": 0, "furnitureKept": 0, "furnitureFit": {}, "furnitureIds": []}
     if not pieces:
         return mesh, stats
     chart = mesh.charts()
@@ -372,6 +372,7 @@ def run(
             continue
         log(f"furniture: {b.category} {b.id}: made ({len(f)} triangles, outline match {iou:.2f})")
         remove |= piece
+        stats["furnitureIds"].append(b.id)
         additions.append(Addition(world.astype(np.float32), f, color=tuple(float(c) for c in color), name=f"furniture-{b.id}"))
     if not additions:
         return mesh, stats

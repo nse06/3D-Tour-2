@@ -17,7 +17,7 @@ left on the server (docs/photoreal.md §2.1), so either can be switched off, red
 | Fill spots no photo saw | `fill.py` (§3), LaMa | built (LaMa on the GPU, pull-push in tests) |
 | Clean up the photos (sharpen, TV off, windows) | `cleanup.py` (§4.1), NAFNet | built |
 | The Fixer's cleaned views feed the skins | `fixviews.py` (§4.2) | built |
-| Sharper depth from AI | `depth.py` (§4.3), Prompt Depth Anything | built: photo pixels where the shape is wrong say nothing; finer furniture shapes next |
+| Sharper depth from AI | `depth.py`, `fuse.py` (§4.3), Prompt Depth Anything | built: photo pixels where the shape is wrong say nothing; the LiDAR's pieces fused anew from it |
 | AI-made furniture | `furniture.py` (§4.4), SAM 2.1, TripoSG | built: fitting tested on CPU; TripoSG's GPU run next |
 | Trim: doors and windows set into their walls, baseboards, crown moldings, casings, cabinet doors | `trim.py` (§4.5) | built |
 | The room layout from the phone (walls, doors, windows, furniture boxes) | build 13, `cameras.json` `layout` (docs/photoreal.md §1) | done |
@@ -97,7 +97,14 @@ weight, a quarter of each batch. They don't count as seen for the fill.
 **Prompt Depth Anything** (ViT-L) turns the model's own depth at each photo (rendered at the LiDAR's 256×192) into
 sharp depth at 960 px. Where the two disagree by more than 4 cm + 4% (grown by 2 px), the photo's pixels say nothing:
 the model's shape is off there (a furniture edge, clutter the scan smoothed over) and its colors would land on the
-wrong surface. Next: a finer mesh for furniture and clutter, fused from it (Open3D's TSDF).
+wrong surface.
+
+The same depth reshapes what the LiDAR scanned (`fuse.py`): for each piece the phone kept as the LiDAR's mesh
+(shelves, a kitchen island, a toilet; a sofa the furniture stage left alone), the depth of up to 24 photos that see
+it is fused into one surface within its box (Open3D's TSDF, 1 cm voxels), less what lies on the rest of the model
+(the floor under it, the wall behind it). It replaces the scanned shape only if it explains at least 5% more of the
+piece's pixels' depth (within 3 cm + 2%) than the scanned shape did. The depth is measured once, after the trim and
+the furniture, and compared with the final shapes for the skins.
 
 ### 4.4 AI-made furniture (`furniture.py`, `triposg.py`)
 For each movable piece in the room layout (sofas, chairs, beds and tables; never built-ins), the photos that see
@@ -170,7 +177,7 @@ Options (all optional):
 * Trim: `trim` (true: all of it), `recessDepth` (0.1 m), `baseboards`, `crowns`, `casings`, `cabinets` (true).
 * Furniture: `furniture` (true), `furnitureMinFit` (0.6), `furnitureViews` (5), `furnitureLongSide` (960),
   `furnitureInFrame` (0.9).
-* Depth: `depth` (true). Fixer views: `fixerViews` (true), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
+* Depth: `depth` (true), `fuse` (true). Fixer views: `fixerViews` (true), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
   (1024), `fixerHeight` (576), `fixerWeight` (0.5), `fixerShare` (0.25), `fixerToneLock` (0.012).
 * `fill` (true), `jpegQuality` (90).
 

@@ -20,6 +20,26 @@ const STAGE: Record<string, string> = {
   uploading: "Saving the remastered model",
 };
 
+/** What the remaster changed beyond the skins, from its stats (worker/remaster), for the realtor to know. */
+function aiChanges(stats: Record<string, unknown>): string[] {
+  const count = (key: string, one: string, many: string) => {
+    const n = stats[key];
+    return typeof n === "number" && n > 0 ? `${n} ${n === 1 ? one : many}` : null;
+  };
+  return [
+    count("furnitureMade", "piece of furniture reshaped", "pieces of furniture reshaped"),
+    count("fused", "scanned shape sharpened", "scanned shapes sharpened"),
+    count("recessed", "door or window set into its wall", "doors and windows set into their walls"),
+    count("baseboards", "baseboard", "baseboards"),
+    count("crowns", "crown molding", "crown moldings"),
+    count("casings", "door or window casing", "door and window casings"),
+    count("cabinetGaps", "cabinet door gap", "cabinet door gaps"),
+    count("tvsOff", "TV shown off", "TVs shown off"),
+    count("windowsBrightened", "dark window brightened", "dark windows brightened"),
+    count("photosSharpened", "blurry photo sharpened", "blurry photos sharpened"),
+  ].filter((s): s is string => s !== null);
+}
+
 /**
  * The listing's remastered model (docs/remaster.md): a cloud GPU rebuilds the painted model from the
  * scan's photos kept on the server. Separate from photoreal; once it's ready, the realtor chooses
@@ -168,6 +188,7 @@ export function RemasterPanel({
             <span>Ready. Compare it with the painted model in the walkthrough (the switch at the bottom), then pick what buyers see.</span>
           </p>
           {job.message && <p className="text-xs text-amber-700">{job.message}</p>}
+          {aiChanges(stats).length > 0 && <p className="text-xs text-neutral-500">What the AI changed: {aiChanges(stats).join(", ")}.</p>}
           <p className="text-xs text-neutral-400">
             {[
               typeof stats.photos === "number" ? `${stats.photos} photos` : null,
