@@ -86,6 +86,11 @@ which the phone can't pass.
 
 Tips: one RoomPlan "room" can be up to about 9 × 9 m — scan a large open space as two rooms.
 Scanning is demanding: a full apartment is fine, but if the phone gets hot it pauses; let it cool.
+Scan each room from inside it: RoomPlan stretches the room you're scanning to wherever you walk,
+so walking into the next room while scanning one makes the two overlap. The rooms are lined up
+again only to within a few centimeters, so the same bed seen in both scans would come out twice,
+slightly apart. Build 17 on, the room that scanned an overlap best keeps it — its furniture
+shapes, its floor and its photos — and older scans get it from **Rebuild** without rescanning.
 
 Furniture and clutter keep their real shape: while you scan, the phone also records the LiDAR
 mesh of everything it sees (Home → **Real furniture shapes**, on by default), and the walkthrough

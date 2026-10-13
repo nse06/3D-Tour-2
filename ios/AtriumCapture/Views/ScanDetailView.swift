@@ -138,8 +138,8 @@ struct ScanDetailView: View {
     /// Scans built by an older pipeline (see ScanBuilder.pipelineVersion).
     private func needsRebuild(_ scan: ScanRecord) -> Bool {
         let pipeline = scan.pipeline ?? 1
-        // Pipeline 10 only changes how rooms are placed together: single rooms gain nothing.
-        if pipeline == 9 && scan.stats.rooms <= 1 { return false }
+        // Pipeline 11 only changes how rooms are placed together: single rooms gain nothing.
+        if pipeline == 10 && scan.stats.rooms <= 1 { return false }
         return pipeline < ScanBuilder.pipelineVersion && ScanBuilder.canRebuild(scan, directory: model.store.directory(for: scan.id))
     }
 
@@ -164,12 +164,15 @@ struct ScanDetailView: View {
         case 7:
             title = "Sharpen edges and line up the photos"
             text = "Atrium Capture now lines your photos up with each other before painting (the phone's tracking drifts a centimeter or two), keeps furniture edges from smearing onto the walls behind them, gives LiDAR furniture finer, smoother shapes and draws TVs as thin screens. Rebuilding also gets the scan ready for an AI-enhanced model. No rescanning needed. Afterwards, send it to Atrium again."
-        case 9:
-            title = "Line the rooms up more closely"
-            text = "Atrium Capture now places the rooms of a multi-room scan by the path you walked as well as RoomPlan's floor plan, so photos from one room land right on the next and the AI-enhanced model comes out cleaner. No rescanning needed. Afterwards, send it to Atrium again and make it AI-enhanced."
-        default:
+        case 8:
             title = "Thin TVs, and ready for AI enhancement"
             text = "Atrium Capture now draws TVs as thin screens instead of thick boxes, and gives the sides of furniture no photo saw the color of the rest of the piece. Rebuilding also gets the scan ready for an AI-enhanced model. No rescanning needed. Afterwards, send it to Atrium again."
+        case 9:
+            title = "Fix furniture where rooms overlap"
+            text = "When one room's scan reaches into the next (you walked through a doorway while scanning it, say), both rooms saw the same furniture a few centimeters apart, and the walkthrough mixed the two: beds and sofas came out in shards. Atrium Capture now gives each overlap to the room that scanned it best, paints it with that room's photos only, and lines the rooms up by the path you walked as well as RoomPlan's floor plan. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
+        default:
+            title = "Line the rooms up more closely"
+            text = "Atrium Capture now places the rooms of a multi-room scan by the path you walked as well as RoomPlan's floor plan, so photos from one room land right on the next and the AI-enhanced model comes out cleaner. No rescanning needed. Afterwards, send it to Atrium again and make it AI-enhanced."
         }
         return VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: "wand.and.stars")

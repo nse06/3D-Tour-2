@@ -11,6 +11,8 @@ struct MeshShapes {
     struct Patch {
         /// Triangles, as indices into `triangles`.
         var faces: [Int]
+        /// The room whose scan it comes from (index; most of its area), so its photos paint it.
+        var room: Int
         /// Area-weighted average of its faces' normals.
         var normal: Vec3
         var origin: Vec3
@@ -44,6 +46,8 @@ struct MeshShapes {
     var vertices: [Vec3] = []
     /// Three vertex indices per triangle, counter-clockwise seen from outside.
     var triangles: [SIMD3<Int32>] = []
+    /// The room (index) whose scan each triangle comes from.
+    var roomOf: [Int32] = []
     var patches: [Patch] = []
     /// RoomPlan objects the mesh replaces.
     var replaced: Set<String> = []
@@ -56,15 +60,21 @@ struct MeshShapes {
     private struct Source {
         var a: Vec3, b: Vec3, c: Vec3
         var facing: Vec3
+        var room: Int32
     }
 
-    static func build(_ meshes: [ScanMesh], rooms: [RoomInfo], walls: [WallInfo], objects: [ScanObject], options: Options = .init()) -> MeshShapes {
+    static func build(
+        _ meshes: [ScanMesh], rooms: [RoomInfo], walls: [WallInfo], objects: [ScanObject], overlaps: RoomOverlaps? = nil, options: Options = .init()
+    ) -> MeshShapes {
         var shapes = MeshShapes()
         guard !meshes.isEmpty else { return shapes }
+        // Without overlaps found, a spot two outlines hold goes to the room scanned first.
+        let overlaps = overlaps ?? RoomOverlaps(rooms: rooms)
 
-        // 1. Each room's furniture and clutter: its mesh inside its outline, off its surfaces.
+        // 1. Each room's furniture and clutter: its mesh inside its outline (where outlines overlap,
+        //    only the owner's: the other run's copy of the same bed lies a few centimeters off), off
+        //    its surfaces.
         var soup: [Source] = []
-        var claimed: [RoomInfo] = []
         for room in rooms {
             let own = meshes.filter { $0.roomId == room.room.id || $0.roomId == nil }
             guard !own.isEmpty else { continue }
@@ -84,15 +94,14 @@ struct MeshShapes {
                     let surface = hasClasses ? ScanMesh.Surface(rawValue: mesh.classes[t]) : nil
                     let g = (a + b + c) / 3
                     let q = plan(g)
-                    // In this room, and not already taken by an overlapping room scanned before it.
-                    guard pointInPolygon(q, room.poly), !claimed.contains(where: { pointInPolygon(q, $0.poly) }) else { continue }
+                    // In this room, and where rooms overlap, in a part it owns.
+                    guard overlaps.owner(of: g) == room.index else { continue }
                     guard !isRoomSurface(g, facing: facing, surface: surface, room: room, walls: walls, options: options) else { continue }
-                    kept.append(Source(a: a, b: b, c: c, facing: facing))
+                    kept.append(Source(a: a, b: b, c: c, facing: facing, room: Int32(room.index)))
                 }
             }
             guard kept.count >= options.minRoomTriangles else { continue }
             soup += kept
-            claimed.append(room)
             shapes.rooms.insert(room.index)
         }
         guard !soup.isEmpty else { return shapes }
@@ -156,12 +165,12 @@ struct MeshShapes {
             counts.append(1)
             return i
         }
-        var faces: [(SIMD3<Int32>, Vec3)] = []
+        var faces: [(SIMD3<Int32>, Vec3, Int32)] = []
         faces.reserveCapacity(soup.count)
         for s in soup {
             let ia = cluster(s.a), ib = cluster(s.b), ic = cluster(s.c)
             guard ia != ib, ib != ic, ia != ic else { continue }
-            faces.append((SIMD3(ia, ib, ic), s.facing))
+            faces.append((SIMD3(ia, ib, ic), s.facing, s.room))
         }
         let points = sums.indices.map { sums[$0] / counts[$0] }
         // One triangle per vertex triple and side (a thin table top that collapses keeps both its
@@ -170,7 +179,8 @@ struct MeshShapes {
         var used = [Int32](repeating: -1, count: points.count)
         vertices = []
         triangles = []
-        for (f, facing) in faces {
+        roomOf = []
+        for (f, facing, room) in faces {
             let a = points[Int(f.x)], b = points[Int(f.y)], c = points[Int(f.z)]
             let n = vcross(b - a, c - a)
             guard vlength(n) > 1e-9 else { continue }
@@ -183,6 +193,7 @@ struct MeshShapes {
                 vertices.append(points[Int(tri[k])])
             }
             triangles.append(SIMD3(used[Int(tri.x)], used[Int(tri.y)], used[Int(tri.z)]))
+            roomOf.append(room)
         }
     }
 
@@ -263,15 +274,18 @@ struct MeshShapes {
         var used = [Int32](repeating: -1, count: vertices.count)
         var points: [Vec3] = []
         var kept: [SIMD3<Int32>] = []
-        for t in triangles where include(t) {
+        var keptRooms: [Int32] = []
+        for (i, t) in triangles.enumerated() where include(t) {
             for k in 0..<3 where used[Int(t[k])] < 0 {
                 used[Int(t[k])] = Int32(points.count)
                 points.append(vertices[Int(t[k])])
             }
             kept.append(SIMD3(used[Int(t.x)], used[Int(t.y)], used[Int(t.z)]))
+            keptRooms.append(i < roomOf.count ? roomOf[i] : -1)
         }
         vertices = points
         triangles = kept
+        roomOf = keptRooms
     }
 
     func center(_ t: SIMD3<Int32>) -> Vec3 { (vertices[Int(t.x)] + vertices[Int(t.y)] + vertices[Int(t.z)]) / 3 }
@@ -402,7 +416,10 @@ struct MeshShapes {
             // Horizontal u on walls and fronts; along x on tops and bottoms.
             let u = abs(normal.y) > 0.9 ? vnormalize(Vec3(1, 0, 0) - normal * normal.x) : vnormalize(vcross(Vec3(0, 1, 0), normal))
             let v = vcross(normal, u)
-            patches.append(Patch(faces: faces, normal: normal, origin: origin, u: u, v: v))
+            var roomArea: [Int32: Float] = [:]
+            for f in faces where f < roomOf.count { roomArea[roomOf[f], default: 0] += areas[f] }
+            let room = roomArea.max { ($0.value, -$0.key) < ($1.value, -$1.key) }?.key ?? -1
+            patches.append(Patch(faces: faces, room: Int(room), normal: normal, origin: origin, u: u, v: v))
         }
     }
 }
