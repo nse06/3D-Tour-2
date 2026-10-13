@@ -15,6 +15,7 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 import { distance, formatFeetInches, formatMeters } from "@/lib/tour/measure";
 import type { SplatSpot, TourAppearance, TourSpace, Vec3, Waypoint } from "@/lib/tour/types";
 import { CameraRig } from "./CameraRig";
+import { findPlanWalls, type PlanWalls } from "./plan-walls";
 import { makeSpotUniforms, PhotoSpots, spotsOf, withPhotoSpots } from "./PhotoSpots";
 import type { LivePose, ViewerApi, ViewerMode } from "./viewer-types";
 
@@ -58,6 +59,8 @@ export interface TourSceneProps {
   onProgress: (fraction: number) => void;
   onLoaded: () => void;
   onError: (message: string) => void;
+  /** Where the room outlines are real walls in the model (for the 3D floor plan), once it has loaded. */
+  onPlanWalls?: (walls: PlanWalls) => void;
   /** "captured": show the textures unlit, exactly as scanned (photo-textured captures). */
   appearance?: TourAppearance;
   /** Screen-space ambient occlusion; enabled on desktop-class GPUs. */
@@ -158,6 +161,7 @@ function PropertyModel({
   onFade,
   onProgress,
   onLoaded,
+  onPlanWalls,
   appearance = "studio",
   effects = false,
   autoPan = false,
@@ -213,6 +217,20 @@ function PropertyModel({
     onLoaded();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gltf]);
+
+  // The floor plan's walls, from the painted model: a moment after it's on screen, when its raycasting
+  // structure (Bvh) is built, so the probes are quick and the first frames aren't held up.
+  useEffect(() => {
+    if (!onPlanWalls) return;
+    const timer = window.setTimeout(() => {
+      try {
+        onPlanWalls(findPlanWalls(gltf.scene, space));
+      } catch (e) {
+        console.error("floor plan walls:", (e as Error).message);
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [gltf, space, onPlanWalls]);
 
   // With a clean model to switch to, the photo model always shows as captured (unlit); without
   // one, `appearance` picks its lighting. The remastered model is a photo model too.

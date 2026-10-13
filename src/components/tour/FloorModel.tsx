@@ -7,11 +7,14 @@ import * as THREE from "three";
 import { formatRoomSize, roomSize } from "@/lib/tour/measure";
 import { polygonCentroid } from "@/lib/tour/navigation";
 import type { TourFloor, TourRoom, Vec2 } from "@/lib/tour/types";
+import type { PlanWalls } from "./plan-walls";
 import type { LivePose } from "./viewer-types";
 
 interface Props {
   floor: TourFloor;
   rooms: TourRoom[];
+  /** Where the outlines are real walls (plan-walls.ts); null until the model has been checked, then no walls are drawn yet. */
+  walls: PlanWalls | null;
   currentRoomId: string | null;
   poseRef: MutableRefObject<LivePose>;
   onRoomClick: (roomId: string) => void;
@@ -22,6 +25,7 @@ interface Props {
 const WALL_HEIGHT = 1.6;
 const WALL_THICKNESS = 0.08;
 const FOV = 32;
+const NO_WALLS: [Vec2, Vec2][] = [];
 
 /**
  * The floor as a small 3D model, in place of the flat plan: each room's walls raised from its floor
@@ -29,7 +33,7 @@ const FOV = 32;
  * highlighted, and a marker for where you are and which way you face. Drag to turn it; tap a room to go
  * there. Plan (x, z) is the model's frame, so the marker needs no conversion.
  */
-export function FloorModel({ floor, rooms, currentRoomId, poseRef, onRoomClick, className }: Props) {
+export function FloorModel({ floor, rooms, walls, currentRoomId, poseRef, onRoomClick, className }: Props) {
   const plan = useMemo(() => {
     const shaped = rooms.filter((r) => r.footprint && r.footprint.length >= 3);
     const pts = shaped.flatMap((r) => r.footprint!);
@@ -74,7 +78,7 @@ export function FloorModel({ floor, rooms, currentRoomId, poseRef, onRoomClick, 
         <directionalLight position={[6, 12, 4]} intensity={1.6} />
         <group position={[-plan.center[0], 0, -plan.center[1]]}>
           {plan.shaped.map((r) => (
-            <Room key={r.id} room={r} active={r.id === currentRoomId} onClick={onRoomClick} />
+            <Room key={r.id} room={r} walls={walls?.[r.id] ?? NO_WALLS} active={r.id === currentRoomId} onClick={onRoomClick} />
           ))}
           <Marker floorId={floor.id} poseRef={poseRef} scale={Math.max(1, plan.radius / 5)} />
         </group>
@@ -131,7 +135,7 @@ function LabelTracker({ anchors, labels }: { anchors: { id: string; position: TH
   return null;
 }
 
-function Room({ room, active, onClick }: { room: TourRoom; active: boolean; onClick: (roomId: string) => void }) {
+function Room({ room, walls: segments, active, onClick }: { room: TourRoom; walls: [Vec2, Vec2][]; active: boolean; onClick: (roomId: string) => void }) {
   const footprint = room.footprint!;
   const floorGeometry = useMemo(() => {
     // Shape (x, -z) laid down by −90° about x lands on plan (x, z).
@@ -140,10 +144,10 @@ function Room({ room, active, onClick }: { room: TourRoom; active: boolean; onCl
     g.rotateX(-Math.PI / 2);
     return g;
   }, [footprint]);
+  // Only where the model has a wall (plan-walls.ts): open sides and doorways stay open.
   const walls = useMemo(
     () =>
-      footprint.map((a, i) => {
-        const b = footprint[(i + 1) % footprint.length];
+      segments.map(([a, b], i) => {
         const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
         return {
           key: i,
@@ -152,7 +156,7 @@ function Room({ room, active, onClick }: { room: TourRoom; active: boolean; onCl
           angle: -Math.atan2(b[1] - a[1], b[0] - a[0]),
         };
       }),
-    [footprint],
+    [segments],
   );
   const go = (e: ThreeEvent<MouseEvent>) => {
     if (e.delta > 4) return; // a drag to turn the model, not a tap

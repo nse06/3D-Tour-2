@@ -30,6 +30,7 @@ import { distance, formatFeetInches, formatMeters, formatSquareFeet, polygonArea
 import { sortedFloors, walkthroughOrder } from "@/lib/tour/navigation";
 import type { TourData, TourRoom, Vec3, Waypoint } from "@/lib/tour/types";
 import { FloorModel } from "./FloorModel";
+import type { PlanWalls } from "./plan-walls";
 import { FloorPlan } from "./FloorPlan";
 import type { LivePose, ViewerApi } from "./viewer-types";
 
@@ -88,6 +89,8 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
   const [error, setError] = useState<string | null>(null);
   const [entered, setEntered] = useState(false);
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(startRoom?.id ?? null);
+  // Where the room outlines are real walls in the model (found once it loads): the 3D floor plan draws only those.
+  const [planWalls, setPlanWalls] = useState<PlanWalls | null>(null);
   const [planFloorId, setPlanFloorId] = useState<string | null>(startRoom?.floorId ?? floors[0]?.id ?? null);
   const isTouch = useMediaQuery("(pointer: coarse)");
   const isNarrow = useMediaQuery("(max-width: 767px)");
@@ -394,6 +397,7 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
           onUserInteract={stopAutoplay}
           onFade={setFade}
           onProgress={setProgress}
+          onPlanWalls={setPlanWalls}
           onLoaded={() => {
             setProgress(1);
             setLoaded(true);
@@ -489,6 +493,7 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
             <FloorModel
               floor={planFloor}
               rooms={roomsOnPlanFloor}
+              walls={planWalls}
               currentRoomId={currentRoomId}
               poseRef={poseRef}
               onRoomClick={goToRoom}
