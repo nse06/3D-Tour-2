@@ -45,6 +45,11 @@ export default function AiUse() {
           <strong>Repaints surfaces</strong> from every photo that saw them, evening out color and exposure between photos.
         </li>
         <li>
+          <strong>Evens out the lighting</strong> across the whole home: takes most of the color cast of bulbs and window light out of the
+          walls, brightens dim rooms toward daylight, and softens blown-out windows and lamps. One adjustment for the whole home — it
+          doesn&apos;t add light sources, change shadows or relight individual rooms.
+        </li>
+        <li>
           <strong>Fills in small areas no photo saw</strong> — behind furniture, high corners — with plausible surface texture (LaMa). These
           areas are generated, not photographed.
         </li>

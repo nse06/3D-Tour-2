@@ -22,6 +22,24 @@ const STAGE: Record<string, string> = {
   uploading: "Saving the remastered model",
 };
 
+/** "1 min 20 s", "45 s". */
+function duration(seconds: number): string {
+  const s = Math.round(seconds);
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ""}`;
+}
+
+/** How long each stage took on the GPU (the worker's stageSeconds), longest first. */
+function stageTimes(stats: Record<string, unknown>): string | null {
+  const stages = stats.stageSeconds;
+  if (!stages || typeof stages !== "object") return null;
+  const entries = Object.entries(stages as Record<string, unknown>).filter((e): e is [string, number] => typeof e[1] === "number" && e[1] >= 1);
+  if (!entries.length) return null;
+  return entries
+    .sort((a, b) => b[1] - a[1])
+    .map(([stage, s]) => `${(STAGE[stage] ?? stage).replace(/^The GPU is /, "")} ${duration(s)}`)
+    .join(" · ");
+}
+
 /** What the remaster changed beyond the skins, from its stats (worker/remaster), for the realtor to know. */
 function aiChanges(stats: Record<string, unknown>): string[] {
   const count = (key: string, one: string, many: string) => {
@@ -197,10 +215,17 @@ export function RemasterPanel({
               typeof stats.photos === "number" ? `${stats.photos} photos` : null,
               typeof stats.modelMB === "number" ? `${stats.modelMB} MB` : null,
               minutes != null ? `${minutes} min on the GPU` : null,
+              job.finishedAt ? `ready ${Math.max(1, Math.round((Date.parse(job.finishedAt) - Date.parse(job.createdAt)) / 60000))} min after it was started` : null,
             ]
               .filter(Boolean)
               .join(" · ")}
           </p>
+          {stageTimes(stats) && (
+            <details className="text-xs text-neutral-400">
+              <summary className="cursor-pointer">Time by stage</summary>
+              <p className="mt-1">{stageTimes(stats)}</p>
+            </details>
+          )}
           <div className="flex flex-wrap items-center gap-3">
             <ButtonLink href={`/dashboard/properties/${propertyId}/preview`} variant="secondary" size="sm">
               <Eye className="size-3.5" /> Walk through it

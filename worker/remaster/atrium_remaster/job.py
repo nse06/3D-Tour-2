@@ -116,6 +116,23 @@ def cleanup_config(options: dict) -> cleanup_mod.CleanupConfig:
     )
 
 
+class StageClock:
+    """How long each stage took (s): a stage runs from its first report until the next stage's report."""
+
+    def __init__(self) -> None:
+        self.current: str | None = None
+        self.since = time.time()
+        self.seconds: dict[str, float] = {}
+
+    def mark(self, stage: str | None) -> None:
+        if stage == self.current:
+            return
+        now = time.time()
+        if self.current is not None:
+            self.seconds[self.current] = round(self.seconds.get(self.current, 0.0) + now - self.since, 1)
+        self.current, self.since = stage, now
+
+
 def light_config(options: dict) -> light_mod.LightConfig:
     d = light_mod.LightConfig()
     return light_mod.LightConfig(
@@ -261,7 +278,7 @@ def remaster(
             traceback.print_exc()
             stats["fillError"] = f"{type(e).__name__}: {e}"[:200]
     light = light_mod.Light()
-    if options.get("light", False):
+    if options.get("light", True):
         report("light", 0.95, "evening out the lighting")
         try:
             light, light_stats = light_mod.measure(out, light_config(options))
@@ -298,6 +315,8 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-remas
     capture_dir.mkdir(parents=True)
     try:
         started = time.time()
+        clock = StageClock()
+        clock.mark("downloading")
         reporter.progress("downloading", 0, f"{len(payload['files'])} files", force=True)
         received = download(payload["files"], capture_dir)
         model_path = work / "painted.glb"
@@ -313,10 +332,12 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-remas
         options = payload.get("options") or {}
 
         def report(stage: str, value: float, message: str) -> None:
+            clock.mark(stage)
             reporter.progress(stage, value, message)
 
         made: list[dict] = []
         out, stats = remaster(mesh, capture, options, services, device, report, layout=layout, spots=made)
+        clock.mark("uploading")
         reporter.progress("uploading", 1, "", force=True)
         if made:
             # The spots' pictures go up first: the model lists where they are.
@@ -353,9 +374,13 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-remas
         if "model.glb" not in targets or not targets["model.glb"].get("url"):
             raise RuntimeError(f"no upload target: {answer}")
         upload(targets["model.glb"], out_path)
+        clock.mark(None)
+        stats["stageSeconds"] = clock.seconds
+        stats["totalSeconds"] = round(time.time() - started, 1)
         reporter.send({"event": "done", "modelUrl": targets["model.glb"]["assetUrl"], "stats": stats})
         # For whoever watches the logs: the numbers only (an error's text can hold a signed URL).
         print("remaster done: " + json.dumps({k: v for k, v in stats.items() if isinstance(v, (bool, int, float))}), flush=True)
+        print("remaster stages (s): " + json.dumps(clock.seconds), flush=True)
         return stats
     except Exception as e:
         traceback.print_exc()

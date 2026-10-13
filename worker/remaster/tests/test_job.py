@@ -76,7 +76,7 @@ FAST = {"steps": 60, "batch": 4, "tile": 256, "levels": 3, "maxMip": 3, "spotFac
 def test_a_job_downloads_rebuilds_uploads_and_reports(tmp_path, capsys):
     room.write(tmp_path / "site")
     site = Site(tmp_path / "site")
-    stats = job.run_job(site.payload({**FAST, "light": True}), SECRET, workdir=tmp_path / "work", device="cpu")
+    stats = job.run_job(site.payload(FAST), SECRET, workdir=tmp_path / "work", device="cpu")
     logged = [line for line in capsys.readouterr().out.splitlines() if line.startswith("remaster done: ")]
     assert len(logged) == 1 and json.loads(logged[0].split(": ", 1)[1])["totalSeconds"] == stats["totalSeconds"], "the numbers, in the log"
     kinds = [e["event"] for e in site.events]
@@ -88,6 +88,9 @@ def test_a_job_downloads_rebuilds_uploads_and_reports(tmp_path, capsys):
     assert model.atlases[0].shape == (1024, 1024, 3) and model.extras["atrium"]["schema"] == "atrium.scan-manifest/v1"
     assert stats["photosOnModel"] > 0.9 and not (tmp_path / "work" / "job-1").exists()
     assert "lightError" not in stats and stats["lightExposure"] > 0, "the lighting ran, on the skins and the spots"
+    stages = stats["stageSeconds"]
+    assert {"downloading", "skins", "light", "spots", "uploading"} <= set(stages), stages
+    assert abs(sum(stages.values()) - stats["totalSeconds"]) < 2, "every second is in some stage"
     # The photo spots: their pictures uploaded first, listed in the model.
     listed = model.extras["atriumSpots"]["spots"]
     assert stats["spots"] == len(listed) == len(spots_upload["files"]) > 0 and model.extras["atriumSpots"]["face"] == 32

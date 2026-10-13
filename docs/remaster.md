@@ -22,7 +22,7 @@ left on the server (docs/photoreal.md §2.1), so either can be switched off, red
 | Trim: doors and windows set into their walls, baseboards, crown moldings, casings, cabinet doors | `trim.py` (§4.5) | built; the doors, windows, casings and cabinets wait for a build-13 scan; white baseboards on off-white walls are mostly too faint in the phone's painting to be found |
 | The room layout from the phone (walls, doors, windows, furniture boxes) | build 13, `cameras.json` `layout` (docs/photoreal.md §1) | done |
 | Photo spots | `spots.py`, viewer's `PhotoSpots` (§4.6) | built: tested on CPU and in Chromium on a synthetic room |
-| Better lighting: neutral white balance, daylight exposure, soft highlights | `light.py` (§4.8) | built: tested on CPU; off unless asked (`light`) until checked on real scans |
+| Better lighting: neutral white balance, daylight exposure, soft highlights | `light.py` (§4.8) | built: on by default (`"light": false` turns it off) |
 
 ## 1. Flow
 
@@ -220,8 +220,8 @@ balance (85% of their tint taken out, no channel moved more than 40%), and the w
 exposure, toward sRGB 0.8 (brightening at most 1.8×, darkening at most 0.9×). Then shadows open up a little
 (luminance to the power 0.88) and highlights roll off above linear 0.8 instead of clipping, moving toward gray
 rather than shifting hue. It is per pixel, nothing spatial, and the photo spots' cube faces get exactly the same
-adjustment, so skins and spots still agree. Off unless the site asks (`"light": true`, with `lightTarget`,
-`lightWhiteBalance`, `lightMaxGain`, `lightLift`, `lightShoulder` to tune); the stats carry `lightGains`,
+adjustment, so skins and spots still agree. On unless the site asks otherwise (`"light": false`; tune with `lightTarget`,
+`lightWhiteBalance`, `lightMaxGain`, `lightLift`, `lightShoulder`); the stats carry `lightGains`,
 `lightExposure`, `lightWallBefore` and `lightWallSamples`, or `lightSkipped` when too few plain wall texels were
 found.
 
@@ -261,6 +261,11 @@ Options (all optional):
 
 The remastered model is a GLB like the phone's photo models: one unlit primitive per atlas (JPEG), the scan manifest
 in the scene's extras, so the viewer loads it in place of the painted one.
+
+**Timing.** The stats carry `totalSeconds` (download to the model's upload) and `stageSeconds`, the seconds each
+stage took (`downloading`, `cleanup`, `shapes`, `furniture`, `depth`, `skins`, `fill`, `light`, `spots`, `uploading`;
+a stage runs from its first progress report to the next stage's). The log prints them as `remaster stages (s): …`,
+and the listing page shows them under **Time by stage**, with how long the job took from being started.
 
 ## 6. AI models and licenses
 
