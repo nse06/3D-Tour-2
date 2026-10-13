@@ -89,19 +89,32 @@ therefore expressed relative to where that room's scan began. Taken as-is, the r
 
 The app records, with every raw path sample and photo, the RoomPlan run it was taken in (`"segment": 2`; raw files
 only), and samples the path at 30 Hz for 3 s after each run starts. `RoomAlignment.align(parts:structure:path:frames:)`
-then places each room, best method first:
+then places the rooms:
 
 1. **Structure fit** — the merged `CapturedStructure` keeps the identifiers of walls, doors, windows, openings and
-   objects. The turn about +Y and shift that best map a room's elements onto the merged ones place the room (walls
+   objects. The turn about +Y and shift that best map a room's elements onto the merged ones fit the room (walls
    only constrain their normal, since the merge may resize them; a 180°-flipped answer is ruled out by positions).
 2. **Path links** — at each origin reset the recorded path jumps back to (0, 0, 0); the jump measures the shift
-   between consecutive frames. Rooms without a structure fit, and path samples and photos of runs without a room
-   (rescans), are chained through these links. Scans from builds 1–2 have no run tags: resets are found in the
-   path, and extra runs left by rescanned rooms are skipped by trying each assignment and keeping the one where
-   rooms don't overlap and the path stays continuous.
-3. **Doorway snapping** — for path-placed rooms only, a doorway seen from both of its rooms pulls the rooms back
+   between consecutive frames, to a centimeter or two (30 Hz around each reset), each link with its own sigma from
+   the phone's speed across the gap. Scans from builds 1–2 have no run tags: resets are found in the path, and
+   extra runs left by rescanned rooms are skipped by trying each assignment and keeping the one where rooms don't
+   overlap and the path stays continuous.
+3. **Placement (pipeline 10)** — RoomPlan tidies its merged structure (walls straightened, corners squared), so each
+   room's fit is off by a few centimeters and a fraction of a degree, room by room; placed by their fits alone,
+   photos from one room landed slightly wrong on the next. Now the fits and the links are weighed together by least
+   squares: linked runs share one turn (the weighted mean of their fits' turns) and their shifts satisfy each link
+   to its sigma and each fitted room's center to ~15 cm. The links decide how the rooms sit relative to each other,
+   the fits where the home sits as a whole (which doesn't matter). A link that contradicts the fits of both of its
+   rooms by more than 0.3 m (tracking lost between rooms), or is still that far off after solving, is dropped.
+   Rooms placed this way are `combined`; a fitted room without links is `structure`; rooms placed from the path
+   alone are `path`.
+4. **Doorway snapping** — for path-only rooms, a doorway seen from both of its rooms pulls the rooms back
    together when the two views are further apart than RoomPlan's own noise (~0.2 m along the wall; the gap between
    the views, i.e. the partition, from −0.4 to +0.12 m). Rooms on the merged structure never move.
+
+The report adds, per room, `layoutDisagreement`: how far its final place is from where its own fit alone would put it
+(largest corner distance), and `pathLinksDropped`. In tests, with each room's fit 6–10 cm off (±1.2°, ±6 cm) and a
+30 Hz path, rooms sit together within 1 cm; a link off by 0.8 m is dropped and its room placed by its fit.
 
 The result is a `CaptureScan` in one frame plus an `AlignmentReport` (method, matched elements and residual per
 room), saved as `alignment.json`. Checked on Apple's 11-room sample with each room shifted into its own frame:

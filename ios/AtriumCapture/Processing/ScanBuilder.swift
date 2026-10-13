@@ -18,7 +18,9 @@ enum ScanBuilder {
     /// 8: photos lined up with each other, edge-aware painting, finer LiDAR shapes.
     /// 9: thin TVs, hidden furniture faces in their own piece's color; photoreal training data
     ///    (photoreal/: cameras.json, seeds.ply, masks/).
-    static let pipelineVersion = 9
+    /// 10: rooms of multi-room scans placed by the recorded path and RoomPlan's layout together
+    ///    (RoomAlignment), so photos line up across rooms.
+    static let pipelineVersion = 10
 
     enum Step: Int, CaseIterable {
         case combining, modeling, packaging

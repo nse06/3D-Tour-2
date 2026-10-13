@@ -13,10 +13,18 @@ import Foundation
 //    windows, openings and objects. For each room, the motion (a turn about +Y,
 //    then a shift) that best maps its elements onto the merged ones places it.
 // 2. Path links. At each origin reset the recorded camera path jumps back to
-//    (0, 0, 0). The jump measures the shift between consecutive frames, which
-//    places rooms and photos that the structure doesn't cover.
-// 3. Doorway snapping. Both rooms of a doorway saw it; the leftover offset
-//    between the two views is removed.
+//    (0, 0, 0). The jump measures the shift between consecutive frames, to a
+//    centimeter or two: the phone is tracked throughout, and the photos were
+//    taken in that same tracking.
+// 3. Placement. RoomPlan tidies its merged structure (walls straightened,
+//    corners squared), so each room's fit to it is off by a few centimeters and
+//    a fraction of a degree, room by room. Placing rooms by their fits alone
+//    puts photos from one room slightly wrong on the next. So the fits and the
+//    links are weighed together (least squares): the links decide how the
+//    rooms sit relative to each other, the fits where the home sits. A link
+//    that disagrees by more than lost tracking would explain is dropped.
+// 4. Doorway snapping. Both rooms of a doorway saw it; the leftover offset
+//    between the two views is removed (rooms placed from the path only).
 
 /// A rigid motion that keeps "up" up: a turn about +Y by `yaw` radians (the
 /// same sense as `Transform.rotationY`), then a shift by `t`.
@@ -93,6 +101,8 @@ public struct AlignmentReport: Codable, Sendable, Equatable {
         case structure
         /// Placed by following the recorded path from a neighbouring room.
         case path
+        /// Placed by the recorded path and RoomPlan's merged structure together.
+        case combined
         /// Kept as recorded (a single room, or rooms already sharing one frame).
         case asRecorded
         /// No way to place it was found; kept where RoomPlan reported it.
@@ -110,6 +120,9 @@ public struct AlignmentReport: Codable, Sendable, Equatable {
         public var residual: Double?
         /// How far doorway snapping moved the room, meters.
         public var doorwayShift: Double
+        /// How far the room's final place is from where its own structure fit alone would put it
+        /// (largest corner distance, meters): how much the path and RoomPlan's layout disagree here.
+        public var layoutDisagreement: Double?
     }
 
     public var rooms: [Room]
@@ -119,6 +132,8 @@ public struct AlignmentReport: Codable, Sendable, Equatable {
     public var pathResets: Int
     /// Doorways seen from both of their rooms that were far enough apart to move a room.
     public var doorwayPairs: Int
+    /// Path links left out because they disagreed with the rest by more than lost tracking explains.
+    public var pathLinksDropped: Int?
     public var pathSamples: Int
     public var pathSamplesDropped: Int
     public var frames: Int
@@ -136,6 +151,12 @@ public struct AlignmentReport: Codable, Sendable, Equatable {
             parts.append("Rooms kept as recorded")
         } else if unplaced == n {
             parts.append("Rooms kept as recorded (no layout data)")
+        } else if rooms.contains(where: { $0.method == .combined }) {
+            let placed = n - unplaced
+            var line = "\(placed) of \(n) rooms placed along your path and RoomPlan's merged layout"
+            if placed == n { line = "\(n) rooms placed along your path and RoomPlan's merged layout" }
+            if let worst = rooms.compactMap(\.layoutDisagreement).max() { line += " (they agree within \(Int((worst * 100).rounded())) cm)" }
+            parts.append(line)
         } else if fromStructure == n {
             parts.append("\(n) rooms placed with RoomPlan's merged layout")
         } else if fromStructure > 0 {
@@ -144,6 +165,7 @@ public struct AlignmentReport: Codable, Sendable, Equatable {
             parts.append("\(n - unplaced) of \(n) rooms placed by following your path")
         }
         if doorwayPairs > 0 { parts.append("\(doorwayPairs) doorway\(doorwayPairs == 1 ? "" : "s") straightened") }
+        if let dropped = pathLinksDropped, dropped > 0 { parts.append("tracking lost \(dropped) time\(dropped == 1 ? "" : "s") between rooms") }
         return parts.joined(separator: " · ")
     }
 }
@@ -176,37 +198,47 @@ public enum RoomAlignment {
         let oneFrame = !fitted && (parts.count <= 1 || (seg.resets == 0 && parts.allSatisfy { $0.segment == nil }))
         let partSegments: [Int?] = oneFrame ? parts.map { _ in 0 } : segmentsOfParts(parts, fits: fits, path: cleanPath, segmentation: seg)
 
-        // 2. One motion per segment: from a fitted room, else chained along the path's links.
-        var segMotion: [Int: Motion] = [:]
-        var bestResidual: [Int: Double] = [:]
+        // 2–3. One motion per segment, from the path links and the structure fits together.
+        var priors: [Prior] = []
         for (k, fit) in fits.enumerated() {
-            guard let fit, let s = partSegments[k], fit.residual < bestResidual[s] ?? .infinity else { continue }
-            segMotion[s] = fit.motion
-            bestResidual[s] = fit.residual
+            guard let fit, let sIndex = partSegments[k], !parts[k].room.floorPolygon.isEmpty else { continue }
+            let c = centroid(parts[k].room.floorPolygon.map(plan))
+            let center = Vec3(Float(c.x), parts[k].room.floorY, Float(c.y))
+            priors.append(Prior(segment: sIndex, motion: fit.motion, yaw: fit.motion.yaw, center: center, target: fit.motion.apply(center), sigma: 0.15 + fit.residual))
         }
-        if segMotion.isEmpty { segMotion[partSegments.compactMap { $0 }.min() ?? 0] = .identity }
-        let parent = propagate(&segMotion, links: seg.links)
+        let solved: Solved = oneFrame
+            ? Solved(motions: [:], kept: [], dropped: 0, onStructure: [])
+            : solveSegments(count: max(seg.count, (partSegments.compactMap { $0 }.max() ?? -1) + 1), links: seg.links, priors: priors,
+                            anchor: partSegments.compactMap { $0 }.min() ?? 0)
+        let segMotion = solved.motions
+        let parent = treeParents(segMotion, links: solved.kept, roots: solved.onStructure)
 
         var motions: [Motion?] = []
         var methods: [AlignmentReport.Method] = []
         for k in parts.indices {
-            if let fit = fits[k] {
-                motions.append(fit.motion)
-                methods.append(.structure)
-            } else if oneFrame {
+            if oneFrame {
                 motions.append(.identity)
                 methods.append(.asRecorded)
-            } else if let s = partSegments[k], let m = segMotion[s] {
+            } else if let sIndex = partSegments[k], let m = segMotion[sIndex] {
                 motions.append(m)
-                methods.append(.path)
+                let linked = solved.kept.contains { $0.from == sIndex || $0.to == sIndex }
+                if solved.onStructure.contains(sIndex) {
+                    methods.append(linked ? .combined : .structure)
+                } else {
+                    methods.append(.path)
+                }
+            } else if let fit = fits[k] {
+                motions.append(fit.motion)
+                methods.append(.structure)
             } else {
                 motions.append(nil)
                 methods.append(.unplaced)
             }
         }
+        func onLayout(_ k: Int) -> Bool { methods[k] == .structure || methods[k] == .combined }
 
         // 3. Doorway snapping (a plan shift per room).
-        let snap = doorwayCorrections(parts: parts, motions: motions, pinned: Set(parts.indices.filter { methods[$0] == .structure }))
+        let snap = doorwayCorrections(parts: parts, motions: motions, pinned: Set(parts.indices.filter(onLayout)))
         func shift(_ c: P2) -> Motion { Motion(yaw: 0, t: Vec3(Float(c.x), 0, Float(c.y))) }
         // A segment placed by following the path from another inherits that one's doorway shift,
         // unless a room of its own was lined up at a doorway (or placed on the structure).
@@ -214,7 +246,7 @@ public enum RoomAlignment {
         func correction(ofSegment s: Int, depth: Int = 0) -> P2 {
             if let c = inherited[s] { return c }
             var c = P2(0, 0)
-            if let own = parts.indices.first(where: { partSegments[$0] == s && (snap.snapped.contains($0) || methods[$0] == .structure) }) {
+            if let own = parts.indices.first(where: { partSegments[$0] == s && (snap.snapped.contains($0) || onLayout($0)) }) {
                 c = snap.corrections[own]
             } else if let p = parent[s], depth < 64 {
                 c = correction(ofSegment: p, depth: depth + 1)
@@ -223,7 +255,7 @@ public enum RoomAlignment {
             return c
         }
         let corrections = parts.indices.map { k -> P2 in
-            if snap.snapped.contains(k) || methods[k] == .structure { return snap.corrections[k] }
+            if snap.snapped.contains(k) || onLayout(k) { return snap.corrections[k] }
             if methods[k] == .path, let s = partSegments[k] { return correction(ofSegment: s) }
             return snap.corrections[k]
         }
@@ -278,9 +310,12 @@ public enum RoomAlignment {
                 AlignmentReport.Room(
                     id: parts[k].room.id, name: parts[k].room.name, segment: partSegments[k], method: methods[k],
                     matchedElements: fits[k]?.matched ?? 0, residual: fits[k].map { rounded($0.residual, 3) },
-                    doorwayShift: rounded(plength(corrections[k]), 3))
+                    doorwayShift: rounded(plength(corrections[k]), 3),
+                    layoutDisagreement: fits[k].map { fit in
+                        rounded(parts[k].room.floorPolygon.map { Double(vlength(finalMotions[k].apply($0) - fit.motion.apply($0))) }.max() ?? 0, 3)
+                    })
             },
-            segments: seg.count, pathResets: seg.resets, doorwayPairs: snap.pairs, pathSamples: scan.trajectory.count, pathSamplesDropped: dropped,
+            segments: seg.count, pathResets: seg.resets, doorwayPairs: snap.pairs, pathLinksDropped: solved.dropped, pathSamples: scan.trajectory.count, pathSamplesDropped: dropped,
             frames: scan.frames.count, framesDropped: framesDropped)
         return AlignedCapture(scan: scan, report: report)
     }
@@ -293,6 +328,8 @@ public enum RoomAlignment {
         let motion: Motion
         /// First path sample in frame `from`.
         let at: Int
+        /// How far off the link's shift may be (m): the phone's motion across the gap, guessed from its speed.
+        var sigma: Double = 0.02
     }
 
     struct Segmentation {
@@ -339,12 +376,12 @@ public enum RoomAlignment {
                 }
                 if let reset {
                     for k in start..<reset { segment[k] = previous }
-                    links.append(Link(from: tag, to: previous, motion: link(s, at: reset), at: reset))
+                    links.append(Link(from: tag, to: previous, motion: link(s, at: reset), at: reset, sigma: linkSigma(s, at: reset)))
                     resets += 1
                     i = reset + 1
                 } else {
                     // No visible jump: the phone was (almost) where the previous run's origin was.
-                    links.append(Link(from: tag, to: previous, motion: .identity, at: start))
+                    links.append(Link(from: tag, to: previous, motion: .identity, at: start, sigma: 0.1))
                     i = start + 1
                 }
             }
@@ -356,7 +393,7 @@ public enum RoomAlignment {
             if i > 0, isReset(s[i - 1], s[i], sensitive: false) {
                 current += 1
                 resets += 1
-                links.append(Link(from: current, to: current - 1, motion: link(s, at: i), at: i))
+                links.append(Link(from: current, to: current - 1, motion: link(s, at: i), at: i, sigma: linkSigma(s, at: i)))
             }
             segment[i] = current
         }
@@ -400,6 +437,169 @@ public enum RoomAlignment {
         let dt = Float(clamp(s[i].t - s[i - 1].t, 0, 1))
         let oldPositionThen = s[i - 1].p + v * dt
         return Motion(yaw: 0, t: oldPositionThen - s[i].p)
+    }
+
+    /// How far off `link(s, at: i)` may be (m): a centimeter or two, plus what a change of speed
+    /// across the gap could add (the shift assumes the phone kept its speed).
+    static func linkSigma(_ s: [PoseSample], at i: Int) -> Double {
+        guard i >= 1 else { return 0.05 }
+        let dt = clamp(s[i].t - s[i - 1].t, 0, 1)
+        var speed = 0.0
+        if i >= 2, s[i - 1].t - s[i - 2].t > 0.001 { speed = Double(vlength(s[i - 1].p - s[i - 2].p)) / (s[i - 1].t - s[i - 2].t) }
+        return 0.015 + 0.5 * min(speed, 1.5) * dt
+    }
+
+    // MARK: Placement
+
+    /// One fitted room's say on where its segment goes: its floor's center should land where its
+    /// structure fit (`motion`) puts it, to within `sigma` meters.
+    struct Prior {
+        let segment: Int
+        let motion: Motion
+        let yaw: Double
+        let center: Vec3
+        let target: Vec3
+        let sigma: Double
+    }
+
+    struct Solved {
+        var motions: [Int: Motion]
+        /// The links the placement kept.
+        var kept: [Link]
+        /// Links dropped for disagreeing with the rest.
+        var dropped: Int
+        /// Segments placed with the help of structure fits (in a group of linked segments that has one).
+        var onStructure: Set<Int>
+    }
+
+    /// Each segment's motion into the home's frame. Linked segments form groups; a group shares one
+    /// turn (the links keep "up" and the heading: RoomPlan's reset only moves the origin), the
+    /// weighted mean of its fits' turns. Its shifts are the least-squares answer to "each link's
+    /// offset holds, to its sigma (a few cm)" and "each fitted room's center lands where its fit
+    /// says, to its sigma (~15 cm: the fits mostly place the home as a whole, whose own position
+    /// doesn't matter; how the rooms sit relative to each other comes from the links)".
+    ///
+    /// Weak fits can't outvote a bad link, so links are checked against the fits first: one that
+    /// contradicts the fits of both of its rooms by more than 0.3 m (tracking lost as the phone
+    /// crossed between rooms) is dropped. After solving, a link still off by more than 0.3 m is
+    /// dropped too and the group solved again. A group without fits is placed only if it holds
+    /// `anchor` (as recorded there, when nothing was fitted at all).
+    static func solveSegments(count: Int, links: [Link], priors: [Prior], anchor: Int) -> Solved {
+        var kept = links.filter { $0.from != $0.to && $0.from >= 0 && $0.to >= 0 && $0.from < count && $0.to < count }
+        var dropped = 0
+        var best: [Int: Prior] = [:]
+        for p in priors where p.sigma < best[p.segment]?.sigma ?? .infinity { best[p.segment] = p }
+        kept = kept.filter { l in
+            guard let from = best[l.from], let to = best[l.to] else { return true }
+            // The `from` room's center, placed by its own fit, and by the link then the `to` room's fit.
+            let gap = Double(vlength(from.motion.apply(from.center) - to.motion.apply(l.motion.apply(from.center))))
+            if gap > 0.3 { dropped += 1 }
+            return gap <= 0.3
+        }
+        while true {
+            var group = Array(0..<count)
+            func root(_ k: Int) -> Int {
+                var k = k
+                while group[k] != k { k = group[k] }
+                return k
+            }
+            for l in kept { group[root(l.from)] = root(l.to) }
+            var motions: [Int: Motion] = [:]
+            var onStructure = Set<Int>()
+            var worst: (link: Int, error: Double)?
+            for r in Set((0..<count).map(root)) {
+                let members = (0..<count).filter { root($0) == r }
+                let own = priors.filter { root($0.segment) == r }
+                guard !own.isEmpty || (priors.isEmpty && members.contains(anchor)) else { continue }
+                var sinSum = 0.0, cosSum = 0.0
+                for p in own {
+                    let w = 1 / (p.sigma * p.sigma)
+                    sinSum += w * sin(p.yaw)
+                    cosSum += w * cos(p.yaw)
+                }
+                let turn = Motion(yaw: own.isEmpty ? 0 : atan2(sinSum, cosSum), t: Vec3(0, 0, 0))
+                let index = Dictionary(uniqueKeysWithValues: members.enumerated().map { ($1, $0) })
+                let n = members.count
+                var a = [Double](repeating: 0, count: n * n)
+                var b = [[Double]](repeating: [0, 0, 0], count: n)
+                func add(_ i: Int, _ j: Int?, _ value: Vec3, _ w: Double) {
+                    // w · (t_i − t_j − value)²  (or w · (t_i − value)² without j)
+                    a[i * n + i] += w
+                    for c in 0..<3 { b[i][c] += w * Double(value[c]) }
+                    guard let j else { return }
+                    a[j * n + j] += w
+                    a[i * n + j] -= w
+                    a[j * n + i] -= w
+                    for c in 0..<3 { b[j][c] -= w * Double(value[c]) }
+                }
+                let groupLinks = kept.enumerated().filter { root($0.element.from) == r }
+                for (_, l) in groupLinks { add(index[l.from]!, index[l.to]!, turn.rotate(l.motion.t), 1 / (l.sigma * l.sigma)) }
+                for p in own { add(index[p.segment]!, nil, p.target - turn.rotate(p.center), 1 / (p.sigma * p.sigma)) }
+                if own.isEmpty { add(index[anchor]!, nil, Vec3(0, 0, 0), 1e6) }
+                guard let t = solveSymmetric(a, b, n) else { continue }
+                for (i, sIndex) in members.enumerated() {
+                    motions[sIndex] = Motion(yaw: turn.yaw, t: Vec3(Float(t[i][0]), Float(t[i][1]), Float(t[i][2])))
+                    if !own.isEmpty { onStructure.insert(sIndex) }
+                }
+                for (k, l) in groupLinks {
+                    let i = index[l.from]!, j = index[l.to]!
+                    let off = turn.rotate(l.motion.t)
+                    let e = (0..<3).map { t[i][$0] - t[j][$0] - Double(off[$0]) }
+                    let error = (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).squareRoot()
+                    if error > 0.3, error > worst?.error ?? 0 { worst = (k, error) }
+                }
+            }
+            guard let worst else { return Solved(motions: motions, kept: kept, dropped: dropped, onStructure: onStructure) }
+            kept.remove(at: worst.link)
+            dropped += 1
+        }
+    }
+
+    /// Solves A·x = b for each of b's three columns (A: n × n, symmetric, row-major), by Gaussian
+    /// elimination with partial pivoting. Nil if A is singular (a group with nothing to place it).
+    static func solveSymmetric(_ a: [Double], _ b: [[Double]], _ n: Int) -> [[Double]]? {
+        var m = a, x = b
+        for col in 0..<n {
+            guard let pivot = (col..<n).max(by: { abs(m[$0 * n + col]) < abs(m[$1 * n + col]) }), abs(m[pivot * n + col]) > 1e-12 else { return nil }
+            if pivot != col {
+                for c in 0..<n { m.swapAt(col * n + c, pivot * n + c) }
+                x.swapAt(col, pivot)
+            }
+            for r in (col + 1)..<n {
+                let f = m[r * n + col] / m[col * n + col]
+                guard f != 0 else { continue }
+                for c in col..<n { m[r * n + c] -= f * m[col * n + c] }
+                for k in 0..<3 { x[r][k] -= f * x[col][k] }
+            }
+        }
+        for row in stride(from: n - 1, through: 0, by: -1) {
+            for k in 0..<3 {
+                var v = x[row][k]
+                for c in (row + 1)..<n { v -= m[row * n + c] * x[c][k] }
+                x[row][k] = v / m[row * n + row]
+            }
+        }
+        return x
+    }
+
+    /// For doorway snapping's inheritance: each placed segment's neighbour on the way to its group's
+    /// root (a segment placed by its own fit, or the anchor), along the kept links.
+    static func treeParents(_ motions: [Int: Motion], links: [Link], roots: Set<Int>) -> [Int: Int] {
+        var parent: [Int: Int] = [:]
+        var seen = Set<Int>()
+        var queue = roots.isEmpty ? Array(motions.keys.sorted().prefix(1)) : roots.sorted()
+        seen.formUnion(queue)
+        while !queue.isEmpty {
+            let s = queue.removeFirst()
+            for l in links {
+                let other = l.from == s ? l.to : l.to == s ? l.from : nil
+                guard let other, motions[other] != nil, !seen.contains(other) else { continue }
+                seen.insert(other)
+                parent[other] = s
+                queue.append(other)
+            }
+        }
+        return parent
     }
 
     /// Fills in segments reachable through links. Returns, for each filled-in

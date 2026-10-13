@@ -74,6 +74,39 @@ final class AlignmentTests: XCTestCase {
         return out
     }
 
+    /// Per room: the largest error of `b` against `a` moved by `m`, after taking out the shift the whole
+    /// home shares (where the home sits as a whole doesn't matter, how its rooms sit together does).
+    func relativeErrors(_ a: CaptureScan, _ b: CaptureScan, through m: Motion = .identity) -> [String: Float] {
+        var centers: [String: Vec3] = [:]
+        for w in b.walls { centers[w.id] = w.transform.translation }
+        for o in b.openings { centers[o.id] = o.transform.translation }
+        for o in b.objects { centers[o.id] = o.transform.translation }
+        let elements = a.walls.map { ($0.id, $0.roomId, $0.transform.translation) } + a.openings.map { ($0.id, $0.roomId, $0.transform.translation) }
+            + a.objects.map { ($0.id, $0.roomId, $0.transform.translation) }
+        let offsets = elements.compactMap { e in centers[e.0].map { (e.1, $0 - m.apply(e.2)) } }
+        let mean = offsets.reduce(Vec3(0, 0, 0)) { $0 + $1.1 } / Float(max(1, offsets.count))
+        var out: [String: Float] = [:]
+        for room in a.rooms {
+            out[room.name] = offsets.filter { $0.0 == room.id }.map { vlength($0.1 - mean) }.max() ?? 0
+        }
+        return out
+    }
+
+    /// The path as the app records it around room starts: 30 samples a second (between the synthetic
+    /// path's samples, along straight lines).
+    static func densePath(_ path: [PoseSample]) -> [PoseSample] {
+        var out: [PoseSample] = []
+        for (a, b) in zip(path, path.dropFirst()) {
+            let steps = max(1, Int(((b.t - a.t) * 30).rounded()))
+            for k in 0..<steps {
+                let u = Float(k) / Float(steps)
+                out.append(PoseSample(t: a.t + (b.t - a.t) * Double(u), p: a.p + (b.p - a.p) * u, f: vnormalize(a.f + (b.f - a.f) * u)))
+            }
+        }
+        if let last = path.last { out.append(last) }
+        return out
+    }
+
     func testMotionComposesLikeTransforms() {
         let a = Motion(yaw: 0.7, t: Vec3(1, 2, 3)), b = Motion(yaw: -2.1, t: Vec3(-0.5, 0.25, 4))
         let p = Vec3(0.3, -1.2, 2.2)
@@ -107,20 +140,77 @@ final class AlignmentTests: XCTestCase {
         for o in truth.objects { structure[o.id] = g.transform * o.transform }
 
         let result = RoomAlignment.align(parts: s.parts, structure: structure, path: s.path, frames: [])
-        XCTAssertLessThan(maxError(truth, result.scan, through: g), 0.002)
-        XCTAssertEqual(result.report.rooms.map(\.method), Array(repeating: .structure, count: truth.rooms.count))
+        // The fits and the path links are weighed together: the rooms keep the path's relative placement
+        // (to the links' own error), and the home sits on the structure to a few centimeters.
+        XCTAssertLessThan(relativeErrors(truth, result.scan, through: g).values.max()!, 0.025)
+        XCTAssertLessThan(maxError(truth, result.scan, through: g), 0.04)
+        XCTAssertEqual(result.report.rooms.map(\.method), Array(repeating: .combined, count: truth.rooms.count))
         XCTAssertEqual(result.report.pathResets, truth.rooms.count - 1)
         // Rooms on the merged structure are never moved by doorway snapping.
         XCTAssertEqual(result.report.doorwayPairs, 0)
         XCTAssertTrue(result.report.rooms.allSatisfy { $0.doorwayShift == 0 }, "\(result.report.rooms.map(\.doorwayShift))")
         // The path follows its rooms.
         XCTAssertEqual(result.scan.trajectory.count, truth.trajectory.count)
-        for (a, b) in zip(result.scan.trajectory, truth.trajectory) { XCTAssertLessThan(vlength(a.p - g.apply(b.p)), 0.002) }
-        XCTAssertTrue(result.report.summary.contains("RoomPlan's merged layout"), result.report.summary)
+        for (a, b) in zip(result.scan.trajectory, truth.trajectory) { XCTAssertLessThan(vlength(a.p - g.apply(b.p)), 0.04) }
+        XCTAssertTrue(result.report.summary.contains("along your path and RoomPlan's merged layout"), result.report.summary)
 
         // Processed, the rooms no longer overlap.
         let processed = try ScanProcessor.process(result.scan, options: ScanProcessorOptions(textureSize: 32))
         XCTAssertEqual(processed.stats.floorArea, try ScanProcessor.process(truth, options: ScanProcessorOptions(textureSize: 32)).stats.floorArea, accuracy: 0.01)
+    }
+
+    /// RoomPlan tidies its merged structure, so each room's fit is off a little, room by room. Placed
+    /// by their fits alone, rooms (and the photos that follow them) would be off by that from each
+    /// other; with the path links weighed in, they keep the path's relative placement.
+    func testATidiedStructureDoesNotPullRoomsApart() {
+        let truth = SyntheticApartment.make()
+        let s = Self.scramble(truth, tagged: true, path: Self.densePath(truth.trajectory))
+        var structure: [String: Transform] = [:]
+        var tidy: [String: Motion] = [:]
+        for (k, room) in truth.rooms.enumerated() {
+            let c2 = centroid(room.floorPolygon.map(plan))
+            let c = Vec3(Float(c2.x), 0, Float(c2.y))
+            let sign: Float = k % 2 == 0 ? 1 : -1
+            let yaw = Double(sign) * 1.2 * .pi / 180
+            let shift = Vec3(0.06 * sign, 0, -0.05 * sign)
+            // About the room's center, then shifted.
+            tidy[room.id] = Motion(yaw: yaw, t: c - Motion(yaw: yaw, t: Vec3(0, 0, 0)).apply(c) + shift)
+        }
+        for w in truth.walls { structure[w.id] = tidy[w.roomId!]!.transform * w.transform }
+        for o in truth.openings { structure[o.id] = tidy[o.roomId!]!.transform * o.transform }
+        for o in truth.objects { structure[o.id] = tidy[o.roomId!]!.transform * o.transform }
+
+        let result = RoomAlignment.align(parts: s.parts, structure: structure, path: s.path, frames: [])
+        let errors = relativeErrors(truth, result.scan)
+        XCTAssertLessThan(errors.values.max()!, 0.01, "rooms sit together as the path says: \(errors)")
+        XCTAssertLessThan(maxError(truth, result.scan), 0.05, "and the home sits on the structure")
+        // Each room's own fit is 6–10 cm off; the report says how much the layout disagreed.
+        let disagreement = result.report.rooms.compactMap(\.layoutDisagreement)
+        XCTAssertEqual(disagreement.count, truth.rooms.count)
+        XCTAssertGreaterThan(disagreement.max()!, 0.05, "\(disagreement)")
+        XCTAssertTrue(result.report.rooms.allSatisfy { $0.method == .combined })
+        XCTAssertTrue(result.report.summary.contains("they agree within"), result.report.summary)
+    }
+
+    /// A link whose shift is far off (tracking lost as the phone crossed into the next room) is
+    /// dropped; that room is placed by its fit instead.
+    func testALinkFromLostTrackingIsDropped() {
+        let truth = SyntheticApartment.make()
+        var s = Self.scramble(truth, tagged: true)
+        var structure: [String: Transform] = [:]
+        for w in truth.walls { structure[w.id] = w.transform }
+        for o in truth.openings { structure[o.id] = o.transform }
+        for o in truth.objects { structure[o.id] = o.transform }
+        // Segment 2's path (in its own frame) jumped by 0.8 m: its links to segments 1 and 3 are wrong.
+        s.path = s.path.map { p in
+            guard p.segment == 2 else { return p }
+            return PoseSample(t: p.t, p: p.p + Vec3(0.8, 0, 0), f: p.f, segment: p.segment)
+        }
+        let result = RoomAlignment.align(parts: s.parts, structure: structure, path: s.path, frames: [])
+        let errors = relativeErrors(truth, result.scan)
+        XCTAssertLessThan(errors.values.max()!, 0.025, "\(errors)")
+        XCTAssertEqual(result.report.pathLinksDropped, 2)
+        XCTAssertTrue(result.report.summary.contains("tracking lost 2 times"), result.report.summary)
     }
 
     func testStructureFitToleratesMergedWalls() {
@@ -135,7 +225,8 @@ final class AlignmentTests: XCTestCase {
         }
         for o in truth.objects.enumerated() where o.offset % 2 == 0 { structure[o.element.id] = o.element.transform }
         let result = RoomAlignment.align(parts: s.parts, structure: structure, path: s.path, frames: [])
-        XCTAssertLessThan(maxError(truth, result.scan), 0.01)
+        XCTAssertLessThan(relativeErrors(truth, result.scan).values.max()!, 0.025)
+        XCTAssertLessThan(maxError(truth, result.scan), 0.05)
     }
 
     func testPathLinksPlaceRoomsWithoutStructure() {
