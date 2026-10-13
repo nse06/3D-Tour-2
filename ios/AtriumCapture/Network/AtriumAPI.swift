@@ -249,6 +249,9 @@ struct AtriumAPI {
             switch http.statusCode {
             case 404: throw Failure.server("This pairing code has expired. Open the listing in the Atrium dashboard and scan the code again.")
             case 413: throw Failure.server("The file is too large for the server.")
+            case 401, 403:
+                // Atrium's own errors carry a message (above); a bare 401/403 is a login wall in front of the site.
+                throw Failure.server("The site asked for a login the app can't give — usually a protected Vercel preview. Pair from the listing on your main Atrium site instead.")
             default: throw Failure.server("The server answered with an error (\(http.statusCode)).")
             }
         }

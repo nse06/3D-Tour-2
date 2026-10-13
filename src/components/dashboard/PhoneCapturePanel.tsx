@@ -157,6 +157,12 @@ function PairingCode({ pairing, onCancel }: { pairing: PhonePairing; onCancel: (
             <b className="font-medium text-ink">3.</b> This page updates as soon as the scan arrives.
           </li>
         </ol>
+        {pairing.preview && (
+          <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
+            This is a preview deployment. If Vercel&apos;s Deployment Protection is on, the iPhone can&apos;t reach it (the app shows an error
+            401): pair from your production site instead, or turn protection off for previews in Vercel.
+          </p>
+        )}
         {pairing.lan && (
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
             <Wifi className="mt-0.5 size-4 shrink-0" />

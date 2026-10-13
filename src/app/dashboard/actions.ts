@@ -493,6 +493,8 @@ export interface PhonePairing {
   serverUrl: string;
   /** The server is only reachable on the local network (same Wi-Fi). */
   lan: boolean;
+  /** A Vercel preview deployment: with Deployment Protection on, the phone gets its login wall (401). */
+  preview: boolean;
   expiresAt: string;
 }
 
@@ -511,7 +513,7 @@ export async function createCaptureSessionAction(propertyId: string): Promise<Ac
     const svg = await QRCode.toString(deepLink, { type: "svg", margin: 1, errorCorrectionLevel: "M", color: { dark: "#161514", light: "#ffffff" } });
     return {
       ok: true,
-      pairing: { deepLink, qrCode: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, serverUrl: server.url, lan: server.lan, expiresAt },
+      pairing: { deepLink, qrCode: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, serverUrl: server.url, lan: server.lan, preview: process.env.VERCEL_ENV === "preview" && !process.env.NEXT_PUBLIC_SITE_URL, expiresAt },
     };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
