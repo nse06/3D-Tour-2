@@ -10,17 +10,36 @@ type Mode = "signin" | "signup" | "reset";
 export function LoginForm({ next, initialMode = "signin" }: { next: string; initialMode?: Mode }) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [state, action, pending] = useActionState(authAction, {});
+  // Kept in state: React resets a form after its action runs, and a wrong password shouldn't wipe the email.
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="mode" value={mode} />
       <input type="hidden" name="next" value={next} />
       {mode === "signup" && (
         <Field label="Your name">
-          <input name="name" className={inputClass} autoComplete="name" placeholder="Jordan Avery" />
+          <input
+            name="name"
+            className={inputClass}
+            autoComplete="name"
+            placeholder="Jordan Avery"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </Field>
       )}
       <Field label="Email">
-        <input name="email" type="email" required className={inputClass} autoComplete="email" placeholder="you@brokerage.com" />
+        <input
+          name="email"
+          type="email"
+          required
+          className={inputClass}
+          autoComplete="email"
+          placeholder="you@brokerage.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
       </Field>
       {mode !== "reset" && (
         <Field label="Password">
