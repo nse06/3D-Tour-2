@@ -301,7 +301,6 @@ function PropertyModel({
         autoPan={autoPan}
         onUserInteract={onUserInteract}
         photoScan={photoLook === "captured"}
-        snapTo={spotsOn ? spots.map((s) => s.position) : null}
         measuring={measuring}
         onMeasurePick={onMeasurePick}
       />

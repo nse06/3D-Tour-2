@@ -176,7 +176,6 @@ export function PhotoSpots({
   const { gl, camera, invalidate } = useThree();
   const cache = useRef(new Map<number, Loaded>());
   const frame = useRef(0);
-  const markers = useRef<THREE.InstancedMesh>(null);
   const positions = useMemo(() => spots.map((s) => new THREE.Vector3(...s.position)), [spots]);
 
   // What the spots render their distances from: the model alone, every surface writing its distance.
@@ -209,24 +208,6 @@ export function PhotoSpots({
     };
   }, [spots, distance, uniforms]);
 
-  // The rings on the floor where the spots are.
-  useEffect(() => {
-    const mesh = markers.current;
-    if (!mesh || !model) return;
-    const ray = new THREE.Raycaster();
-    const m = new THREE.Matrix4();
-    positions.forEach((p, i) => {
-      ray.set(p, new THREE.Vector3(0, -1, 0));
-      ray.far = 3;
-      const hit = ray.intersectObject(model, true)[0];
-      const y = hit ? hit.point.y + 0.01 : p.y - 1.4;
-      m.makeRotationX(-Math.PI / 2).setPosition(p.x, y, p.z);
-      mesh.setMatrixAt(i, m);
-    });
-    mesh.count = positions.length;
-    mesh.instanceMatrix.needsUpdate = true;
-    invalidate();
-  }, [positions, model, invalidate]);
 
   const load = (i: number): Loaded => {
     let entry = cache.current.get(i);
@@ -279,8 +260,6 @@ export function PhotoSpots({
 
   useFrame(() => {
     frame.current++;
-    const mesh = markers.current;
-    if (mesh) mesh.visible = active && positions.length > 0;
     let w0 = 0;
     let w1 = 0;
     let a = -1;
@@ -331,10 +310,6 @@ export function PhotoSpots({
     uniforms.spotWeight1.value = w1;
   });
 
-  return (
-    <instancedMesh ref={markers} args={[undefined, undefined, Math.max(1, positions.length)]} renderOrder={9} frustumCulled={false}>
-      <ringGeometry args={[0.13, 0.17, 40]} />
-      <meshBasicMaterial color="#ffffff" transparent opacity={0.55} depthWrite={false} toneMapped={false} />
-    </instancedMesh>
-  );
+  // No markers on the floor: the walkthrough is free to walk, and the photos blend in near their spots.
+  return null;
 }

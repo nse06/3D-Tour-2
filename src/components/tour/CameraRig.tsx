@@ -27,8 +27,6 @@ interface Props {
   onUserInteract?: () => void;
   /** A photo scan: keep the view no wider than the photos were (see `baseFovFor`). */
   photoScan?: boolean;
-  /** Photo spots (PhotoSpots): a click on the floor near one goes exactly there. */
-  snapTo?: Vec3[] | null;
   /** The measuring tool is on: a tap marks a point on any surface (onMeasurePick) instead of walking. */
   measuring?: boolean;
   onMeasurePick?: (point: Vec3) => void;
@@ -65,8 +63,6 @@ function baseFovFor(aspect: number, photoScan = false) {
   return THREE.MathUtils.clamp(v, BASE_FOV, 96);
 }
 const LOOK_SPEED = 0.0042;
-/** A click on the floor this near a photo spot (meters) goes to the spot. */
-const SNAP_RADIUS = 0.9;
 const WALK_SPEED = 1.5;
 const TURN_SPEED = 1.7;
 
@@ -109,7 +105,6 @@ export function CameraRig({
   autoPan = false,
   onUserInteract,
   photoScan = false,
-  snapTo = null,
   measuring = false,
   onMeasurePick,
 }: Props) {
@@ -118,7 +113,6 @@ export function CameraRig({
   const baseFovRef = useRef(baseFov);
   baseFovRef.current = baseFov;
   const cam = camera as THREE.PerspectiveCamera;
-  const cursorRef = useRef<THREE.Group>(null);
   const measureCursorRef = useRef<THREE.Group>(null);
 
   const s = useRef({
@@ -139,8 +133,8 @@ export function CameraRig({
     started: false,
   });
 
-  const latest = useRef({ onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract, snapTo, measuring, onMeasurePick });
-  latest.current = { onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract, snapTo, measuring, onMeasurePick };
+  const latest = useRef({ onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract, measuring, onMeasurePick });
+  latest.current = { onRoomChange, onMovingChange, onFade, space, mode, autoPan, onUserInteract, measuring, onMeasurePick };
 
   // Initial placement (before the visitor enters, the camera slowly drifts).
   useEffect(() => {
@@ -410,16 +404,7 @@ export function CameraRig({
         if (hit) latest.current.onMeasurePick?.([hit.point.x, hit.point.y, hit.point.z]);
       } else if (st.pointers.size === 0 && quick && st.downAt.moved < 8 && !st.motion) {
         const target = pickFloor(e.clientX, e.clientY);
-        // Near a photo spot: to the spot itself, where its photos line up.
-        let spot: Vec3 | null = null;
-        let nearest = SNAP_RADIUS;
-        for (const p of target ? (latest.current.snapTo ?? []) : []) {
-          const d = Math.hypot(p[0] - target!.x, p[2] - target!.z);
-          if (d < nearest) [spot, nearest] = [p, d];
-        }
-        if (spot) {
-          glideTo([spot], st.yawTarget, THREE.MathUtils.clamp(st.pitchTarget, -0.35, 0.35), { travelFacing: false, speed: 2.2 });
-        } else if (target) {
+        if (target) {
           const sp = latest.current.space;
           const eye = target.y + sp.eyeHeight;
           // Stop a little short of the clicked point so we never end up in a wall.
@@ -568,12 +553,11 @@ export function CameraRig({
       cam.updateProjectionMatrix();
     }
 
-    // Hover cursor (desktop): on walkable floor, or with the measuring tool on any surface.
-    const cursor = cursorRef.current;
+    // Hover cursor (desktop): the pointer says where a click walks to (no marker on the floor: the
+    // walkthrough is free to walk); the measuring tool marks the surface under the pointer.
     const measureCursor = measureCursorRef.current;
     const hovering = st.hover && !st.motion && st.started && st.pointers.size === 0 ? st.hover : null;
     if (latest.current.measuring) {
-      if (cursor) cursor.visible = false;
       const hit = st.hover && st.started && st.pointers.size === 0 ? pickSurface(st.hover.x, st.hover.y) : null;
       if (measureCursor) {
         measureCursor.visible = !!hit;
@@ -583,11 +567,9 @@ export function CameraRig({
         }
       }
       gl.domElement.style.cursor = st.pointers.size ? "grabbing" : "crosshair";
-    } else if (cursor) {
+    } else {
       if (measureCursor) measureCursor.visible = false;
       const hit = hovering ? pickFloor(hovering.x, hovering.y) : null;
-      cursor.visible = !!hit;
-      if (hit) cursor.position.set(hit.x, hit.y + 0.01, hit.z);
       gl.domElement.style.cursor = hit ? "pointer" : st.pointers.size ? "grabbing" : "grab";
     }
 
@@ -612,16 +594,6 @@ export function CameraRig({
 
   return (
     <>
-      <group ref={cursorRef} visible={false}>
-        <mesh rotation-x={-Math.PI / 2} renderOrder={10}>
-          <ringGeometry args={[0.2, 0.25, 48]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.85} depthWrite={false} />
-        </mesh>
-        <mesh rotation-x={-Math.PI / 2} renderOrder={10}>
-          <circleGeometry args={[0.2, 48]} />
-          <meshBasicMaterial color="#ffffff" transparent opacity={0.18} depthWrite={false} />
-        </mesh>
-      </group>
       {/* The measuring tool's cursor: a small ring flat on whatever surface is under the pointer. */}
       <group ref={measureCursorRef} visible={false}>
         <mesh renderOrder={10}>
