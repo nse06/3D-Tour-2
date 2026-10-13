@@ -21,7 +21,8 @@ left on the server (docs/photoreal.md §2.1), so either can be switched off, red
 | AI-made furniture | `furniture.py` (§4.4), SAM 2.1, TripoSG | built: fitting tested on CPU; TripoSG's GPU run next |
 | Trim: doors and windows set into their walls, baseboards, crown moldings, casings, cabinet doors | `trim.py` (§4.5) | built; the doors, windows, casings and cabinets wait for a build-13 scan; white baseboards on off-white walls are mostly too faint in the phone's painting to be found |
 | The room layout from the phone (walls, doors, windows, furniture boxes) | build 13, `cameras.json` `layout` (docs/photoreal.md §1) | done |
-| Photo spots (Matterport-style) | `spots.py`, viewer's `PhotoSpots` (§4.6) | built: tested on CPU and in Chromium on a synthetic room |
+| Photo spots | `spots.py`, viewer's `PhotoSpots` (§4.6) | built: tested on CPU and in Chromium on a synthetic room |
+| Better lighting: neutral white balance, daylight exposure, soft highlights | `light.py` (§4.8) | built: tested on CPU; off unless asked (`light`) until checked on real scans |
 
 ## 1. Flow
 
@@ -206,7 +207,23 @@ The pictures upload before the model (storage kind `spot`), and the model lists 
 changes. The viewer, while the remastered model shows, loads the two spots nearest the camera (three at most in
 memory), renders each one's distances once (a cube camera), and projects its photos onto the model from the spot
 where the spot saw that surface: fully within 12 cm of a spot, fading out by 1.6 m, the two nearest blending
-between. Rings on the floor mark the spots, and a click on the floor within 90 cm of one goes exactly there.
+between. Nothing marks the spots on the floor: the walkthrough is free to walk, and the photos fade in near them.
+
+### 4.7 (reserved)
+
+### 4.8 Better lighting (`light.py`)
+
+Homes are scanned under whatever light they had. After the fill, one color adjustment for the whole home is
+measured from its walls (textured triangles facing sideways, sampled by area): the brighter half of the wall
+texels that share the walls' typical tint (feature walls and art differ from it and are left out) sets the white
+balance (85% of their tint taken out, no channel moved more than 40%), and the walls' median brightness sets the
+exposure, toward sRGB 0.8 (brightening at most 1.8×, darkening at most 0.9×). Then shadows open up a little
+(luminance to the power 0.88) and highlights roll off above linear 0.8 instead of clipping, moving toward gray
+rather than shifting hue. It is per pixel, nothing spatial, and the photo spots' cube faces get exactly the same
+adjustment, so skins and spots still agree. Off unless the site asks (`"light": true`, with `lightTarget`,
+`lightWhiteBalance`, `lightMaxGain`, `lightLift`, `lightShoulder` to tune); the stats carry `lightGains`,
+`lightExposure`, `lightWallBefore` and `lightWallSamples`, or `lightSkipped` when too few plain wall texels were
+found.
 
 ## 5. The job (`atrium_remaster/job.py`)
 

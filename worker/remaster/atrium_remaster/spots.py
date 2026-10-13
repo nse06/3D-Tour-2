@@ -27,6 +27,7 @@ from PIL import Image
 from atrium_photoreal.capture import Capture, load_photo
 from atrium_photoreal.sharpness import smear_px
 
+from .light import apply_uint8
 from .scene import Mesh
 from .views import Caster, render
 
@@ -248,9 +249,10 @@ def run(
     disagree: dict | None = None,
     log=print,
     progress=None,
+    light=None,
 ) -> list[dict]:
     """The photo spots of the finished model: per spot its position, its cube as one JPEG and how many
-    photos it holds."""
+    photos it holds. `light` (light.Light): the lighting the skins got, given to the photos too."""
     caster = Caster.of(mesh)
     spots = choose(mesh, capture, cfg, caster)
     photos = Photos(mesh, caster, cfg, device, sharpened, disagree)
@@ -264,6 +266,8 @@ def run(
             candidates = [capture.cameras[i] for i in order if capture.cameras[i].name in own]
             candidates += [capture.cameras[i] for i in order if capture.cameras[i].name not in own][: max(0, cfg.candidates - len(candidates))]
             faces = np.stack([paint_face(spot, f, mesh, caster, photos, candidates, fixes, cfg) for f in range(6)])
+            if light is not None:
+                faces = apply_uint8(faces, light)
             out.append({"position": [round(float(v), 4) for v in spot.position], "jpeg": grid_jpeg(faces, cfg.quality), "photos": len(spot.cameras)})
             if progress:
                 progress((k + 1) / len(spots))

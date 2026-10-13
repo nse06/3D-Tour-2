@@ -17,6 +17,7 @@ const STAGE: Record<string, string> = {
   depth: "Measuring depth in the photos",
   skins: "Learning the skins from every photo",
   fill: "Filling in spots no photo saw",
+  light: "Evening out the lighting",
   spots: "Making the photo spots",
   uploading: "Saving the remastered model",
 };
@@ -38,6 +39,7 @@ function aiChanges(stats: Record<string, unknown>): string[] {
     count("tvsOff", "TV shown off", "TVs shown off"),
     count("windowsBrightened", "dark window brightened", "dark windows brightened"),
     count("photosSharpened", "blurry photo sharpened", "blurry photos sharpened"),
+    typeof stats.lightExposure === "number" ? "lighting evened out" : null,
   ].filter((s): s is string => s !== null);
 }
 

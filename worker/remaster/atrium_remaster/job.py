@@ -38,6 +38,7 @@ from . import depth as depth_mod
 from . import fill as fill_mod
 from . import fixviews
 from . import glb, scene, skins
+from . import light as light_mod
 from . import furniture as furniture_mod
 from . import fuse as fuse_mod
 from . import spots as spots_mod
@@ -112,6 +113,17 @@ def cleanup_config(options: dict) -> cleanup_mod.CleanupConfig:
         residual=float(options.get("deblurResidual", d.residual)),
         tv_off=bool(options.get("tvOff", d.tv_off)),
         windows=bool(options.get("windows", d.windows)),
+    )
+
+
+def light_config(options: dict) -> light_mod.LightConfig:
+    d = light_mod.LightConfig()
+    return light_mod.LightConfig(
+        white_balance=float(options.get("lightWhiteBalance", d.white_balance)),
+        wall_target=float(options.get("lightTarget", d.wall_target)),
+        max_gain=float(options.get("lightMaxGain", d.max_gain)),
+        lift=float(options.get("lightLift", d.lift)),
+        shoulder=float(options.get("lightShoulder", d.shoulder)),
     )
 
 
@@ -248,6 +260,17 @@ def remaster(
         except Exception as e:  # the skins stand without it
             traceback.print_exc()
             stats["fillError"] = f"{type(e).__name__}: {e}"[:200]
+    light = light_mod.Light()
+    if options.get("light", False):
+        report("light", 0.95, "evening out the lighting")
+        try:
+            light, light_stats = light_mod.measure(out, light_config(options))
+            out = light_mod.apply(out, light)
+            stats.update(light_stats)
+        except Exception as e:  # the skins stand without it
+            traceback.print_exc()
+            stats["lightError"] = f"{type(e).__name__}: {e}"[:200]
+            light = light_mod.Light()
     if spots is not None and options.get("spots", True):
         report("spots", 0.0, "making the photo spots")
         try:
@@ -255,7 +278,9 @@ def remaster(
             spot_cfg = spots_mod.SpotConfig(
                 face=int(options.get("spotFace", d.face)), spacing=float(options.get("spotSpacing", d.spacing)), long_side=int(options.get("spotLongSide", d.long_side))
             )
-            spots += spots_mod.run(out, capture, result.fixes, spot_cfg, device, sharpened, disagree, log=log, progress=lambda p: report("spots", p, ""))
+            spots += spots_mod.run(
+                out, capture, result.fixes, spot_cfg, device, sharpened, disagree, log=log, progress=lambda p: report("spots", p, ""), light=light
+            )
             stats["spots"] = len(spots)
         except Exception as e:  # the model stands without them
             traceback.print_exc()
