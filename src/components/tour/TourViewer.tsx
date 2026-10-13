@@ -29,6 +29,7 @@ import { useMediaQuery, useQueryParam } from "@/lib/hooks";
 import { distance, formatFeetInches, formatMeters, formatSquareFeet, polygonArea } from "@/lib/tour/measure";
 import { sortedFloors, walkthroughOrder } from "@/lib/tour/navigation";
 import type { TourData, TourRoom, Vec3, Waypoint } from "@/lib/tour/types";
+import { FloorModel } from "./FloorModel";
 import { FloorPlan } from "./FloorPlan";
 import type { LivePose, ViewerApi } from "./viewer-types";
 
@@ -483,14 +484,26 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
               <X className="size-4" />
             </button>
           </div>
-          <FloorPlan
-            floor={planFloor}
-            rooms={roomsOnPlanFloor}
-            currentRoomId={currentRoomId}
-            poseRef={poseRef}
-            onRoomClick={goToRoom}
-            className="h-56 w-full md:h-60"
-          />
+          {/* The floor in 3D where its rooms have outlines (iPhone scans); the flat plan otherwise. */}
+          {roomsOnPlanFloor.some((r) => r.footprint && r.footprint.length >= 3) ? (
+            <FloorModel
+              floor={planFloor}
+              rooms={roomsOnPlanFloor}
+              currentRoomId={currentRoomId}
+              poseRef={poseRef}
+              onRoomClick={goToRoom}
+              className="h-56 w-full md:h-60"
+            />
+          ) : (
+            <FloorPlan
+              floor={planFloor}
+              rooms={roomsOnPlanFloor}
+              currentRoomId={currentRoomId}
+              poseRef={poseRef}
+              onRoomClick={goToRoom}
+              className="h-56 w-full md:h-60"
+            />
+          )}
           {planFloorArea > 0 && (
             <p className="px-1 pt-1 text-[11px] text-white/55" title="Measured inside the walls of the scanned rooms. Approximate: not an official square footage.">
               About {formatSquareFeet(planFloorArea)} scanned · sizes approximate
