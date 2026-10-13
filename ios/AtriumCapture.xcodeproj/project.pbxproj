@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		040EEDFA8F2D6FFE97290C8F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 235F3426D692D933B6871E22 /* Assets.xcassets */; };
+		A7C1E0F2B3D4C5E6F7A8B901 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A7C1E0F2B3D4C5E6F7A8B902 /* PrivacyInfo.xcprivacy */; };
 		1B9047119D3B347A297E6634 /* PhotorealFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A17A17CB89FFC218A2D8705 /* PhotorealFiles.swift */; };
 		26A494D8D273CDEB3261DA7E /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BB5056DBF97032377D64DB6 /* AppModel.swift */; };
 		2F30A8218D4180ABAC8965E6 /* ScanDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF141B11A199D88E6CF44A71 /* ScanDetailView.swift */; };
@@ -37,6 +38,7 @@
 		13222E40E47F3636C7CDD249 /* ScanBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanBuilder.swift; sourceTree = "<group>"; };
 		1C2E7FD0CA8ADCFBB3EF72A9 /* AtriumAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AtriumAPI.swift; sourceTree = "<group>"; };
 		235F3426D692D933B6871E22 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A7C1E0F2B3D4C5E6F7A8B902 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		2F7668958D2B29EA30541A7D /* CaptureViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureViewController.swift; sourceTree = "<group>"; };
 		3A297B9D67013EF721E92BEB /* RoomPlanAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomPlanAdapter.swift; sourceTree = "<group>"; };
 		44259BCD1E9C12867870E07C /* CaptureModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureModel.swift; sourceTree = "<group>"; };
@@ -152,6 +154,7 @@
 			isa = PBXGroup;
 			children = (
 				235F3426D692D933B6871E22 /* Assets.xcassets */,
+				A7C1E0F2B3D4C5E6F7A8B902 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -245,6 +248,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				040EEDFA8F2D6FFE97290C8F /* Assets.xcassets in Resources */,
+				A7C1E0F2B3D4C5E6F7A8B901 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -336,7 +340,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -422,7 +426,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

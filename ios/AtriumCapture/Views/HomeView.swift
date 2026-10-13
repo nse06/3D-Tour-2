@@ -14,6 +14,7 @@ struct HomeView: View {
                     PairingCard(showingPairing: $showingPairing)
                     scanCard
                     scansList
+                    legalLinks
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 40)
@@ -31,6 +32,18 @@ struct HomeView: View {
             path = [id]
             model.openScan = nil
         }
+    }
+
+    /// The website's privacy policy and AI page, reachable from the app (App Review guideline 5.1.1(i)).
+    private var legalLinks: some View {
+        HStack(spacing: 18) {
+            Link("Privacy Policy", destination: AtriumSite.privacy)
+            Link("How we use AI", destination: AtriumSite.ai)
+        }
+        .font(.footnote)
+        .tint(Theme.stone)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
     }
 
     private var captureBinding: Binding<CaptureModel?> {
@@ -260,4 +273,11 @@ struct BuildingOverlay: View {
 
 extension CaptureModel: Identifiable {
     nonisolated var id: ObjectIdentifier { ObjectIdentifier(self) }
+}
+
+/// Atrium's public website (its legal pages are linked from the app).
+enum AtriumSite {
+    static let base = URL(string: "https://atriumtour.com")!
+    static let privacy = base.appendingPathComponent("legal/privacy")
+    static let ai = base.appendingPathComponent("legal/ai")
 }
