@@ -66,6 +66,11 @@ const LOOK_SPEED = 0.0042;
 const WALK_SPEED = 1.5;
 const TURN_SPEED = 1.7;
 
+/** Half a visitor's width (m): walks stop this far from walls and furniture, and side rays sit this far out. */
+const BODY_RADIUS = 0.22;
+/** Heights above the floor (m) checked for obstacles: knee, waist, chest. */
+const OBSTACLE_HEIGHTS = [0.35, 0.75, 1.2];
+
 const tmpV = new THREE.Vector3();
 const ndc = new THREE.Vector2();
 const normalMatrix = new THREE.Matrix3();
@@ -309,6 +314,38 @@ export function CameraRig({
     return hit.point.clone();
   };
 
+  /**
+   * How far a visitor standing at `from` (on a floor at `floorY`) can walk toward `to` in plan before a
+   * wall or a piece of furniture: horizontal rays at knee, waist and chest height, and at the body's
+   * sides. Infinity when nothing is in the way within `to` plus a body's width. Walls and furniture
+   * stop walks, so visitors stay where the scan's photos were taken rather than inside a bed.
+   */
+  const clearDistance = (from: THREE.Vector3, to: THREE.Vector3, floorY: number): number => {
+    const model = modelRef.current;
+    if (!model) return Infinity;
+    const dir = new THREE.Vector3(to.x - from.x, 0, to.z - from.z);
+    const len = dir.length();
+    if (len < 1e-4) return Infinity;
+    dir.divideScalar(len);
+    const side = new THREE.Vector3(-dir.z, 0, dir.x);
+    const probes: [number, number][] = [
+      ...OBSTACLE_HEIGHTS.map((h): [number, number] => [h, 0]),
+      [0.75, BODY_RADIUS],
+      [0.75, -BODY_RADIUS],
+    ];
+    let nearest = Infinity;
+    const origin = new THREE.Vector3();
+    for (const [height, offset] of probes) {
+      origin.set(from.x, floorY + height, from.z).addScaledVector(side, offset);
+      raycaster.set(origin, dir);
+      raycaster.far = len + BODY_RADIUS;
+      const hit = raycaster.intersectObject(model, true).find((h) => (h.object as THREE.Mesh).isMesh && !h.object.userData.noPick);
+      if (hit && hit.distance < nearest) nearest = hit.distance;
+    }
+    raycaster.far = Infinity;
+    return nearest;
+  };
+
   /** The point (and its surface's normal) under the pointer, on any surface of the model. */
   const pickSurface = (clientX: number, clientY: number): { point: THREE.Vector3; normal: THREE.Vector3 } | null => {
     const model = modelRef.current;
@@ -407,14 +444,19 @@ export function CameraRig({
         if (target) {
           const sp = latest.current.space;
           const eye = target.y + sp.eyeHeight;
-          // Stop a little short of the clicked point so we never end up in a wall.
+          // Stop a little short of the clicked point so we never end up in a wall, and never walk through
+          // one or through furniture: a bed between here and there stops the walk at its edge.
           const dir = new THREE.Vector3(target.x - camera.position.x, 0, target.z - camera.position.z);
           const d = dir.length();
-          if (d > 0.9) target.addScaledVector(dir.normalize(), -0.35);
-          glideTo([[target.x, eye, target.z]], st.yawTarget, THREE.MathUtils.clamp(st.pitchTarget, -0.35, 0.35), {
-            travelFacing: false,
-            speed: 2.2,
-          });
+          let travel = d > 0.9 ? d - 0.35 : d;
+          travel = Math.min(travel, clearDistance(camera.position, target, target.y) - BODY_RADIUS - 0.1);
+          if (travel > 0.2) {
+            const end = camera.position.clone().addScaledVector(dir.normalize(), travel);
+            glideTo([[end.x, eye, end.z]], st.yawTarget, THREE.MathUtils.clamp(st.pitchTarget, -0.35, 0.35), {
+              travelFacing: false,
+              speed: 2.2,
+            });
+          }
         }
       }
     };
@@ -532,11 +574,18 @@ export function CameraRig({
             camera.position.add(tmpV.set(dx * Math.cos(st.pitch), vy, dz * Math.cos(st.pitch)));
           } else {
             const floor = floorForHeight(sp, camera.position.y);
+            const floorY = camera.position.y - sp.eyeHeight;
+            // Inside the rooms, and not into a wall or furniture (sliding along it when only one axis is blocked).
+            const canStep = (x: number, z: number) => {
+              if (!isWalkable(x, z, floor?.id ?? null, 0.3)) return false;
+              const step = Math.hypot(x - camera.position.x, z - camera.position.z);
+              return clearDistance(camera.position, tmpV.set(x, 0, z), floorY) > step + BODY_RADIUS;
+            };
             const nx = camera.position.x + dx;
             const nz = camera.position.z + dz;
-            if (isWalkable(nx, nz, floor?.id ?? null, 0.3)) camera.position.set(nx, camera.position.y, nz);
-            else if (isWalkable(nx, camera.position.z, floor?.id ?? null, 0.3)) camera.position.x = nx;
-            else if (isWalkable(camera.position.x, nz, floor?.id ?? null, 0.3)) camera.position.z = nz;
+            if (canStep(nx, nz)) camera.position.set(nx, camera.position.y, nz);
+            else if (canStep(nx, camera.position.z)) camera.position.x = nx;
+            else if (canStep(camera.position.x, nz)) camera.position.z = nz;
           }
         }
       }
