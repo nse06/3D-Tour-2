@@ -54,6 +54,10 @@ public struct ScanStats: Codable, Sendable, Equatable {
     public var photosAligned: Int? = nil
     public var photoShiftCm: Double? = nil
     public var photoTurnDegrees: Double? = nil
+    /// Photo-textured models: square meters where rooms' outlines overlap (each overlap given to the
+    /// room that scanned it best, RoomOverlaps), and objects dropped there as the other room's copy.
+    public var roomOverlapArea: Double? = nil
+    public var duplicateObjects: Int? = nil
 }
 
 public struct ProcessedScan: Sendable {
@@ -203,7 +207,8 @@ public enum ScanProcessor {
             triangles: mesh.triangleCount, floorArea: rounded(rooms.reduce(0) { $0 + $1.area }, 2), glbBytes: glb.count,
             photoCoverage: rounded(baked.coverage, 3), photosUsed: baked.photosUsed, photosWithPeople: baked.photosWithPeople,
             meshTriangles: model.meshTriangles, meshObjects: model.meshObjects, photosAligned: baked.alignment.aligned,
-            photoShiftCm: rounded(baked.alignment.meanShift * 100, 2), photoTurnDegrees: rounded(baked.alignment.meanTurn * 180 / .pi, 3))
+            photoShiftCm: rounded(baked.alignment.meanShift * 100, 2), photoTurnDegrees: rounded(baked.alignment.meanTurn * 180 / .pi, 3),
+            roomOverlapArea: rounded(model.overlapArea, 2), duplicateObjects: model.droppedDuplicates)
         var processed = ProcessedScan(glb: glb, manifest: manifest, stats: stats, frame: frame)
         processed.photoPoses = baked.poses
         processed.photoreal = try PhotorealExport.make(

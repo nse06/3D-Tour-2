@@ -104,7 +104,9 @@ then places each room, best method first:
    the views, i.e. the partition, from −0.4 to +0.12 m). Rooms on the merged structure never move.
 
 The result is a `CaptureScan` in one frame plus an `AlignmentReport` (method, matched elements and residual per
-room), saved as `alignment.json`. Checked on Apple's 11-room sample with each room shifted into its own frame:
+room), saved as `alignment.json`. Each photo keeps the id of the room scanned in its segment (`roomId`, build 17;
+none if its run scanned no room): rooms line up only to within a few centimeters, so a room's furniture and floor
+are painted with its own photos (§2.4, overlapping rooms). Checked on Apple's 11-room sample with each room shifted into its own frame:
 every room returns exactly with the merged structure, and within 0.12 m from a 4 Hz path alone
 (`scanproc align … --scramble [--walk --no-structure]`).
 
@@ -195,7 +197,7 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   the photos show them (and the view through the window). A wall's back, top, ends and doorway sides form one
   *solid* chart painted the median color of its inside face, so they don't stand out as bright strips.
 * **LiDAR shapes** (`MeshShapes.swift`, scans with a mesh): each room's mesh is cropped to the room's outline
-  (triangles in an overlapping room scanned earlier stay with that room) and stripped of the room's own surfaces —
+  (where rooms overlap, only the overlap's owner's: see below) and stripped of the room's own surfaces —
   triangles within 6 cm of a wall (facing along its normal), 4 cm of the floor or 6 cm of the ceiling, or within
   15 cm if ARKit classified them as wall, window, door, floor or ceiling. What's left — furniture, appliances,
   plants, lamps, clutter — is welded on a 2.5 cm grid (coarsened until it fits 150,000 triangles, which only a big
@@ -210,6 +212,18 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   0.01 m² join the neighbour they face most like if every face is within ~70° of it), each its own chart; since a
   patch is only roughly flat, every texel is painted at its own point on the patch's faces (and judged by its
   face's normal), not on the chart's plane. Rooms without a mesh (older scans, or the setting off) keep the boxes.
+* **Overlapping rooms** (`RoomOverlaps.swift`, build 17, pipeline 10): when a room's scan reaches into the next (the
+  phone carried through a doorway, or an outline drawn too big), both runs saw that part of the home — two LiDAR
+  meshes of the same bed a few centimeters apart, two sets of photos each lined up with its own run — and mixing
+  them shattered the furniture (one run's shapes painted with the other's photos). Outlines are checked on a 20 cm
+  grid, rooms on the same level only (floors within 1 m); each connected overlap goes to the room whose run saw it
+  best: the most LiDAR surface there (its own mesh, any surface), then the most photos taken standing in it, then
+  the room scanned first. There only the owner's mesh shapes the furniture, its floor lies on top (and its ceiling
+  below the other's), and a box the other room found too (same kind, within half its size) goes. Floors, ceilings,
+  boxes and mesh patches are painted with their own room's photos when at least two of those see them (walls take
+  any photo). On a synthetic overlap (the office's run 6 cm off, its photos nearer the pouf): the pouf comes from
+  the bedroom's mesh and is painted within 1.3 levels (median) of the pattern; with any photo, 2.6. `info.json`
+  says how much overlapped (`roomOverlapM2`) and how many boxes went (`duplicateObjects`).
 * **Atlases**: charts are packed (shelf packing, 4-texel padding; solid charts are a 16-texel square) into up to
   `maxAtlases` atlases of `atlasSize`² (defaults 4 × 2048²) at `texelSize` (8 mm), coarsened until everything fits.
   Only texels on a chart's faces take photo colors; padding and holes are filled from them.
@@ -418,7 +432,7 @@ info.json            app / device / capture metadata, pipeline version, alignmen
      GPU's job (waiting, training n%, ready) — see [photoreal.md](photoreal.md). Sending the scan again drops it;
    * **Rebuild walkthrough** — re-processes the saved RoomPlan data with the current pipeline (no rescanning);
      scans built by an older pipeline (`record.pipeline` < `ScanBuilder.pipelineVersion`) show it as a card
-     ("Fix overlapping rooms" … "Thin TVs, and ready for photoreal"). A rebuilt scan has to be sent again;
+     ("Fix overlapping rooms" … "Fix furniture where rooms overlap"). A rebuilt scan has to be sent again;
    * the summary says how much the photos cover, how many photos had people painted out, how many photos were lined
      up with each other (and by how much on average), and whether furniture
      was shaped from the LiDAR mesh (in how many rooms) — or why not (switched off, no mesh recorded: the

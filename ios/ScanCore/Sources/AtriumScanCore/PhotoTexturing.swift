@@ -86,6 +86,9 @@ struct PhotoChart {
     /// The piece of furniture the chart is part of (index in the scan's objects; −1: none). A face
     /// no photo saw takes the color of the rest of its piece.
     var group = -1
+    /// The room whose photos paint it (`ScanRoom.id`; nil: any photo). Rooms line up only to within a
+    /// few centimeters, so furniture and floors take the photos of the room they were scanned with.
+    var room: String?
     var minU = Double.infinity, maxU = -Double.infinity, minV = Double.infinity, maxV = -Double.infinity
     // Placement in the atlas (texels), including padding.
     var atlas = 0, x = 0, y = 0, w = 0, h = 0
@@ -136,6 +139,12 @@ struct PhotoModel {
     var floorChart: [Int: Int] = [:]
     /// The piece of furniture being added (index in the scan's objects; −1: none).
     var group = -1
+    /// The room it was scanned with (`ScanRoom.id`).
+    var room: String?
+    /// Square meters where rooms' outlines overlap (RoomOverlaps), and objects dropped there as the
+    /// other room's copy of one the overlap's owner has too.
+    var overlapArea = 0.0
+    var droppedDuplicates = 0
     /// Furniture and clutter from the LiDAR mesh: its triangles, and the RoomPlan boxes it replaced.
     var meshTriangles = 0
     var meshObjects = 0
@@ -179,7 +188,10 @@ struct PhotoModel {
         case let .solid(of): fallback = charts[of].fallback
         }
         charts.append(PhotoChart(origin: origin, u: vnormalize(u), v: vnormalize(v), normal: vnormalize(normal), kind: kind, fallback: fallback))
-        if case .object = kind { charts[charts.count - 1].group = group }
+        if case .object = kind {
+            charts[charts.count - 1].group = group
+            charts[charts.count - 1].room = room
+        }
         return charts.count - 1
     }
 
@@ -206,20 +218,27 @@ struct PhotoModel {
         Layout.cutOpenings(passages, into: &walls)
         for w in walls { model.addWall(w) }
 
+        // Where rooms' outlines overlap, the room that saw it best: its floor on top, its shapes, its photos.
+        let overlaps = RoomOverlaps.find(rooms: rooms, meshes: scan.meshes, frames: scan.frames)
+        model.overlapArea = overlaps.area
+        let floorOrder = overlaps.floorOrder()
         for (i, r) in rooms.enumerated() {
-            let lift = Double(i % 8) * 0.0007
+            let lift = Double(min(floorOrder[r.index] ?? i, 15)) * 0.0005
             let xs = r.poly.map(\.x), zs = r.poly.map(\.y)
             let floorOrigin = world(P2(xs.min() ?? 0, zs.min() ?? 0), y: r.floorY + lift)
             let floor = model.addChart(origin: floorOrigin, u: Vec3(1, 0, 0), v: Vec3(0, 0, 1), normal: Vec3(0, 1, 0), kind: .floor)
+            model.charts[floor].room = r.room.id
             model.mesh.addPlanPolygon(
                 r.poly, y: r.floorY + lift, facingUp: true, material: chartMaterial(floor), uvScale: 1,
                 uv: .chart(origin: floorOrigin, u: Vec3(1, 0, 0), v: Vec3(0, 0, 1)))
             model.floorChart[r.index] = floor
             if includeCeilings {
-                let ceilingOrigin = world(P2(xs.min() ?? 0, zs.min() ?? 0), y: r.ceilingY)
+                // The ceilings of overlapping rooms stack the other way: the owner's lowest, the one seen.
+                let ceilingOrigin = world(P2(xs.min() ?? 0, zs.min() ?? 0), y: r.ceilingY - lift)
                 let ceiling = model.addChart(origin: ceilingOrigin, u: Vec3(1, 0, 0), v: Vec3(0, 0, 1), normal: Vec3(0, -1, 0), kind: .ceiling)
+                model.charts[ceiling].room = r.room.id
                 model.mesh.addPlanPolygon(
-                    r.poly, y: r.ceilingY, facingUp: false, material: chartMaterial(ceiling), uvScale: 1,
+                    r.poly, y: r.ceilingY - lift, facingUp: false, material: chartMaterial(ceiling), uvScale: 1,
                     uv: .chart(origin: ceilingOrigin, u: Vec3(1, 0, 0), v: Vec3(0, 0, 1)))
             }
         }
@@ -227,21 +246,46 @@ struct PhotoModel {
         // Furniture and clutter in their real shapes where the LiDAR mesh has them; elsewhere in
         // parts (a bed's mattress and headboard, a sofa's seat and back), so each photo lands on the
         // surface it shows rather than on the top of one big box.
-        let shapes = MeshShapes.build(scan.meshes, rooms: rooms, walls: walls, objects: scan.objects)
-        for (k, o) in scan.objects.enumerated() where !shapes.replaced.contains(o.id) {
+        let duplicates = duplicateObjects(scan.objects, rooms: rooms, overlaps: overlaps)
+        model.droppedDuplicates = duplicates.count
+        let objects = scan.objects.filter { !duplicates.contains($0.id) }
+        let shapes = MeshShapes.build(scan.meshes, rooms: rooms, walls: walls, objects: objects, overlaps: overlaps)
+        for (k, o) in scan.objects.enumerated() where !shapes.replaced.contains(o.id) && !duplicates.contains(o.id) {
             model.group = k
+            model.room = o.roomId
             Furniture.build(o, walls: walls, into: &model, decor: false)
         }
         model.group = -1
-        model.addShapes(shapes)
+        model.room = nil
+        model.addShapes(shapes, rooms: rooms)
         return model
     }
 
-    /// Each patch of the mesh is a chart.
-    mutating func addShapes(_ shapes: MeshShapes) {
+    /// Objects both rooms of an overlap found: the copy from the room that doesn't own the spot (a
+    /// box of the same kind, there in the owner's scan too).
+    static func duplicateObjects(_ objects: [ScanObject], rooms: [RoomInfo], overlaps: RoomOverlaps) -> Set<String> {
+        guard !overlaps.regions.isEmpty else { return [] }
+        let indexOf = Dictionary(rooms.map { ($0.room.id, $0.index) }, uniquingKeysWith: { a, _ in a })
+        var out: Set<String> = []
+        for o in objects where o.transform.isFinite {
+            let c = plan(o.transform.translation)
+            guard let id = o.roomId, let room = indexOf[id], let owner = overlaps.owner(of: o.transform.translation), owner != room else { continue }
+            let twin = objects.contains { other in
+                guard other.id != o.id, other.category == o.category, let oid = other.roomId, indexOf[oid] == owner else { return false }
+                return plength(plan(other.transform.translation) - c) < 0.5 * Double(max(o.size.x, o.size.z, 0.6))
+            }
+            if twin { out.insert(o.id) }
+        }
+        return out
+    }
+
+    /// Each patch of the mesh is a chart, painted with the photos of the room it was scanned with.
+    mutating func addShapes(_ shapes: MeshShapes, rooms: [RoomInfo] = []) {
+        let idOf = Dictionary(rooms.map { ($0.index, $0.room.id) }, uniquingKeysWith: { a, _ in a })
         for patch in shapes.patches {
             let chart = addChart(origin: patch.origin, u: patch.u, v: patch.v, normal: patch.normal, kind: .object)
             charts[chart].curved = true
+            charts[chart].room = idOf[patch.room]
             mesh.addTriangles(
                 shapes.vertices, patch.faces.map { shapes.triangles[$0] }, normal: patch.normal, material: Self.chartMaterial(chart),
                 uv: .chart(origin: patch.origin, u: patch.u, v: patch.v))
@@ -1501,7 +1545,7 @@ struct PhotoBaker {
         }
         let center = corners.reduce(Vec3(0, 0, 0), +) / 4
         let radius = corners.map { vlength($0 - center) }.max() ?? 0
-        return cameras.indices.filter { k in
+        let seeing = cameras.indices.filter { k in
             let cam = cameras[k]
             guard vdot(cam.position - center, chart.normal) > 0.05 else { return false }
             guard vlength(cam.position - center) - radius < 7 else { return false }
@@ -1519,6 +1563,13 @@ struct PhotoBaker {
             }
             return !(left || right || above || below)
         }
+        // A room's furniture and floor take its own photos when it has a couple that see them: another
+        // room's would land a few centimeters off (each room's scan lines up with its own photos).
+        if let room = chart.room {
+            let own = seeing.filter { cameras[$0].frame.roomId == room }
+            if own.count >= 2 { return own }
+        }
+        return seeing
     }
 
     @inline(__always) static func bilinear(_ px: UnsafeBufferPointer<UInt8>, _ w: Int, _ h: Int, _ x: Float, _ y: Float) -> (Float, Float, Float) {

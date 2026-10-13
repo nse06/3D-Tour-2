@@ -268,6 +268,9 @@ public enum RoomAlignment {
             var f = frame
             f.transform = m.transform * frame.transform
             f.segment = nil
+            // The room scanned in its segment (none if the segment scanned no room, or several).
+            let scanned = parts.indices.filter { partSegments[$0] == s }
+            f.roomId = scanned.count == 1 ? parts[scanned[0]].room.id : nil
             // Photos from before the app recorded it: how fast the phone turned, from the path.
             if f.angularSpeed == nil { f.angularSpeed = turnRate(at: frame.t, segment: s, path: cleanPath, segmentation: seg) }
             scan.frames.append(f)

@@ -18,7 +18,9 @@ enum ScanBuilder {
     /// 8: photos lined up with each other, edge-aware painting, finer LiDAR shapes.
     /// 9: thin TVs, hidden furniture faces in their own piece's color; photoreal training data
     ///    (photoreal/: cameras.json, seeds.ply, masks/).
-    static let pipelineVersion = 9
+    /// 10: where rooms' outlines overlap, the furniture, floor and photos of the room that scanned the
+    ///     overlap best (RoomOverlaps); each photo remembers the room being scanned.
+    static let pipelineVersion = 10
 
     enum Step: Int, CaseIterable {
         case combining, modeling, packaging
@@ -251,6 +253,8 @@ enum ScanBuilder {
             "meshObjects": processed.stats.meshObjects ?? 0,
             "photosAligned": processed.stats.photosAligned ?? 0,
             "photoShiftCm": processed.stats.photoShiftCm ?? 0,
+            "roomOverlapM2": processed.stats.roomOverlapArea ?? 0,
+            "duplicateObjects": processed.stats.duplicateObjects ?? 0,
             "photorealSeeds": processed.photoreal?.seedCount ?? 0,
         ]
         try JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys]).write(to: dir.appendingPathComponent("info.json"))

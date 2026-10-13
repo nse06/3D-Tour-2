@@ -156,10 +156,14 @@ public struct CameraFrame: Codable, Sendable, Equatable {
     public var exposureDuration: Double?
     /// How fast the phone was moving, meters per second (motion blur too; build 11 on).
     public var linearSpeed: Float?
+    /// The room being scanned when the photo was taken (`ScanRoom.id`; scans put into one frame by
+    /// RoomAlignment, build 17 on). Rooms line up only to within a few centimeters, so a room's
+    /// furniture and floor are painted with its own photos (see RoomOverlaps).
+    public var roomId: String?
 
     public init(
         file: String, t: Double, transform: Transform, intrinsics: [Float], width: Int, height: Int, imageWidth: Int, imageHeight: Int,
-        segment: Int? = nil, angularSpeed: Float? = nil, exposureDuration: Double? = nil, linearSpeed: Float? = nil
+        segment: Int? = nil, angularSpeed: Float? = nil, exposureDuration: Double? = nil, linearSpeed: Float? = nil, roomId: String? = nil
     ) {
         self.file = file
         self.t = t
@@ -173,6 +177,7 @@ public struct CameraFrame: Codable, Sendable, Equatable {
         self.angularSpeed = angularSpeed
         self.exposureDuration = exposureDuration
         self.linearSpeed = linearSpeed
+        self.roomId = roomId
     }
 }
 
