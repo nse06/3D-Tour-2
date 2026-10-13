@@ -37,6 +37,9 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
             <Link href="/tour/sample" target="_blank" className="rounded-full px-3 py-1.5 text-neutral-500 hover:bg-black/5 hover:text-ink">
               Sample tour
             </Link>
+            <Link href="/dashboard/account" className="rounded-full px-3 py-1.5 text-neutral-500 hover:bg-black/5 hover:text-ink">
+              Account
+            </Link>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             {mode === "local" && (

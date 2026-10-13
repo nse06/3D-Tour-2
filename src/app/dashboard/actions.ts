@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { requireUser } from "@/lib/auth";
 import { claim, listingAccess, photorealAccess, type Access } from "@/lib/billing/access";
 import type { PriceKey } from "@/lib/billing/plans";
-import { checkoutUrl } from "@/lib/billing/stripe";
+import { cancelSubscriptionsNow, checkoutUrl } from "@/lib/billing/stripe";
 import { CAPTURE_SESSION_TTL_MS, newCaptureToken, pairingDeepLink, serverBaseUrl } from "@/lib/capture-sessions";
 import { isSupabaseConfigured, storageMode } from "@/lib/data/config";
 import { adminRepositoryUnavailableReason, bundleToTourData, getAdminRepository, getRepository } from "@/lib/data/repository";
@@ -30,7 +30,8 @@ import { manifestToSpace } from "@/lib/tour/scan-manifest";
 import { newId, parseSpace } from "@/lib/tour/space";
 import type { TourAppearance, TourData } from "@/lib/tour/types";
 import { requestOrigin } from "@/lib/request-origin";
-import { isOwnedAssetUrl } from "@/lib/storage";
+import { deleteStoredFiles, isOwnedAssetUrl } from "@/lib/storage";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export interface PropertyFormState {
@@ -139,10 +140,42 @@ export async function deletePropertyAction(propertyId: string): Promise<void> {
   // Only the listing's owner gets this far (the property is looked up through their session).
   if (await repo.getProperty(user.id, propertyId)) {
     await deleteListingPhotos(user.id, propertyId).catch((e) => console.error("photoreal: could not delete the listing's photos:", (e as Error).message));
+    await deleteStoredFiles(user.id, propertyId).catch((e) => console.error("storage: could not delete the listing's files:", (e as Error).message));
   }
   await repo.deleteProperty(user.id, propertyId);
   revalidatePath("/dashboard");
   redirect("/dashboard");
+}
+
+/**
+ * Deletes the realtor's account and everything in it (/legal/delete-account says what): subscriptions
+ * end now, every listing goes with its walkthrough, files and photos, then the login itself. The
+ * database drops the rest with the login (billing rows cascade); Stripe keeps the invoices.
+ */
+export async function deleteAccountAction(_previous: { error?: string }, form: FormData): Promise<{ error?: string }> {
+  const user = await requireUser();
+  if (String(form.get("confirm") ?? "").trim().toUpperCase() !== "DELETE") return { error: "Type DELETE to confirm." };
+  try {
+    if (isSupabaseConfigured()) {
+      const unavailable = adminRepositoryUnavailableReason();
+      if (unavailable) return { error: `Accounts can't be deleted here yet: ${unavailable}` };
+    }
+    await cancelSubscriptionsNow(user.id);
+    const repo = await getRepository();
+    for (const { property } of await repo.listProperties(user.id)) {
+      await deleteListingPhotos(user.id, property.id);
+      await repo.deleteProperty(user.id, property.id);
+    }
+    await deleteStoredFiles(user.id);
+    if (isSupabaseConfigured()) {
+      const { error } = await createSupabaseAdminClient().auth.admin.deleteUser(user.id);
+      if (error) throw new Error(error.message);
+      await (await createSupabaseServerClient()).auth.signOut().catch(() => undefined);
+    }
+  } catch (e) {
+    return { error: `Your account couldn't be fully deleted: ${(e as Error).message}. Try again, or write to us and we'll finish it.` };
+  }
+  redirect("/legal/delete-account?deleted=1");
 }
 
 // ---------------------------------------------------------------------------

@@ -113,6 +113,39 @@ export function localUploadPath(key: string): string {
   return path.join(localDataDir(), "uploads", ...key.split("/"));
 }
 
+/**
+ * Deletes every file stored for a listing ("<userId>/<propertyId>/") or a whole account ("<userId>/"):
+ * its models, cover photo, scan package, splats, remastered model and photo spots. (The photos kept for
+ * AI enhancement live in their own bucket: lib/photoreal.ts deleteListingPhotos.)
+ */
+export async function deleteStoredFiles(userId: string, propertyId?: string): Promise<void> {
+  const prefix = safeKey(propertyId ? [userId, propertyId] : [userId]);
+  if (!prefix) throw new Error("Not a storage folder.");
+  if (!isSupabaseConfigured()) {
+    await fs.rm(/*turbopackIgnore: true*/ localUploadPath(prefix), { recursive: true, force: true });
+    return;
+  }
+  const bucket = createSupabaseAdminClient().storage.from(SUPABASE_BUCKET);
+  const files: string[] = [];
+  // Storage lists one folder level at a time; folders come back without an id.
+  const walk = async (folder: string) => {
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await bucket.list(folder, { limit: 1000, offset });
+      if (error) throw new Error(error.message);
+      for (const entry of data ?? []) {
+        if (entry.id) files.push(`${folder}/${entry.name}`);
+        else await walk(`${folder}/${entry.name}`);
+      }
+      if (!data || data.length < 1000) break;
+    }
+  };
+  await walk(prefix);
+  for (let i = 0; i < files.length; i += 100) {
+    const { error } = await bucket.remove(files.slice(i, i + 100));
+    if (error) throw new Error(error.message);
+  }
+}
+
 export function extensionOf(filename: string): string {
   return filename.split(".").pop()?.toLowerCase() ?? "";
 }

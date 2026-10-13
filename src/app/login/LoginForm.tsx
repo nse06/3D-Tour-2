@@ -44,6 +44,19 @@ export function LoginForm({ next, initialMode = "signin" }: { next: string; init
       {mode === "reset" && <p className="text-sm text-neutral-600">We&apos;ll email you a link to set a new password.</p>}
       {state.error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>}
       {state.notice && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{state.notice}</p>}
+      {mode === "signup" && (
+        <p className="text-xs leading-relaxed text-neutral-500">
+          By creating an account you agree to the{" "}
+          <a href="/legal/terms" target="_blank" className="underline underline-offset-2">
+            Terms of Service
+          </a>{" "}
+          and confirm you&apos;ve read the{" "}
+          <a href="/legal/privacy" target="_blank" className="underline underline-offset-2">
+            Privacy Policy
+          </a>
+          .
+        </p>
+      )}
       <Button type="submit" size="lg" className="w-full" disabled={pending}>
         {pending && <Loader2 className="size-4 animate-spin" />}
         {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}

@@ -128,6 +128,19 @@ export async function checkoutUrl(req: CheckoutRequest): Promise<string> {
   return session.url;
 }
 
+/**
+ * Ends a realtor's subscriptions right away (their account is being deleted): no further charges.
+ * Invoices and payments stay in Stripe, as tax law requires.
+ */
+export async function cancelSubscriptionsNow(userId: string): Promise<void> {
+  if (!stripeSecretKey()) return;
+  const subscriptions = await (await getBillingStore()).subscriptions(userId);
+  for (const sub of subscriptions) {
+    if (sub.status === "canceled" || sub.status === "incomplete_expired") continue;
+    await stripe().subscriptions.cancel(sub.id);
+  }
+}
+
 let portalConfiguration: Promise<string> | null = null;
 
 /** The portal lets realtors switch between Unlimited and Pro, cancel, change cards and get invoices. */

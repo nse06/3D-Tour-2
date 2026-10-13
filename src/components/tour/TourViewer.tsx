@@ -20,6 +20,7 @@ import {
   Share2,
   Sparkles,
   X,
+  WandSparkles,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -157,13 +158,15 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
     setRemastered(false);
     setToast("The remastered model couldn't be loaded");
   }, []);
+  // The AI-enhanced model is on screen: buyers always see it labelled (EU AI Act art. 50, MLS rules on altered images).
+  const showingAi = remastered && !!data.remasterUrl && !remasterFailed && photos && !photoreal;
   const modelSwitch =
     compareRemaster && data.remasterUrl && !remasterFailed && photos && !photoreal ? (
       <div className="glass flex h-11 items-center gap-0.5 rounded-full p-1" role="group" aria-label="Model version">
         {(
           [
-            [false, "Painted"],
-            [true, "Remastered"],
+            [false, "Original"],
+            [true, "AI-enhanced"],
           ] as const
         ).map(([value, label]) => (
           <button
@@ -171,7 +174,7 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
             onClick={() => {
               if (value === remastered) return;
               setRemastered(value);
-              setToast(value ? "Remastered: rebuilt by the AI from every photo" : "Painted: the photos as the phone painted them");
+              setToast(value ? "AI-enhanced: rebuilt by AI from every photo of the home" : "Original: the scan as the phone captured it");
             }}
             aria-pressed={value === remastered}
             aria-label={`${label} model`}
@@ -417,6 +420,17 @@ export default function TourViewer({ data, banner, shareUrl, splatVersions, comp
         <p className="text-[10px] font-medium uppercase tracking-[0.32em] text-white/60">3D Walkthrough</p>
         <h1 className="font-display mt-1 text-2xl leading-tight text-white drop-shadow md:text-[34px]">{property.addressLine}</h1>
         <p className="mt-0.5 text-sm text-white/75 md:text-[15px]">{cityLine(property)}</p>
+        {showingAi && (
+          <a
+            href="/legal/ai"
+            target="_blank"
+            rel="noopener"
+            title="This walkthrough was rebuilt by AI from the scan's photos. Tap to learn what it changes."
+            className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-black/35 px-2.5 py-1 text-[11px] font-medium text-white/90 ring-1 ring-white/20 backdrop-blur hover:bg-black/50"
+          >
+            <WandSparkles className="size-3" /> AI-enhanced
+          </a>
+        )}
       </header>
 
       {/* Top-right actions */}

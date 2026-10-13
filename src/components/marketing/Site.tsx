@@ -70,7 +70,7 @@ export function SiteHeader({ overlay = false }: { overlay?: boolean }) {
 export function SiteFooter() {
   return (
     <footer className="border-t border-sand bg-paper">
-      <div className="mx-auto grid max-w-6xl gap-10 px-5 py-12 text-sm md:grid-cols-[1.5fr_1fr_1fr] md:px-8">
+      <div className="mx-auto grid max-w-6xl gap-10 px-5 py-12 text-sm md:grid-cols-[1.5fr_1fr_1fr_1fr] md:px-8">
         <div>
           <Wordmark className="text-ink" />
           <p className="mt-3 max-w-xs text-neutral-600">Free-roaming 3D walkthroughs of homes, scanned with an iPhone in one visit.</p>
@@ -91,6 +91,19 @@ export function SiteFooter() {
           <Link href="/dashboard" className="block text-neutral-600 hover:text-ink">
             Agent dashboard
           </Link>
+        </div>
+        <div className="space-y-2">
+          <p className="font-medium text-ink">Legal</p>
+          {[
+            ["/legal/privacy", "Privacy Policy"],
+            ["/legal/terms", "Terms of Service"],
+            ["/legal/ai", "How we use AI"],
+            ["/legal/delete-account", "Deleting your account"],
+          ].map(([href, label]) => (
+            <Link key={href} href={href} className="block text-neutral-600 hover:text-ink">
+              {label}
+            </Link>
+          ))}
         </div>
       </div>
       <div className="mx-auto max-w-6xl px-5 pb-10 text-xs text-neutral-500 md:px-8">
