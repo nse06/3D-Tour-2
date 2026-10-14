@@ -22,7 +22,9 @@ enum ScanBuilder {
     ///     overlap best (RoomOverlaps); each photo remembers the room being scanned.
     /// 11: rooms of multi-room scans placed by the recorded path and RoomPlan's layout together
     ///     (RoomAlignment), so photos line up across rooms.
-    static let pipelineVersion = 11
+    /// 12: low clutter on the floor (shoes, a bag, a heap of clothes) left to the floor's photos
+    ///     instead of floating shells of it (MeshShapes).
+    static let pipelineVersion = 12
 
     enum Step: Int, CaseIterable {
         case combining, modeling, packaging

@@ -31,6 +31,12 @@ struct MeshShapes {
         var maxTriangles = 150_000
         /// Loose pieces smaller than this across (meters) are noise.
         var minPiece: Float = 0.1
+        /// Loose pieces resting on the floor no taller than this (meters) and no wider than
+        /// `lowClutterWidth` (shoes, a bag, a heap of clothes) go: cut off at the floor, the scan's
+        /// shells of them would float above it, and the floor's photos show them as they are. A piece
+        /// in a RoomPlan object's box (an ottoman) is that object's, which `settle` sees to.
+        var lowClutterHeight: Double = 0.3
+        var lowClutterWidth: Float = 1.0
         /// Rounds of smoothing after simplifying: flatter tops and fronts make bigger patches, each
         /// painted from one photo, instead of a patchwork of facets.
         var smoothing = 4
@@ -106,11 +112,14 @@ struct MeshShapes {
         }
         guard !soup.isEmpty else { return shapes }
 
-        // 2. Simplified on a grid, coarser until it fits the budget; loose bits of noise dropped.
+        // 2. Simplified on a grid, coarser until it fits the budget; loose bits of noise and low
+        //    clutter on the floor dropped.
+        let floors = Dictionary(rooms.map { (Int32($0.index), $0.floorY) }, uniquingKeysWith: { a, _ in a })
+        let boxes = objects.filter { $0.transform.isFinite }.map { (frame: Furniture.rigid($0.transform), half: $0.size / 2 + Vec3(repeating: 0.05)) }
         var grid = options.grid
         repeat {
             shapes.weld(soup, grid: grid)
-            shapes.dropSmallPieces(options.minPiece)
+            shapes.dropLoosePieces(options, floors: floors) { p in boxes.contains { Self.inside(p, $0.frame, $0.half) } }
             if shapes.triangles.count <= options.maxTriangles { break }
             grid *= 1.25
         } while grid < 0.5
@@ -238,8 +247,10 @@ struct MeshShapes {
         }
     }
 
-    /// Drops connected pieces smaller than `size` across.
-    private mutating func dropSmallPieces(_ size: Float) {
+    /// Drops connected pieces smaller than `minPiece` across, and low clutter: pieces resting on
+    /// their room's floor (`floors`, by room index), no taller than `lowClutterHeight` above it and
+    /// no wider than `lowClutterWidth`, unless their middle is in a RoomPlan object (`inObject`).
+    private mutating func dropLoosePieces(_ options: Options, floors: [Int32: Double], inObject: (Vec3) -> Bool) {
         var parent = Array(0..<Int32(vertices.count))
         func find(_ x: Int32) -> Int32 {
             var r = x
@@ -263,9 +274,19 @@ struct MeshShapes {
             lo[r] = lo[r].map { simd_min_(p, $0) } ?? p
             hi[r] = hi[r].map { simd_max_(p, $0) } ?? p
         }
+        // Each piece's floor: its first triangle's room's.
+        var floorOf: [Int32: Double] = [:]
+        for (t, room) in zip(triangles, roomOf) where floorOf[find(t.x)] == nil {
+            if let y = floors[room] { floorOf[find(t.x)] = y }
+        }
         keep { t in
             let r = find(t.x)
-            return vlength(hi[r]! - lo[r]!) >= size
+            let size = hi[r]! - lo[r]!
+            guard vlength(size) >= options.minPiece else { return false }
+            guard let floor = floorOf[r] else { return true }
+            // Resting on the floor: as low as what the floor's cut leaves of it (up to 15 cm).
+            let low = Double(lo[r]!.y) - floor < options.classifiedMargin + 0.02 && Double(hi[r]!.y) - floor <= options.lowClutterHeight
+            return !(low && (size.x * size.x + size.z * size.z).squareRoot() <= options.lowClutterWidth && !inObject((lo[r]! + hi[r]!) / 2))
         }
     }
 

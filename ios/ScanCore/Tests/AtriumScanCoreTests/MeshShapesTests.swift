@@ -74,6 +74,31 @@ final class MeshShapesTests: XCTestCase {
         return mesh
     }
 
+    /// A box's top and sides as noisy grids (its bottom is the floor, which the scanner sees instead).
+    static func box(lo: Vec3, hi: Vec3, seed: UInt32) -> [ScanMesh] {
+        let d = hi - lo
+        return [
+            grid(origin: Vec3(lo.x, hi.y, lo.z), u: Vec3(d.x, 0, 0), v: Vec3(0, 0, d.z), normal: Vec3(0, 1, 0), steps: 12, noise: 0.005, seed: seed),
+            grid(origin: lo, u: Vec3(0, 0, d.z), v: Vec3(0, d.y, 0), normal: Vec3(-1, 0, 0), steps: 12, noise: 0.005, seed: seed + 1),
+            grid(origin: Vec3(hi.x, lo.y, lo.z), u: Vec3(0, 0, d.z), v: Vec3(0, d.y, 0), normal: Vec3(1, 0, 0), steps: 12, noise: 0.005, seed: seed + 2),
+            grid(origin: lo, u: Vec3(d.x, 0, 0), v: Vec3(0, d.y, 0), normal: Vec3(0, 0, -1), steps: 12, noise: 0.005, seed: seed + 3),
+            grid(origin: Vec3(lo.x, lo.y, hi.z), u: Vec3(d.x, 0, 0), v: Vec3(0, d.y, 0), normal: Vec3(0, 0, 1), steps: 12, noise: 0.005, seed: seed + 4),
+        ]
+    }
+
+    /// `mesh` with `parts` added (one room's mesh, unclassified).
+    static func adding(_ parts: [ScanMesh], to mesh: ScanMesh) -> ScanMesh {
+        var out = mesh
+        for part in parts {
+            let base = UInt32(out.vertices.count)
+            out.vertices += part.vertices
+            out.normals += part.normals
+            out.indices += part.indices.map { $0 + base }
+        }
+        out.classes = [UInt8](repeating: 0, count: out.triangleCount)
+        return out
+    }
+
     func testMeshFilesRoundTrip() throws {
         var mesh = Self.roomMesh()
         mesh.classes = (0..<mesh.triangleCount).map { UInt8($0 % 8) }
@@ -109,6 +134,38 @@ final class MeshShapesTests: XCTestCase {
         }
         // The cabinet box stays: the mesh doesn't cover it.
         XCTAssertTrue(shapes.replaced.isEmpty)
+    }
+
+    func testLowClutterOnTheFloorIsLeftToTheFloorsPhotos() {
+        let scan = PhotoTexturingTests.room()
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        // A shoe and a heap of clothes on the floor (cut off at the floor, their tops would float), and
+        // a coffee table.
+        let shoe = Self.sphere(center: Vec3(2.2, 0.04, 1.4), radius: 0.1)
+        let heap = Self.sphere(center: Vec3(1.6, 0, 0.9), radius: 0.2)
+        let mesh = Self.adding(
+            [ScanMesh(vertices: shoe.vertices, normals: shoe.normals, indices: shoe.indices), ScanMesh(vertices: heap.vertices, normals: heap.normals, indices: heap.indices)]
+                + Self.box(lo: Vec3(2, 0, 2), hi: Vec3(2.9, 0.42, 2.5), seed: 7),
+            to: Self.roomMesh())
+        let shapes = MeshShapes.build([mesh], rooms: rooms, walls: walls, objects: scan.objects)
+        let near = { (c: Vec3, r: Float) in shapes.vertices.contains { vlength($0 - c) < r } }
+        XCTAssertFalse(near(Vec3(2.2, 0.08, 1.4), 0.15), "the shoe goes")
+        XCTAssertFalse(near(Vec3(1.6, 0.1, 0.9), 0.25), "the heap goes")
+        XCTAssertTrue(near(Self.pouf.center, Self.pouf.radius + 0.05), "the pouf stays")
+        XCTAssertTrue(shapes.vertices.contains { $0.y > 0.38 && $0.x > 2 && $0.x < 2.9 && $0.z > 2 && $0.z < 2.5 }, "the coffee table stays")
+    }
+
+    func testALowPieceRoomPlanKnowsIsKept() {
+        var scan = PhotoTexturingTests.room()
+        // An ottoman, low enough to pass for clutter, but RoomPlan saw it: the mesh shapes it.
+        scan.objects.append(ScanObject(id: "OT", roomId: scan.rooms[0].id, category: "storage", transform: .translating(Vec3(2, 0.14, 1.6)), size: Vec3(0.5, 0.28, 0.5)))
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        let mesh = Self.adding(Self.box(lo: Vec3(1.75, 0, 1.35), hi: Vec3(2.25, 0.28, 1.85), seed: 11), to: Self.roomMesh())
+        let shapes = MeshShapes.build([mesh], rooms: rooms, walls: walls, objects: scan.objects)
+        XCTAssertTrue(shapes.replaced.contains("OT"))
+        XCTAssertTrue(shapes.vertices.contains { $0.y > 0.25 && abs($0.x - 2) < 0.25 && abs($0.z - 1.6) < 0.25 })
     }
 
     func testTheMeshReplacesBoxesItCoversOnly() {

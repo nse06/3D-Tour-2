@@ -214,7 +214,11 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   triangles within 6 cm of a wall (facing along its normal), 4 cm of the floor or 6 cm of the ceiling, or within
   15 cm if ARKit classified them as wall, window, door, floor or ceiling. What's left — furniture, appliances,
   plants, lamps, clutter — is welded on a 2.5 cm grid (coarsened until it fits 150,000 triangles, which only a big
-  home reaches; build 7: 3.5 cm and 60,000), loose bits under 10 cm are dropped, and every triangle keeps facing the
+  home reaches; build 7: 3.5 cm and 60,000), loose bits under 10 cm are dropped, and so is low clutter resting on
+  the floor (build 19, pipeline 12): a loose piece no taller than 30 cm and no wider than 1 m (shoes, a bag, a heap
+  of clothes), which the floor's cut leaves as a shell floating above it, so the floor's photos show it instead
+  (unless it lies in a RoomPlan object's box: an ottoman's mesh is the ottoman's).
+  Every triangle keeps facing the
   side it was seen from (ARKit's normals; both sides of a thin top that collapses are kept). Four rounds of Taubin
   smoothing (λ 0.5, μ −0.53; open edges stay put) flatten the scanner's bumps without shrinking the shape, so tops
   and fronts become a few large patches instead of a patchwork of facets; a sliver the smoothing turns over is
@@ -445,7 +449,7 @@ info.json            app / device / capture metadata, pipeline version, alignmen
      GPU's job (waiting, training n%, ready) — see [photoreal.md](photoreal.md). Sending the scan again drops it;
    * **Rebuild walkthrough** — re-processes the saved RoomPlan data with the current pipeline (no rescanning);
      scans built by an older pipeline (`record.pipeline` < `ScanBuilder.pipelineVersion`) show it as a card
-     ("Fix overlapping rooms" … "Fix furniture where rooms overlap"). A rebuilt scan has to be sent again;
+     ("Fix overlapping rooms" … "Clear floating shards off the floors"). A rebuilt scan has to be sent again;
    * the summary says how much the photos cover, how many photos had people painted out, how many photos were lined
      up with each other (and by how much on average), and whether furniture
      was shaped from the LiDAR mesh (in how many rooms) — or why not (switched off, no mesh recorded: the

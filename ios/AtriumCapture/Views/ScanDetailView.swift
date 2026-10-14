@@ -138,8 +138,6 @@ struct ScanDetailView: View {
     /// Scans built by an older pipeline (see ScanBuilder.pipelineVersion).
     private func needsRebuild(_ scan: ScanRecord) -> Bool {
         let pipeline = scan.pipeline ?? 1
-        // Pipeline 11 only changes how rooms are placed together: single rooms gain nothing.
-        if pipeline == 10 && scan.stats.rooms <= 1 { return false }
         return pipeline < ScanBuilder.pipelineVersion && ScanBuilder.canRebuild(scan, directory: model.store.directory(for: scan.id))
     }
 
@@ -170,9 +168,12 @@ struct ScanDetailView: View {
         case 9:
             title = "Fix furniture where rooms overlap"
             text = "When one room's scan reaches into the next (you walked through a doorway while scanning it, say), both rooms saw the same furniture a few centimeters apart, and the walkthrough mixed the two: beds and sofas came out in shards. Atrium Capture now gives each overlap to the room that scanned it best, paints it with that room's photos only, and lines the rooms up by the path you walked as well as RoomPlan's floor plan. Rebuild to apply it. No rescanning needed. Afterwards, send it to Atrium again."
+        case 10:
+            title = "Line the rooms up and clear the floors"
+            text = "Atrium Capture now places the rooms of a multi-room scan by the path you walked as well as RoomPlan's floor plan, so photos from one room land right on the next. And shoes, bags and clothes left on the floor no longer float as shards: the scanner only saw their tops, so the floor's photos show them instead. No rescanning needed. Afterwards, send it to Atrium again and make it AI-enhanced."
         default:
-            title = "Line the rooms up more closely"
-            text = "Atrium Capture now places the rooms of a multi-room scan by the path you walked as well as RoomPlan's floor plan, so photos from one room land right on the next and the AI-enhanced model comes out cleaner. No rescanning needed. Afterwards, send it to Atrium again and make it AI-enhanced."
+            title = "Clear floating shards off the floors"
+            text = "Shoes, bags and clothes left on the floor came out as floating shards in the walkthrough: the scanner only saw their tops. Atrium Capture now leaves them to the floor's photos, which show them as they are. No rescanning needed. Afterwards, send it to Atrium again and make it AI-enhanced."
         }
         return VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: "wand.and.stars")
