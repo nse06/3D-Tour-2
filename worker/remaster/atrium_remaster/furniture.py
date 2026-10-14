@@ -326,13 +326,19 @@ def run(
     sharpened: dict | None = None,
     log=print,
     inpainter=None,
+    progress=None,
 ) -> tuple[Mesh, dict]:
     """The mesh with its movable pieces made by the shape maker, where their shapes match the photos.
     `inpainter` (fill.Inpainter): what's hidden behind something in the cutout's photo is painted in
-    before the shape maker sees it (else the gap would end up in the piece's shape)."""
+    before the shape maker sees it (else the gap would end up in the piece's shape). `progress(share
+    done)`: the cutouts are the first 20%, the shapes (a piece at a time) the next 65%, the fits the rest."""
     from scipy import ndimage
 
     from .fill import flat_charts
+
+    def done(share: float) -> None:
+        if progress is not None:
+            progress(share)
 
     pieces = [b for b in layout.objects if b.category in cfg.categories]
     stats: dict = {"furnitureMade": 0, "furnitureKept": 0, "furnitureFit": {}, "furnitureIds": []}
@@ -342,7 +348,8 @@ def run(
     flat = set(flat_charts(mesh, chart, 10.0))
     caster = Caster.of(mesh)
     plans = []
-    for b in pieces:
+    for i, b in enumerate(pieces):
+        done(0.2 * i / len(pieces))
         piece = piece_faces(mesh, b, chart, flat, cfg.margin)
         found = sights(caster, piece, b, capture.cameras, cfg) if piece.any() else []
         whole = [s for s in found if s.framed >= cfg.in_frame]
@@ -383,10 +390,14 @@ def run(
             stats["furnitureKept"] += 1
             continue
         plans.append((b, piece, crop, color, views))
-    shapes = maker([p[2] for p in plans]) if plans else []
+    shapes = []
+    for i, plan in enumerate(plans):
+        done(0.2 + 0.65 * i / len(plans))
+        shapes += maker([plan[2]])
     remove = np.zeros(len(mesh.faces), bool)
     additions: list[Addition] = []
-    for (b, piece, _, color, views), shape in zip(plans, shapes):
+    for i, ((b, piece, _, color, views), shape) in enumerate(zip(plans, shapes)):
+        done(0.85 + 0.15 * i / len(plans))
         if shape is None or len(shape[1]) < 4:
             log(f"furniture: {b.category} {b.id}: no shape made")
             stats["furnitureKept"] += 1

@@ -181,7 +181,7 @@ export interface RemasterJob {
   /** The photoreal upload whose photos it works from. */
   inputsJobId: string | null;
   status: RemasterStatus;
-  /** What the worker is doing ("downloading", "skins", "fill", "uploading") and how far along (0–1). */
+  /** What the worker is doing ("downloading", "skins", "fill", "uploading"), and how far along the whole job is (0–1; lib/remaster-steps.ts). */
   stage: string | null;
   progress: number;
   message: string | null;

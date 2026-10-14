@@ -8,10 +8,11 @@
 Downloads the photos and the painted model, rebuilds the model (the stages below, each optional but
 the skins), asks the callback where to upload the files, uploads them, and reports back. Every call
 carries the shared worker secret (Authorization: Bearer ...). The callback hears:
-{"event": "progress", "stage", "progress", "message"}; {"event": "upload", "files": [{"name",
-"bytes"}]}, answered with {"targets": [{"name", "url", "method", "headers", "assetUrl"}]}: first the
-photo spots' pictures (spot-000.jpg, ...; spots.py), then model.glb, which lists them; {"event":
-"done", "modelUrl", "stats"} or {"event": "failed", "message"}.
+{"event": "progress", "stage", "progress" (how far along that stage is, 0-1), "message"}, each
+stage's start at once and how far along it is at most every 20 s; {"event": "upload", "files":
+[{"name", "bytes"}]}, answered with {"targets": [{"name", "url", "method", "headers", "assetUrl"}]}:
+first the photo spots' pictures (spot-000.jpg, ...; spots.py), then model.glb, which lists them;
+{"event": "done", "modelUrl", "stats"} or {"event": "failed", "message"}.
 
 The photoreal splats (worker/photoreal) are a separate job; this one borrows its helpers.
 """
@@ -147,9 +148,10 @@ def light_config(options: dict) -> light_mod.LightConfig:
 def remaster(
     mesh: scene.Mesh, capture, options: dict, services: Services, device: str, report, log=print, layout: Layout | None = None, spots: list | None = None
 ) -> tuple[scene.Mesh, dict]:
-    """The stages, in order. `report(stage, progress, message)`. `layout`: the room layout (build 13
-    on), for what needs to know where the TVs and windows are. `spots`: if given, the photo spots
-    (spots.run) are made and go into it."""
+    """The stages, in order. `report(stage, progress, message)`: how far along that stage is (0-1; the
+    site makes it the whole job's) and what the stage's name doesn't already say. `layout`: the room
+    layout (build 13 on), for what needs to know where the TVs and windows are. `spots`: if given, the
+    photo spots (spots.run) are made and go into it."""
     stats: dict = {"photos": len(capture.cameras), "triangles": int(len(mesh.faces))}
     layout = layout or Layout()
     stats["layout"] = not layout.empty
@@ -157,9 +159,11 @@ def remaster(
     clean_cfg = cleanup_config(options)
     sharpened: dict = {}
     if services.cleaner is not None and clean_cfg.deblur:
-        report("cleanup", 0.0, "sharpening the smeared photos")
+        report("cleanup", 0.0, "")
         try:
-            sharpened = cleanup_mod.sharpen_photos(capture, services.cleaner, clean_cfg, cfg.long_side, log=log)
+            sharpened = cleanup_mod.sharpen_photos(
+                capture, services.cleaner, clean_cfg, cfg.long_side, log=log, progress=lambda p: report("cleanup", p, "")
+            )
             stats["photosSharpened"] = len(sharpened)
         except Exception as e:  # the skins learn from the photos as they are
             traceback.print_exc()
@@ -168,7 +172,7 @@ def remaster(
     # New shapes first (doors and windows set into their walls, trim): the photos are lined up with
     # the model the skins will paint.
     if options.get("trim", True):
-        report("shapes", 0.0, "adding trim: doors and windows set into their walls, baseboards, casings")
+        report("shapes", 0.0, "")
         try:
             trim_cfg = trim_mod.TrimConfig(
                 depth=float(options.get("recessDepth", 0.1)),
@@ -183,7 +187,7 @@ def remaster(
             traceback.print_exc()
             stats["trimError"] = f"{type(e).__name__}: {e}"[:200]
     if layout.objects and services.segmenter is not None and services.shapes is not None and options.get("furniture", True):
-        report("furniture", 0.0, "making the furniture's shapes from the photos")
+        report("furniture", 0.0, "")
         try:
             furniture_cfg = furniture_mod.FurnitureConfig(
                 long_side=int(options.get("furnitureLongSide", 960)),
@@ -192,7 +196,16 @@ def remaster(
                 min_iou=float(options.get("furnitureMinFit", 0.6)),
             )
             mesh, furniture_stats = furniture_mod.run(
-                mesh, capture, layout, services.segmenter, services.shapes, furniture_cfg, sharpened=sharpened, log=log, inpainter=services.inpainter
+                mesh,
+                capture,
+                layout,
+                services.segmenter,
+                services.shapes,
+                furniture_cfg,
+                sharpened=sharpened,
+                log=log,
+                inpainter=services.inpainter,
+                progress=lambda p: report("furniture", p, ""),
             )
             stats.update(furniture_stats)
         except Exception as e:  # the scanned pieces stay
@@ -203,14 +216,14 @@ def remaster(
     depths, disagree = None, None
     depth_cfg = depth_mod.DepthConfig()
     if services.depth is not None and options.get("depth", True):
-        report("depth", 0.0, "measuring the photos' depth")
+        report("depth", 0.0, "")
         try:
-            depths = depth_mod.estimate(mesh, capture, services.depth, depth_cfg, log=log)
+            depths = depth_mod.estimate(mesh, capture, services.depth, depth_cfg, log=log, progress=lambda p: report("depth", 0.7 * p, ""))
         except Exception as e:  # the skins learn without it
             traceback.print_exc()
             stats["depthError"] = f"{type(e).__name__}: {e}"[:200]
     if depths and layout.objects and options.get("fuse", True):
-        report("depth", 0.5, "finer shapes for what the LiDAR scanned")
+        report("depth", 0.7, "finer shapes for what the LiDAR scanned")
         try:
             mesh, fuse_stats = fuse_mod.run(mesh, capture, layout, depths, fuse_mod.FuseConfig(), skip=stats.get("furnitureIds", ()), log=log)
             stats.update(fuse_stats)
@@ -218,6 +231,7 @@ def remaster(
             traceback.print_exc()
             stats["fuseError"] = f"{type(e).__name__}: {e}"[:200]
     if depths:
+        report("depth", 0.8, "checking the shapes against the photos")
         try:
             disagree = depth_mod.compare(mesh, capture, depths, depth_cfg, log=log)
             stats["depthDisagreeShare"] = round(sum(int(m.sum()) for m in disagree.values()) / max(1, sum(m.size for m in disagree.values())), 4)
@@ -240,7 +254,7 @@ def remaster(
         mesh, capture, cfg, device=device, log=log, photos=sharpened, residual=clean_cfg.residual, quiet_faces=quiet, disagree=disagree, store=store
     )
     stats["skinViewsOn"] = "memory" if store == "cpu" and str(device) != "cpu" else "gpu" if str(device).startswith("cuda") else "cpu"
-    report("skins", 0.02, f"{len(views)} photos")
+    report("skins", 0.2, f"{len(views)} photos")
     extra = None
     if fixer_on:
         d = fixviews.FixerViewsConfig()
@@ -257,7 +271,7 @@ def remaster(
         prepare = services.fixer.prepare if hasattr(services.fixer, "prepare") else None
         if prepare:
             prepare()  # its GPU starts while the skins train
-    result = skins.train(mesh, views, cfg, device=device, log=log, progress=lambda p: report("skins", 0.02 + 0.9 * p, ""), extra=extra)
+    result = skins.train(mesh, views, cfg, device=device, log=log, progress=lambda p: report("skins", 0.2 + 0.8 * p, ""), extra=extra)
     stats.update(result.stats)
     views = extra = None  # the GPU's room goes to what's left (the photo spots)
     if str(device).startswith("cuda"):
@@ -269,7 +283,7 @@ def remaster(
         out, tidy_stats = cleanup_mod.tidy_skins(out, layout, clean_cfg, log=log)
         stats.update(tidy_stats)
     if options.get("fill", True):
-        report("fill", 0.93, "filling in what no photo saw")
+        report("fill", 0.0, "")
         try:
             painted = fill_mod.painted_from_photos(out, capture.seeds_xyz, capture.seed_spacing)
             out, fill_stats = fill_mod.fill(out, result.seen, services.inpainter, log=log, painted=painted)
@@ -279,7 +293,7 @@ def remaster(
             stats["fillError"] = f"{type(e).__name__}: {e}"[:200]
     light = light_mod.Light()
     if options.get("light", True):
-        report("light", 0.95, "evening out the lighting")
+        report("light", 0.0, "")
         try:
             light, light_stats = light_mod.measure(out, light_config(options))
             out = light_mod.apply(out, light)
@@ -289,7 +303,7 @@ def remaster(
             stats["lightError"] = f"{type(e).__name__}: {e}"[:200]
             light = light_mod.Light()
     if spots is not None and options.get("spots", True):
-        report("spots", 0.0, "making the photo spots")
+        report("spots", 0.0, "")
         try:
             d = spots_mod.SpotConfig()
             spot_cfg = spots_mod.SpotConfig(
@@ -332,13 +346,16 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-remas
         options = payload.get("options") or {}
 
         def report(stage: str, value: float, message: str) -> None:
+            # A stage's start goes out at once (the site shows the stage it's on); its progress at most
+            # every 20 s.
+            starts = stage != clock.current
             clock.mark(stage)
-            reporter.progress(stage, value, message)
+            reporter.progress(stage, value, message, force=starts)
 
         made: list[dict] = []
         out, stats = remaster(mesh, capture, options, services, device, report, layout=layout, spots=made)
         clock.mark("uploading")
-        reporter.progress("uploading", 1, "", force=True)
+        reporter.progress("uploading", 0, "", force=True)
         if made:
             # The spots' pictures go up first: the model lists where they are.
             try:

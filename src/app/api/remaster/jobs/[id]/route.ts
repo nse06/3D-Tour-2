@@ -5,6 +5,7 @@ import { serverBaseUrl } from "@/lib/capture-sessions";
 import { getAdminRepository } from "@/lib/data/repository";
 import { isWorkerRequest, pruneListingPhotos, workerSecret } from "@/lib/photoreal";
 import { remasterSummary } from "@/lib/remaster";
+import { jobProgress } from "@/lib/remaster-steps";
 import { assetExists, createUploadTarget, isOwnedAssetUrl, UploadError } from "@/lib/storage";
 
 /** A photo spot's picture, as the worker names it; a model has at most this many. */
@@ -14,7 +15,7 @@ const MAX_SPOTS = 250;
 /**
  * The remaster worker reports on a job (worker/remaster/atrium_remaster/job.py), with the shared
  * secret (Authorization: Bearer PHOTOREAL_WORKER_SECRET). Events:
- *   { event: "progress", stage, progress (0–1), message }
+ *   { event: "progress", stage, progress (0–1: how far along that step is), message }
  *   { event: "upload", files: [{ name: "model.glb", bytes }] } → { targets: [{ name, url, method, headers, assetUrl }] }
  *     (before it, the photo spots' pictures: files [{ name: "spot-000.jpg", bytes }, …], which model.glb lists)
  *   { event: "done", modelUrl, stats }
@@ -41,10 +42,14 @@ export async function POST(request: Request, ctx: RouteContext<"/api/remaster/jo
 
     switch (body.event) {
       case "progress": {
+        // The worker says how far along the step it's on is; the job keeps how far along it is as a
+        // whole (lib/remaster-steps.ts), which only moves forward.
+        const stage = text(body.stage, 40);
+        const whole = jobProgress(stage, Number(body.progress) || 0);
         const updated = await repo.updateRemasterJob(job.id, {
           status: "running",
-          stage: text(body.stage, 40),
-          progress: Math.max(0, Math.min(1, Number(body.progress) || 0)),
+          stage,
+          progress: Math.max(job.progress, whole ?? 0),
           message: text(body.message, 200),
           ...(job.startedAt ? {} : { startedAt: new Date().toISOString() }),
         });

@@ -240,7 +240,7 @@ another scan don't), runs the stages and reports to the callback with the same s
 
 | Event | Answer |
 |---|---|
-| `{ event: "progress", stage, progress, message }` (stages: `downloading`, `cleanup`, `shapes`, `furniture`, `depth`, `skins`, `fill`, `spots`, `uploading`) | the job |
+| `{ event: "progress", stage, progress, message }` (stages, in order: `downloading`, `cleanup`, `shapes`, `furniture`, `depth`, `skins`, `fill`, `light`, `spots`, `uploading`; `progress`: how far along that stage is, 0–1; `message`: what the stage's name doesn't say) | the job |
 | `{ event: "upload", files: [{ name: "spot-000.jpg", bytes }, …] }` (the photo spots, first) | `{ targets: [{ name, url, method, headers, assetUrl }] }` |
 | `{ event: "upload", files: [{ name: "model.glb", bytes }] }` | `{ targets: [{ name, url, method, headers, assetUrl }] }` |
 | `{ event: "done", modelUrl, stats }` | the job |
@@ -266,6 +266,12 @@ in the scene's extras, so the viewer loads it in place of the painted one.
 stage took (`downloading`, `cleanup`, `shapes`, `furniture`, `depth`, `skins`, `fill`, `light`, `spots`, `uploading`;
 a stage runs from its first progress report to the next stage's). The log prints them as `remaster stages (s): …`,
 and the listing page shows them under **Time by stage**, with how long the job took from being started.
+
+**Progress.** A stage's start is reported at once, how far along it is at most every 20 s. The site keeps how far
+along the whole job is: the stages before this one, and as much of its own share as it has done. Each stage's share is
+roughly its part of a job's time (`src/lib/remaster-steps.ts`: a home of a few rooms scanned with its layout, on an
+A10G), and the number never goes back. The listing page shows it as one bar, with the stage's name beside it. A stage
+a job skips (no layout, so no furniture) is jumped over. Retune the shares from real jobs' **Time by stage**.
 
 ## 6. AI models and licenses
 
@@ -318,7 +324,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 49 tests (below)
+python -m pytest tests -q        # CPU, 54 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

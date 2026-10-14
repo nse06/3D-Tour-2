@@ -59,8 +59,9 @@ class UnsharpCleaner:
         return [np.asarray(Image.fromarray(im).filter(ImageFilter.UnsharpMask(radius=2, percent=120, threshold=2))) for im in images]
 
 
-def sharpen_photos(capture: Capture, cleaner: Cleaner, cfg: CleanupConfig, long_side: int, batch: int = 8, log=print) -> dict[str, np.ndarray]:
-    """The smeared photos, sharpened, at training size (by camera name); the others aren't in it."""
+def sharpen_photos(capture: Capture, cleaner: Cleaner, cfg: CleanupConfig, long_side: int, batch: int = 8, log=print, progress=None) -> dict[str, np.ndarray]:
+    """The smeared photos, sharpened, at training size (by camera name); the others aren't in it.
+    `progress(share done)` after each batch."""
     out: dict[str, np.ndarray] = {}
     if not cfg.deblur:
         return out
@@ -72,6 +73,8 @@ def sharpen_photos(capture: Capture, cleaner: Cleaner, cfg: CleanupConfig, long_
             if sharp.shape != image.shape:
                 raise RuntimeError(f"the cleaner answered {sharp.shape} for {image.shape}")
             out[cam.name] = sharp
+        if progress is not None:
+            progress((k + len(group)) / len(chosen))
     log(f"cleanup: {len(out)} of {len(capture.cameras)} photos sharpened ({cleaner.name})")
     return out
 

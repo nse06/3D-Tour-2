@@ -79,9 +79,11 @@ def disagreement(predicted: np.ndarray, modeled: np.ndarray, cfg: DepthConfig) -
     return off
 
 
-def estimate(mesh: Mesh, capture: Capture, model: DepthModel, cfg: DepthConfig, batch: int = 8, log=print) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+def estimate(
+    mesh: Mesh, capture: Capture, model: DepthModel, cfg: DepthConfig, batch: int = 8, log=print, progress=None
+) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """Per photo (by camera name): the depth model's depth at `long_side`, prompted with the model's
-    own depth there, and the photo's intrinsics at that size."""
+    own depth there, and the photo's intrinsics at that size. `progress(share done)` after each batch."""
     caster = Caster.of(mesh)
     out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     for k in range(0, len(capture.cameras), batch):
@@ -96,6 +98,8 @@ def estimate(mesh: Mesh, capture: Capture, model: DepthModel, cfg: DepthConfig, 
             if pred.shape != image.shape[:2]:
                 raise RuntimeError(f"the depth model answered {pred.shape} for {image.shape[:2]}")
             out[cam.name] = (np.asarray(pred, np.float32), K)
+        if progress is not None:
+            progress((k + len(group)) / len(capture.cameras))
     log(f"depth: {len(out)} photos measured ({model.name})")
     return out
 

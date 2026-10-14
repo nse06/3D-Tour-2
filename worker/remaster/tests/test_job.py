@@ -91,6 +91,11 @@ def test_a_job_downloads_rebuilds_uploads_and_reports(tmp_path, capsys):
     stages = stats["stageSeconds"]
     assert {"downloading", "skins", "light", "spots", "uploading"} <= set(stages), stages
     assert abs(sum(stages.values()) - stats["totalSeconds"]) < 2, "every second is in some stage"
+    # Each stage's start reached the site, in order, however soon after the last report; how far
+    # along a stage is (0-1) only went forward.
+    reports = [(e["stage"], e["progress"]) for e in site.events if e["event"] == "progress"]
+    assert list(dict.fromkeys(stage for stage, _ in reports)) == list(stages), (reports, stages)
+    assert all(0 <= p <= 1 for _, p in reports) and all(b >= a for (s, a), (t, b) in zip(reports, reports[1:]) if s == t), reports
     # The photo spots: their pictures uploaded first, listed in the model.
     listed = model.extras["atriumSpots"]["spots"]
     assert stats["spots"] == len(listed) == len(spots_upload["files"]) > 0 and model.extras["atriumSpots"]["face"] == 32

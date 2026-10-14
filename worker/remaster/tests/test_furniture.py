@@ -130,9 +130,12 @@ def test_the_job_makes_furniture_before_the_skins(tmp_path):
     capture = load(tmp_path / "capture")
     services = Services(segmenter=furniture.BoxSegmenter(), shapes=BoxMaker())
     options = {"steps": 20, "batch": 2, "tile": 128, "longSide": 160, "furnitureLongSide": 160, "furnitureInFrame": 0.8, "fill": False, "trim": False, "fixerViews": False, "depth": False}
-    stages = []
-    out, stats = remaster(mesh, capture, options, services, "cpu", lambda stage, value, message: stages.append(stage), log=lambda _: None, layout=layout.load(tmp_path / "capture"))
+    reports = []
+    out, stats = remaster(mesh, capture, options, services, "cpu", lambda stage, value, message: reports.append((stage, value)), log=lambda _: None, layout=layout.load(tmp_path / "capture"))
+    stages = [stage for stage, _ in reports]
     assert stats["furnitureMade"] == 1 and "furniture" in stages and stages.index("furniture") < stages.index("skins"), (stats, stages)
+    made = [value for stage, value in reports if stage == "furniture"]
+    assert made == sorted(made) and made[-1] >= 0.85, "how far along it is, piece by piece"
     assert len(out.atlases) == len(mesh.atlases) + 1
 
 

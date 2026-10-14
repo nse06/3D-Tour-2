@@ -6,21 +6,9 @@ import { useEffect, useState, useTransition } from "react";
 import { setAppearanceAction, startRemasterAction } from "@/app/dashboard/actions";
 import { Button, ButtonLink } from "@/components/ui";
 import type { RemasterSummary } from "@/lib/remaster";
+import { stepLabel } from "@/lib/remaster-steps";
 
 const POLL_MS = 5000;
-const STAGE: Record<string, string> = {
-  starting: "Starting the GPU",
-  downloading: "The GPU is downloading the photos and the model",
-  cleanup: "Sharpening the blurry photos",
-  shapes: "Adding trim: doors and windows, baseboards, casings",
-  furniture: "Making the furniture's shapes from the photos",
-  depth: "Measuring depth in the photos",
-  skins: "Learning the skins from every photo",
-  fill: "Filling in spots no photo saw",
-  light: "Evening out the lighting",
-  spots: "Making the photo spots",
-  uploading: "Saving the remastered model",
-};
 
 /** "1 min 20 s", "45 s". */
 function duration(seconds: number): string {
@@ -36,7 +24,7 @@ function stageTimes(stats: Record<string, unknown>): string | null {
   if (!entries.length) return null;
   return entries
     .sort((a, b) => b[1] - a[1])
-    .map(([stage, s]) => `${(STAGE[stage] ?? stage).replace(/^The GPU is /, "")} ${duration(s)}`)
+    .map(([stage, s]) => `${(stepLabel(stage) ?? stage).replace(/^The GPU is /, "")} ${duration(s)}`)
     .join(" · ");
 }
 
@@ -133,6 +121,7 @@ export function RemasterPanel({
     });
 
   const busy = pending || leaving;
+  const done = Math.round((job?.progress ?? 0) * 100);
   const stats = job?.stats ?? {};
   const minutes = job?.startedAt && job.finishedAt ? Math.round((Date.parse(job.finishedAt) - Date.parse(job.startedAt)) / 60000) : null;
   const startButton = (label: string, icon: "play" | "again" | "retry") =>
@@ -185,18 +174,21 @@ export function RemasterPanel({
 
       {job?.status === "running" && (
         <div className="mt-3 space-y-2 text-sm">
+          {/* The step it's on; the bar and the percentage are the whole job's. */}
           <p className="flex items-center gap-2 text-neutral-700">
-            <Loader2 className="size-4 animate-spin" /> {STAGE[job.stage ?? ""] ?? "Working"}
-            {job.stage === "skins" && ` — ${Math.round(job.progress * 100)}%`}
+            <Loader2 className="size-4 shrink-0 animate-spin" />
+            <span className="flex-1">{stepLabel(job.stage) ?? "Working"}</span>
+            <span className="tabular-nums text-neutral-400">{done}%</span>
           </p>
           <div
             className="h-1.5 overflow-hidden rounded-full bg-linen"
             role="progressbar"
-            aria-valuenow={Math.round(job.progress * 100)}
+            aria-label="The whole remaster"
+            aria-valuenow={done}
             aria-valuemin={0}
             aria-valuemax={100}
           >
-            <div className="h-full rounded-full bg-gold transition-all" style={{ width: `${Math.max(3, job.progress * 100)}%` }} />
+            <div className="h-full rounded-full bg-gold transition-all duration-700" style={{ width: `${Math.max(3, done)}%` }} />
           </div>
           {job.message && <p className="text-xs text-neutral-400">{job.message}</p>}
         </div>
@@ -215,7 +207,9 @@ export function RemasterPanel({
               typeof stats.photos === "number" ? `${stats.photos} photos` : null,
               typeof stats.modelMB === "number" ? `${stats.modelMB} MB` : null,
               minutes != null ? `${minutes} min on the GPU` : null,
-              job.finishedAt ? `ready ${Math.max(1, Math.round((Date.parse(job.finishedAt) - Date.parse(job.createdAt)) / 60000))} min after it was started` : null,
+              job.finishedAt
+                ? `ready ${Math.max(1, Math.round((Date.parse(job.finishedAt) - Date.parse(job.createdAt)) / 60000))} min after it was started`
+                : null,
             ]
               .filter(Boolean)
               .join(" · ")}
