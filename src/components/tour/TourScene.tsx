@@ -16,7 +16,8 @@ import { distance, formatFeetInches, formatMeters } from "@/lib/tour/measure";
 import type { SplatSpot, TourAppearance, TourSpace, Vec3, Waypoint } from "@/lib/tour/types";
 import { CameraRig } from "./CameraRig";
 import { findPlanWalls, type PlanWalls } from "./plan-walls";
-import { makeSpotUniforms, PhotoSpots, spotsOf, withPhotoSpots } from "./PhotoSpots";
+import { makeSpotUniforms, withPhotoSpots } from "./photo-spot-shader";
+import { PhotoSpots, spotsOf } from "./PhotoSpots";
 import type { LivePose, ViewerApi, ViewerMode } from "./viewer-types";
 
 export interface TourSceneProps {

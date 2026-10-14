@@ -5,13 +5,16 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { renderSpotDistances, spotDistanceMaterial, type SpotUniforms } from "./photo-spot-shader";
 
 /**
  * Photo spots of a remastered model (docs/remaster.md §4.6): where the photos were taken, the
  * worker rendered a cube of what they saw (worker/remaster/atrium_remaster/spots.py). Near a spot
  * the model shows its photos, projected onto the model from the spot (so they sit on the walls and
- * furniture they show, and what the spot couldn't see keeps the model's own skins); between spots
- * the two nearest blend, and away from them the model shows alone.
+ * furniture they show, and what the spot couldn't see keeps the model's own skins). One spot shows
+ * at a time, crossfading to the next as the visitor walks, and away from the spots the model shows
+ * alone. How much of a spot's photo shows at each point (where the model's shapes are off, as
+ * little as can be): photo-spot-shader.ts.
  */
 
 export interface PhotoSpot {
@@ -39,102 +42,14 @@ export function spotsOf(scene: THREE.Object3D | null): PhotoSpot[] {
 }
 
 /** A spot's photos show fully within FULL meters of it and fade out by RANGE. */
-const FULL = 0.12;
+const FULL = 0.6;
 const RANGE = 1.6;
+/** Another spot takes over once it's this much nearer than the one showing (meters), the two
+ * crossfading over FADE seconds. */
+const SWITCH = 0.15;
+const FADE = 0.45;
 /** Spots kept loaded (each a cube of photos and a cube of distances). */
 const CACHE = 3;
-const DISTANCE_SIZE = 256;
-const FAR = 40;
-
-export interface SpotUniforms {
-  spotCube0: THREE.IUniform<THREE.Texture | null>;
-  spotCube1: THREE.IUniform<THREE.Texture | null>;
-  spotDist0: THREE.IUniform<THREE.Texture | null>;
-  spotDist1: THREE.IUniform<THREE.Texture | null>;
-  spotPos0: THREE.IUniform<THREE.Vector3>;
-  spotPos1: THREE.IUniform<THREE.Vector3>;
-  spotWeight0: THREE.IUniform<number>;
-  spotWeight1: THREE.IUniform<number>;
-  spotFar: THREE.IUniform<number>;
-  [name: string]: THREE.IUniform;
-}
-
-export function makeSpotUniforms(): SpotUniforms {
-  return {
-    spotCube0: { value: null },
-    spotCube1: { value: null },
-    spotDist0: { value: null },
-    spotDist1: { value: null },
-    spotPos0: { value: new THREE.Vector3() },
-    spotPos1: { value: new THREE.Vector3() },
-    spotWeight0: { value: 0 },
-    spotWeight1: { value: 0 },
-    spotFar: { value: FAR },
-  };
-}
-
-const PACK = /* glsl */ `
-vec4 spotPack(float v) {
-  vec4 enc = fract(vec4(1.0, 255.0, 65025.0, 16581375.0) * v);
-  return enc - enc.yzww * vec4(1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0, 0.0);
-}
-float spotUnpack(vec4 v) { return dot(v, vec4(1.0, 1.0 / 255.0, 1.0 / 65025.0, 1.0 / 16581375.0)); }
-`;
-
-const SPOT_PARS = /* glsl */ `
-uniform samplerCube spotCube0;
-uniform samplerCube spotCube1;
-uniform samplerCube spotDist0;
-uniform samplerCube spotDist1;
-uniform vec3 spotPos0;
-uniform vec3 spotPos1;
-uniform float spotWeight0;
-uniform float spotWeight1;
-uniform float spotFar;
-varying vec3 vSpotWorld;
-${PACK}
-// Whether the spot saw this point: nothing nearer along the way (its cube of distances).
-float spotSees(samplerCube distances, vec3 d) {
-  float seen = spotUnpack(textureCube(distances, d)) * spotFar;
-  float here = length(d);
-  return here < seen + 0.04 + 0.02 * here ? 1.0 : 0.0;
-}
-`;
-
-const SPOT_FRAGMENT = /* glsl */ `
-{
-  vec3 spotColor = vec3(0.0);
-  float spotSay = 0.0;
-  if (spotWeight0 > 0.001) {
-    vec3 d = vSpotWorld - spotPos0;
-    float w = spotWeight0 * spotSees(spotDist0, d);
-    spotColor += w * textureCube(spotCube0, d).rgb;
-    spotSay += w;
-  }
-  if (spotWeight1 > 0.001) {
-    vec3 d = vSpotWorld - spotPos1;
-    float w = spotWeight1 * spotSees(spotDist1, d);
-    spotColor += w * textureCube(spotCube1, d).rgb;
-    spotSay += w;
-  }
-  if (spotSay > 0.0) diffuseColor.rgb = mix(diffuseColor.rgb, spotColor / spotSay, min(spotSay, 1.0));
-}
-`;
-
-/** Teach an (unlit) material of the remastered model to show the photo spots. */
-export function withPhotoSpots(material: THREE.Material, uniforms: SpotUniforms) {
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vSpotWorld;")
-      .replace("#include <project_vertex>", "#include <project_vertex>\nvSpotWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-    shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", `#include <common>\n${SPOT_PARS}`)
-      .replace("#include <map_fragment>", `#include <map_fragment>\n${SPOT_FRAGMENT}`);
-  };
-  material.customProgramCacheKey = () => "atrium-photo-spots";
-  material.needsUpdate = true;
-}
 
 interface Loaded {
   state: "loading" | "ready" | "failed";
@@ -176,6 +91,8 @@ export function PhotoSpots({
   const { gl, camera, invalidate } = useThree();
   const cache = useRef(new Map<number, Loaded>());
   const frame = useRef(0);
+  // The spot showing, the one it took over from and how far along the crossfade is (0–1).
+  const shown = useRef({ current: -1, previous: -1, fade: 1 });
   const positions = useMemo(() => spots.map((s) => new THREE.Vector3(...s.position)), [spots]);
 
   // What the spots render their distances from: the model alone, every surface writing its distance.
@@ -183,12 +100,7 @@ export function PhotoSpots({
     if (!model) return null;
     const scene = new THREE.Scene();
     scene.add(model.clone(true));
-    const material = new THREE.ShaderMaterial({
-      uniforms: { spotPos: { value: new THREE.Vector3() }, spotFar: { value: FAR } },
-      vertexShader: "varying vec3 vWorld; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }",
-      fragmentShader: `uniform vec3 spotPos; uniform float spotFar; varying vec3 vWorld; ${PACK} void main() { gl_FragColor = spotPack(clamp(length(vWorld - spotPos) / spotFar, 0.0, 0.9999)); }`,
-      side: THREE.DoubleSide,
-    });
+    const material = spotDistanceMaterial();
     scene.overrideMaterial = material;
     return { scene, material };
   }, [model]);
@@ -208,7 +120,6 @@ export function PhotoSpots({
     };
   }, [spots, distance, uniforms]);
 
-
   const load = (i: number): Loaded => {
     let entry = cache.current.get(i);
     if (entry) return entry;
@@ -216,23 +127,7 @@ export function PhotoSpots({
     cache.current.set(i, entry);
     const loading = entry;
     // Its distances, from the model, right away.
-    if (distance) {
-      const target = new THREE.WebGLCubeRenderTarget(DISTANCE_SIZE, {
-        type: THREE.UnsignedByteType,
-        generateMipmaps: false,
-        minFilter: THREE.NearestFilter,
-        magFilter: THREE.NearestFilter,
-      });
-      const cubeCamera = new THREE.CubeCamera(0.03, FAR, target);
-      cubeCamera.position.copy(positions[i]);
-      distance.material.uniforms.spotPos.value.copy(positions[i]);
-      const clear = gl.getClearColor(new THREE.Color());
-      const alpha = gl.getClearAlpha();
-      gl.setClearColor(0xffffff, 1);
-      cubeCamera.update(gl, distance.scene);
-      gl.setClearColor(clear, alpha);
-      loading.distances = target;
-    }
+    if (distance) loading.distances = renderSpotDistances(gl, distance.scene, distance.material, positions[i]);
     const image = new Image();
     image.crossOrigin = "anonymous";
     image.decoding = "async";
@@ -258,54 +153,48 @@ export function PhotoSpots({
     return entry;
   };
 
-  useFrame(() => {
+  useFrame((_, dt) => {
     frame.current++;
+    const show = shown.current;
     let w0 = 0;
     let w1 = 0;
-    let a = -1;
-    let b = -1;
+    let current: Loaded | null = null;
+    let previous: Loaded | null = null;
     if (active && positions.length) {
-      // The two nearest spots, each weighed by how near it is.
-      let da = Infinity;
-      let db = Infinity;
-      positions.forEach((p, i) => {
-        const d = p.distanceTo(camera.position);
-        if (d < da) {
-          db = da;
-          b = a;
-          da = d;
-          a = i;
-        } else if (d < db) {
-          db = d;
-          b = i;
-        }
+      // One spot at a time, so nothing shows twice where the model's shapes are off: the nearest,
+      // until another is clearly nearer; then the two crossfade.
+      const distance = (i: number) => (i < 0 ? Infinity : positions[i].distanceTo(camera.position));
+      let nearest = 0;
+      positions.forEach((_, i) => {
+        if (distance(i) < distance(nearest)) nearest = i;
       });
+      if (nearest !== show.current && (distance(nearest) < distance(show.current) - SWITCH || distance(show.current) >= RANGE)) {
+        show.previous = show.current;
+        show.current = nearest;
+        show.fade = 0;
+      }
       const weight = (d: number) => (d <= FULL ? 1 : Math.max(0, 1 - (d - FULL) / (RANGE - FULL)));
       const ready = (i: number) => {
-        if (i < 0) return null;
+        if (i < 0 || distance(i) >= RANGE) return null;
         const entry = load(i);
         entry.used = frame.current;
         return entry.state === "ready" ? entry : null;
       };
-      const ea = da < RANGE ? ready(a) : null;
-      const eb = db < RANGE ? ready(b) : null;
-      w0 = ea ? weight(da) : 0;
-      w1 = eb ? weight(db) : 0;
-      const sum = w0 + w1;
-      if (sum > 1) {
-        w0 /= sum;
-        w1 /= sum;
-      }
-      if (ea) uniforms.spotPos0.value.copy(positions[a]);
-      if (eb) uniforms.spotPos1.value.copy(positions[b]);
-      // A slot not in use lets go of its spot (which may be dropped from the cache).
-      uniforms.spotCube0.value = ea?.cube ?? null;
-      uniforms.spotDist0.value = ea?.distances?.texture ?? null;
-      uniforms.spotCube1.value = eb?.cube ?? null;
-      uniforms.spotDist1.value = eb?.distances?.texture ?? null;
-    } else {
-      uniforms.spotCube0.value = uniforms.spotDist0.value = uniforms.spotCube1.value = uniforms.spotDist1.value = null;
+      current = ready(show.current);
+      // The new spot fades in once its pictures are there; till then the old one stays.
+      if (current) show.fade = Math.min(1, show.fade + dt / FADE);
+      previous = show.fade < 1 ? ready(show.previous) : null;
+      const f = show.fade * show.fade * (3 - 2 * show.fade);
+      w0 = current ? weight(distance(show.current)) * f : 0;
+      w1 = previous ? weight(distance(show.previous)) * (1 - f) : 0;
+      if (current) uniforms.spotPos0.value.copy(positions[show.current]);
+      if (previous) uniforms.spotPos1.value.copy(positions[show.previous]);
     }
+    // A slot not in use lets go of its spot (which may be dropped from the cache).
+    uniforms.spotCube0.value = current?.cube ?? null;
+    uniforms.spotDist0.value = current?.distances?.texture ?? null;
+    uniforms.spotCube1.value = previous?.cube ?? null;
+    uniforms.spotDist1.value = previous?.distances?.texture ?? null;
     uniforms.spotWeight0.value = w0;
     uniforms.spotWeight1.value = w1;
   });

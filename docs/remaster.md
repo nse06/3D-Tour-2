@@ -204,10 +204,16 @@ photo saw the point, the model shows. Each cube is one JPEG, its faces in OpenGL
 
 The pictures upload before the model (storage kind `spot`), and the model lists them in its scene's extras
 (`atriumSpots`: version, face size, and per spot its position, picture and photo count), so nothing else on the site
-changes. The viewer, while the remastered model shows, loads the two spots nearest the camera (three at most in
-memory), renders each one's distances once (a cube camera), and projects its photos onto the model from the spot
-where the spot saw that surface: fully within 12 cm of a spot, fading out by 1.6 m, the two nearest blending
-between. Nothing marks the spots on the floor: the walkthrough is free to walk, and the photos fade in near them.
+changes. The viewer, while the remastered model shows, loads the spot nearest the camera (three at most in
+memory), renders its distances once (a 512 px cube camera, read at five texels for a soft edge), and projects its
+photos onto the model from the spot where the spot saw that surface (`photo-spot-shader.ts`). The photos sit on the
+model's shapes, so whatever a shape has wrong (a painting leaning 30 cm out from its wall, clutter the scan caught
+in pieces) shows displaced when seen from elsewhere, by more the farther the viewer's line of sight turns from the
+spot's: per pixel, a photo shows fully where the two lines of sight are within 6° and gives way to the skins by
+20°. One spot shows at a time, so nothing shows twice: the nearest, fully within 60 cm and fading out by 1.6 m,
+until another is 15 cm nearer; then the two crossfade over 0.45 s. (Blending the two nearest, as the first viewer
+did, showed a misplaced painting twice, see-through; a real two-room home showed it.) Nothing marks the spots on the
+floor: the walkthrough is free to walk, and the photos fade in near them.
 
 ### 4.7 (reserved)
 
@@ -344,4 +350,7 @@ The site's flow (Remaster with AI, progress, the photo spots' and model's upload
 photos kept while a remaster uses them) was checked end to end on a production build with stand-in GPUs, and the
 Supabase store against Postgres + PostgREST with row-level security. The viewer's photo spots were checked in
 Chromium on a remastered synthetic room: WebGL samples the cubes as the worker lays them out, the photos show at a
-spot and the skins away from it, with no shader errors.
+spot and the skins away from it, with no shader errors. The one-spot viewer was checked in Chromium against the
+two-spot one on a room whose model leaves out a painting standing 35 cm from its wall and a box on the floor (the
+spots' cubes of the real room, the skins 48 photos' average through the model): the painting shows once where it
+showed twice, exactly as photographed at a spot, and fine detail (wallpaper stripes) as sharp as before.
