@@ -74,3 +74,21 @@ def test_a_spot_shows_its_photo_in_the_skins_colors(tmp_path):
     t, tri, bary = caster.rays(np.broadcast_to(spot.position, d.shape).astype(np.float32), d.astype(np.float32))
     behind = views.render(mesh, views.Hits(tri.reshape(64, 64), bary.reshape(64, 64, 2), t.reshape(64, 64)))
     assert np.abs(back - behind).max() < 2 / 255
+
+
+def test_what_a_photo_leaves_out_fades_in_around_it():
+    """The phone's people mask is a coarse grid, and the depth model's disagreement is coarser than the
+    photo: what they leave out is all out, and the photo fades back in around it instead of stepping
+    from block to block (the steps showed as jagged outlines in the photo spots)."""
+    grid = np.zeros((12, 16), bool)
+    grid[4:9, 5:9] = True  # a person, in the phone's cells (10 px each at 160 × 120)
+    w, h = 160, 120
+    soft = spots.soft_quiet([grid, None], w, h)
+    full = np.asarray(spots.Image.fromarray(soft).resize((w, h), spots.Image.BILINEAR), np.float32)
+    person = np.asarray(spots.Image.fromarray(grid.astype(np.uint8) * 255).resize((w, h), spots.Image.NEAREST)) > 127
+    assert full[person].min() > 0.9, "all of the person is left out"
+    assert full[:, :20].max() < 0.01 and full[:, 120:].max() < 0.01, "far from it, nothing is"
+    # Across its edge, a ramp several pixels wide rather than a step.
+    row = full[60, 30:60]
+    assert np.abs(np.diff(row)).max() < 0.3 and (row > 0.05).sum() - (row > 0.95).sum() >= 4, row.round(2)
+    assert not spots.soft_quiet([None, np.zeros((30, 40), bool)], w, h).any(), "nothing left out"

@@ -121,6 +121,27 @@ def choose(mesh: Mesh, capture: Capture, cfg: SpotConfig, caster: Caster | None 
     return out[: cfg.max_spots]
 
 
+def soft_quiet(masks: list, w: int, h: int, scale: int = 4, grow: int = 2) -> np.ndarray:
+    """Where a w × h photo is left out (masks: bool, any size: the people the phone found, in its
+    coarse grid, and where the depth model disagreed with the shapes), as a float mask at 1/`scale`
+    of its size: all of it out, and a few pixels around it fading back in, so what a spot's picture
+    takes from the other photos or the model there has no jagged, blocky edge."""
+    from scipy import ndimage
+
+    sw, sh = max(1, w // scale), max(1, h // scale)
+    out = np.zeros((sh, sw), np.float32)
+    for m in masks:
+        if m is None or not m.any():
+            continue
+        shrink = m.shape[1] >= sw and m.shape[0] >= sh
+        small = Image.fromarray(np.asarray(m, np.uint8) * 255).resize((sw, sh), Image.BOX if shrink else Image.BILINEAR)
+        out = np.maximum(out, np.asarray(small, np.float32) / 255)
+    if not out.any():
+        return out
+    out = (out > 0.02).astype(np.float32)  # any of a cell: all of it out
+    return np.maximum(out, ndimage.gaussian_filter(ndimage.maximum_filter(out, size=2 * grow + 1), grow / 2))
+
+
 class Photos:
     """The photos (as the skins saw them: sharpened where they were) and the model's depth at each, on
     the device, a few dozen at a time."""
@@ -140,10 +161,7 @@ class Photos:
         dk = K.copy()
         dk[:2] *= 0.5
         depth = self.caster.view(dk, cam.camtoworld, max(1, w // 2), max(1, h // 2)).depth
-        quiet = np.zeros((h, w), bool) if people is None else people
-        if cam.name in self.disagree:
-            m = self.disagree[cam.name]
-            quiet |= np.asarray(Image.fromarray(m.astype(np.uint8) * 255).resize((w, h), Image.NEAREST)) > 127
+        quiet = soft_quiet([people, self.disagree.get(cam.name)], w, h)
         t = lambda a: torch.from_numpy(np.ascontiguousarray(a)).to(self.device)  # noqa: E731
         entry = (t(rgb.astype(np.float32) / 255).permute(2, 0, 1)[None], K, t(depth.astype(np.float32))[None, None], t(quiet.astype(np.float32))[None, None], w, h)
         if len(self.cache) >= self.cfg.cache:
@@ -187,7 +205,6 @@ def paint_face(spot: Spot, face: int, mesh: Mesh, caster: Caster, photos: Photos
             continue
         modeled = sample(depth, u, v, w, h, "nearest")[:, 0]
         seen = inside & ((modeled - z).abs() <= cfg.agree_abs + cfg.agree_rel * z)
-        seen &= sample(quiet, u, v, w, h, "nearest")[:, 0] < 0.5
         if not bool(seen.any()):
             continue
         # Where the photo shows it, as training lined the photo up (warp_image), in the skins' colors.
@@ -208,6 +225,8 @@ def paint_face(spot: Spot, face: int, mesh: Mesh, caster: Caster, photos: Photos
         border = torch.minimum(torch.minimum(u, w - u), torch.minimum(v, h - v)) / (cfg.feather * max(w, h))
         smear = smear_px(cam, w / cam.width) or 0.0
         say = torch.exp(-((angle / sigma) ** 2)) * border.clamp(0, 1) / (1 + 0.3 * smear)
+        # Not where it showed people or the depth model disagreed (fading in around them).
+        say = say * (1 - sample(quiet, u, v, w, h)[:, 0]).clamp(0, 1)
         say = torch.where(seen, say, torch.zeros_like(say))
         total += color * say[:, None]
         weight += say

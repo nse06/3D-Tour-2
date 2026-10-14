@@ -197,7 +197,9 @@ if it's at least 25 cm from every surface. From each spot the worker renders a c
 finished model and paints the photos over it: each pixel from the photos (the spot's own and up to 24 taken within
 3.5 m) that saw the same point from nearly the same direction, by the angle between their line of sight and the
 spot's (8° fades a photo's say by two thirds), never across something in front (the model's depth at the photo)
-nor where it showed people or the depth model disagreed, fading in from each photo's border, and with each photo's
+nor where it showed people or the depth model disagreed (both masks coarse: what they leave out fades back in over
+a few pixels around it, instead of the phone's people grid stepping from cell to cell, which showed as jagged
+outlines on floors), fading in from each photo's border, and with each photo's
 color and alignment as the skins learned them, so the photos agree with each other and with the model. Where no
 photo saw the point, the model shows. Each cube is one JPEG, its faces in OpenGL's layout in a 3 × 2 grid (+x −x
 +y over −y +z −z), which WebGL samples as stored (checked in Chromium).
@@ -330,7 +332,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 54 tests (below)
+python -m pytest tests -q        # CPU, 55 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```
