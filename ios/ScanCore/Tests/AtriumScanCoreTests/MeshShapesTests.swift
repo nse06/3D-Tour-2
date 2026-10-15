@@ -168,6 +168,54 @@ final class MeshShapesTests: XCTestCase {
         XCTAssertTrue(shapes.vertices.contains { $0.y > 0.25 && abs($0.x - 2) < 0.25 && abs($0.z - 1.6) < 0.25 })
     }
 
+    func testWhatTouchesNothingGoes() {
+        let scan = PhotoTexturingTests.room()
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        // What the scanner kept of someone walking through: a shin, floating mid-room. A coat on a
+        // hook (by the wall) and a pendant light (under the ceiling) touch something.
+        let shin = Self.box(lo: Vec3(2, 0.3, 1.4), hi: Vec3(2.15, 0.8, 1.55), seed: 21)
+        let mesh = Self.adding(
+            [shin[1], shin[3]]  // the sides the scanner saw as it went by
+                + Self.box(lo: Vec3(0.08, 1, 1), hi: Vec3(0.16, 1.25, 1.12), seed: 31)
+                + Self.box(lo: Vec3(1.5, 2, 1.2), hi: Vec3(1.7, 2.2, 1.4), seed: 41),
+            to: Self.roomMesh())
+        let shapes = MeshShapes.build([mesh], rooms: rooms, walls: walls, objects: scan.objects)
+        let within = { (lo: Vec3, hi: Vec3) in shapes.vertices.contains { $0.x > lo.x && $0.y > lo.y && $0.z > lo.z && $0.x < hi.x && $0.y < hi.y && $0.z < hi.z } }
+        XCTAssertFalse(within(Vec3(1.95, 0.25, 1.35), Vec3(2.2, 0.85, 1.6)), "the shin goes")
+        XCTAssertTrue(within(Vec3(0.05, 0.95, 0.95), Vec3(0.2, 1.3, 1.15)), "the coat by the wall stays")
+        XCTAssertTrue(within(Vec3(1.45, 1.95, 1.15), Vec3(1.75, 2.25, 1.45)), "the pendant light stays")
+        XCTAssertTrue(within(Self.pouf.center - Vec3(repeating: 0.4), Self.pouf.center + Vec3(repeating: 0.4)), "the pouf stays")
+    }
+
+    func testAChairScannedWithoutItsLegsKeepsRoomPlans() {
+        var scan = PhotoTexturingTests.room()
+        let id = scan.rooms[0].id
+        scan.objects += [
+            ScanObject(id: "BARE", roomId: id, category: "chair", transform: .translating(Vec3(2, 0.42, 1.5)), size: Vec3(0.5, 0.84, 0.5)),
+            ScanObject(id: "LEGS", roomId: id, category: "chair", transform: .translating(Vec3(1.2, 0.42, 1.5)), size: Vec3(0.5, 0.84, 0.5)),
+        ]
+        let rooms = Layout.rooms(from: scan)
+        let walls = Layout.walls(from: scan, rooms: rooms, defaultThickness: 0.12)
+        func chair(_ x: Float, legs: Bool, seed: UInt32) -> [ScanMesh] {
+            var parts = Self.box(lo: Vec3(x - 0.25, 0.4, 1.25), hi: Vec3(x + 0.25, 0.46, 1.75), seed: seed)
+                + Self.box(lo: Vec3(x - 0.25, 0.46, 1.69), hi: Vec3(x + 0.25, 0.84, 1.75), seed: seed + 10)
+            if legs {
+                for (dx, dz) in [(-0.22, -0.22), (0.18, -0.22), (-0.22, 0.18), (0.18, 0.18)] as [(Float, Float)] {
+                    parts += Self.box(lo: Vec3(x + dx, 0, 1.5 + dz), hi: Vec3(x + dx + 0.04, 0.4, 1.5 + dz + 0.04), seed: seed + 20)
+                }
+            }
+            return parts
+        }
+        let mesh = Self.adding(chair(2, legs: false, seed: 51) + chair(1.2, legs: true, seed: 81), to: Self.roomMesh())
+        let shapes = MeshShapes.build([mesh], rooms: rooms, walls: walls, objects: scan.objects)
+        // The scanned chair stands on its legs; the bare one keeps RoomPlan's chair, legs and all,
+        // and its floating seat and back go.
+        XCTAssertTrue(shapes.replaced.contains("LEGS"))
+        XCTAssertFalse(shapes.replaced.contains("BARE"))
+        XCTAssertFalse(shapes.vertices.contains { abs($0.x - 2) < 0.3 && abs($0.z - 1.5) < 0.3 && $0.y > 0.3 }, "the seat doesn't float")
+    }
+
     func testTheMeshReplacesBoxesItCoversOnly() {
         var scan = PhotoTexturingTests.room()
         let (c, r) = Self.pouf

@@ -24,7 +24,9 @@ enum ScanBuilder {
     ///     (RoomAlignment), so photos line up across rooms.
     /// 12: low clutter on the floor (shoes, a bag, a heap of clothes) left to the floor's photos
     ///     instead of floating shells of it (MeshShapes).
-    static let pipelineVersion = 12
+    /// 13: loose pieces that touch nothing (what the scanner kept of someone walking through) go;
+    ///     a chair or table scanned without its legs keeps RoomPlan's, legs and all (MeshShapes).
+    static let pipelineVersion = 13
 
     enum Step: Int, CaseIterable {
         case combining, modeling, packaging

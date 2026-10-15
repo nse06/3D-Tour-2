@@ -217,14 +217,19 @@ painted onto the model, so the walkthrough shows the real walls, floors, art, wi
   home reaches; build 7: 3.5 cm and 60,000), loose bits under 10 cm are dropped, and so is low clutter resting on
   the floor (build 19, pipeline 12): a loose piece no taller than 30 cm and no wider than 1 m (shoes, a bag, a heap
   of clothes), which the floor's cut leaves as a shell floating above it, so the floor's photos show it instead
-  (unless it lies in a RoomPlan object's box: an ottoman's mesh is the ottoman's).
+  (unless it lies in a RoomPlan object's box: an ottoman's mesh is the ottoman's). So does (build 20, pipeline 13)
+  a loose piece that touches nothing: more than 12 cm off the floor, 15 cm from every wall and 60 cm below the
+  ceiling, in no RoomPlan box, no wider than 80 cm and no bigger than 0.25 m² — on a real two-room scan, 35 pieces
+  of someone walking through (legs, 15–95 cm up in the open floor), while a lamp's shade, coats on hooks and
+  pictures stayed.
   Every triangle keeps facing the
   side it was seen from (ARKit's normals; both sides of a thin top that collapses are kept). Four rounds of Taubin
   smoothing (λ 0.5, μ −0.53; open edges stay put) flatten the scanner's bumps without shrinking the shape, so tops
   and fronts become a few large patches instead of a patchwork of facets; a sliver the smoothing turns over is
   dropped. A RoomPlan object whose box the mesh covers with at least half its footprint
   in area loses its box; the others keep their box (a TV flat on a wall, which the cleanup removed) and the mesh
-  scraps inside it go. The mesh is cut into *patches* by region growing over shared edges (faces within ~44° of
+  scraps inside it go. So does a chair or table whose mesh stops short of the floor (by more than 15 cm or 30% of
+  its height: thin legs the scanner missed): RoomPlan's, legs and all, rather than a seat floating in the air. The mesh is cut into *patches* by region growing over shared edges (faces within ~44° of
   the patch's normal and ~53° of its first face, so a patch can't creep around a rounded shape; patches under
   0.01 m² join the neighbour they face most like if every face is within ~70° of it), each its own chart; since a
   patch is only roughly flat, every texel is painted at its own point on the patch's faces (and judged by its
@@ -449,7 +454,7 @@ info.json            app / device / capture metadata, pipeline version, alignmen
      GPU's job (waiting, training n%, ready) — see [photoreal.md](photoreal.md). Sending the scan again drops it;
    * **Rebuild walkthrough** — re-processes the saved RoomPlan data with the current pipeline (no rescanning);
      scans built by an older pipeline (`record.pipeline` < `ScanBuilder.pipelineVersion`) show it as a card
-     ("Fix overlapping rooms" … "Clear floating shards off the floors"). A rebuilt scan has to be sent again;
+     ("Fix overlapping rooms" … "Clear what floats in the rooms"). A rebuilt scan has to be sent again;
    * the summary says how much the photos cover, how many photos had people painted out, how many photos were lined
      up with each other (and by how much on average), and whether furniture
      was shaped from the LiDAR mesh (in how many rooms) — or why not (switched off, no mesh recorded: the

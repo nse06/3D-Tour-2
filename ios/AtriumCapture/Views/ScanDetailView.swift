@@ -171,9 +171,12 @@ struct ScanDetailView: View {
         case 10:
             title = "Line the rooms up and clear the floors"
             text = "Atrium Capture now places the rooms of a multi-room scan by the path you walked as well as RoomPlan's floor plan, so photos from one room land right on the next. And shoes, bags and clothes left on the floor no longer float as shards: the scanner only saw their tops, so the floor's photos show them instead. No rescanning needed. Afterwards, send it to Atrium again and make it AI-enhanced."
+        case 11:
+            title = "Clear floating shards out of the rooms"
+            text = "Shoes, bags and clothes left on the floor came out as floating shards in the walkthrough, and so did bits of anyone who walked through while you scanned. Atrium Capture now leaves them to the photos, and chairs and tables whose thin legs the scanner missed stand on legs instead of floating. No rescanning needed. Afterwards, send it to Atrium again and make it AI-enhanced."
         default:
-            title = "Clear floating shards off the floors"
-            text = "Shoes, bags and clothes left on the floor came out as floating shards in the walkthrough: the scanner only saw their tops. Atrium Capture now leaves them to the floor's photos, which show them as they are. No rescanning needed. Afterwards, send it to Atrium again and make it AI-enhanced."
+            title = "Clear what floats in the rooms"
+            text = "Bits of anyone who walked through while you scanned came out floating in the walkthrough, and chairs and tables whose thin legs the scanner missed floated too. Atrium Capture now leaves the bits to the photos and stands those chairs and tables on legs. No rescanning needed. Afterwards, send it to Atrium again and make it AI-enhanced."
         }
         return VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: "wand.and.stars")

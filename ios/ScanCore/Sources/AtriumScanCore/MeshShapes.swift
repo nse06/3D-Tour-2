@@ -37,6 +37,17 @@ struct MeshShapes {
         /// in a RoomPlan object's box (an ottoman) is that object's, which `settle` sees to.
         var lowClutterHeight: Double = 0.3
         var lowClutterWidth: Float = 1.0
+        /// Loose pieces that touch nothing go too: clear of the floor by more than
+        /// `floatClearance`, of every wall by `floatWallClearance` and of the ceiling by
+        /// `floatCeilingClearance` (meters), in no RoomPlan object's box, no wider than `floatWidth`
+        /// and no bigger than `floatArea` (m²) — what the scanner kept of someone walking through
+        /// (legs), or scraps of something it barely saw. A lamp's shade (bigger), a picture on a wall
+        /// or a pendant light under the ceiling stay.
+        var floatClearance: Double = 0.12
+        var floatWallClearance: Double = 0.15
+        var floatCeilingClearance: Double = 0.6
+        var floatWidth: Float = 0.8
+        var floatArea: Float = 0.25
         /// Rounds of smoothing after simplifying: flatter tops and fronts make bigger patches, each
         /// painted from one photo, instead of a patchwork of facets.
         var smoothing = 4
@@ -114,12 +125,19 @@ struct MeshShapes {
 
         // 2. Simplified on a grid, coarser until it fits the budget; loose bits of noise and low
         //    clutter on the floor dropped.
-        let floors = Dictionary(rooms.map { (Int32($0.index), $0.floorY) }, uniquingKeysWith: { a, _ in a })
+        let levels = Dictionary(rooms.map { (Int32($0.index), (floor: $0.floorY, ceiling: $0.ceilingY)) }, uniquingKeysWith: { a, _ in a })
         let boxes = objects.filter { $0.transform.isFinite }.map { (frame: Furniture.rigid($0.transform), half: $0.size / 2 + Vec3(repeating: 0.05)) }
+        let inObject = { (p: Vec3) in boxes.contains { Self.inside(p, $0.frame, $0.half) } }
+        let nearWall = { (p: Vec3, margin: Double) -> Bool in
+            let q = plan(p), y = Double(p.y)
+            return walls.contains { w in
+                abs(w.offset(of: q)) - w.thickness / 2 < margin && y > w.y0 - margin && y < w.y1 + margin && w.s(of: q) > -margin && w.s(of: q) < w.length + margin
+            }
+        }
         var grid = options.grid
         repeat {
             shapes.weld(soup, grid: grid)
-            shapes.dropLoosePieces(options, floors: floors) { p in boxes.contains { Self.inside(p, $0.frame, $0.half) } }
+            shapes.dropLoosePieces(options, levels: levels, inObject: inObject, nearWall: nearWall)
             if shapes.triangles.count <= options.maxTriangles { break }
             grid *= 1.25
         } while grid < 0.5
@@ -247,10 +265,14 @@ struct MeshShapes {
         }
     }
 
-    /// Drops connected pieces smaller than `minPiece` across, and low clutter: pieces resting on
-    /// their room's floor (`floors`, by room index), no taller than `lowClutterHeight` above it and
-    /// no wider than `lowClutterWidth`, unless their middle is in a RoomPlan object (`inObject`).
-    private mutating func dropLoosePieces(_ options: Options, floors: [Int32: Double], inObject: (Vec3) -> Bool) {
+    /// Drops loose pieces: smaller than `minPiece` across; low clutter (resting on their room's floor,
+    /// no taller than `lowClutterHeight` above it and no wider than `lowClutterWidth`); and pieces
+    /// that touch nothing (see `floatClearance`). A piece whose middle is in a RoomPlan object
+    /// (`inObject`) is that object's and only the size rule applies. `levels`: each room's floor and
+    /// ceiling, by room index; `nearWall(p, margin)`: whether a point is within `margin` of a wall.
+    private mutating func dropLoosePieces(
+        _ options: Options, levels: [Int32: (floor: Double, ceiling: Double)], inObject: (Vec3) -> Bool, nearWall: (Vec3, Double) -> Bool
+    ) {
         var parent = Array(0..<Int32(vertices.count))
         func find(_ x: Int32) -> Int32 {
             var r = x
@@ -274,20 +296,44 @@ struct MeshShapes {
             lo[r] = lo[r].map { simd_min_(p, $0) } ?? p
             hi[r] = hi[r].map { simd_max_(p, $0) } ?? p
         }
-        // Each piece's floor: its first triangle's room's.
-        var floorOf: [Int32: Double] = [:]
-        for (t, room) in zip(triangles, roomOf) where floorOf[find(t.x)] == nil {
-            if let y = floors[room] { floorOf[find(t.x)] = y }
-        }
-        keep { t in
+        // Each piece's room (its first triangle's) and area.
+        var levelOf: [Int32: (floor: Double, ceiling: Double)] = [:]
+        var areaOf: [Int32: Float] = [:]
+        for (t, room) in zip(triangles, roomOf) {
             let r = find(t.x)
-            let size = hi[r]! - lo[r]!
-            guard vlength(size) >= options.minPiece else { return false }
-            guard let floor = floorOf[r] else { return true }
-            // Resting on the floor: as low as what the floor's cut leaves of it (up to 15 cm).
-            let low = Double(lo[r]!.y) - floor < options.classifiedMargin + 0.02 && Double(hi[r]!.y) - floor <= options.lowClutterHeight
-            return !(low && (size.x * size.x + size.z * size.z).squareRoot() <= options.lowClutterWidth && !inObject((lo[r]! + hi[r]!) / 2))
+            areaOf[r, default: 0] += area(t)
+            if levelOf[r] == nil, let level = levels[room] { levelOf[r] = level }
         }
+        var drop = Set<Int32>(), floating = Set<Int32>()
+        for (r, l) in lo {
+            let h = hi[r]!, size = h - l
+            if vlength(size) < options.minPiece {
+                drop.insert(r)
+                continue
+            }
+            guard let level = levelOf[r], !inObject((l + h) / 2) else { continue }
+            let bottom = Double(l.y) - level.floor, top = Double(h.y) - level.floor
+            // Resting on the floor: as low as what the floor's cut leaves of it (up to 15 cm).
+            if bottom < options.classifiedMargin + 0.02 && top <= options.lowClutterHeight
+                && (size.x * size.x + size.z * size.z).squareRoot() <= options.lowClutterWidth
+            {
+                drop.insert(r)
+            } else if bottom > options.floatClearance && Double(h.y) < level.ceiling - options.floatCeilingClearance
+                && vlength(size) <= options.floatWidth && (areaOf[r] ?? 0) <= options.floatArea
+            {
+                floating.insert(r)
+            }
+        }
+        // Floating, unless some of it is by a wall (a shelf, coats on a hook).
+        if !floating.isEmpty {
+            var held = Set<Int32>()
+            for (i, p) in vertices.enumerated() {
+                let r = find(Int32(i))
+                if floating.contains(r), !held.contains(r), nearWall(p, options.floatWallClearance) { held.insert(r) }
+            }
+            drop.formUnion(floating.subtracting(held))
+        }
+        keep { t in !drop.contains(find(t.x)) }
     }
 
     /// Keeps the triangles `include` accepts (and the vertices they use).
@@ -330,9 +376,16 @@ struct MeshShapes {
             guard let room, meshed.contains(where: { $0.index == room.index }) else { continue }
             let frame = Furniture.rigid(o.transform)
             let half = o.size / 2 + Vec3(repeating: 0.05)
-            var area: Float = 0
-            for t in triangles where Self.inside(center(t), frame, half) { area += self.area(t) }
-            if area >= 0.5 * o.size.x * o.size.z {
+            var area: Float = 0, lowest = Float.infinity
+            for t in triangles where Self.inside(center(t), frame, half) {
+                area += self.area(t)
+                lowest = min(lowest, vertices[Int(t.x)].y, vertices[Int(t.y)].y, vertices[Int(t.z)].y)
+            }
+            // A chair or table whose thin legs the scanner missed keeps RoomPlan's (legs and all)
+            // rather than a seat or top floating in the air.
+            let base = o.transform.translation.y - o.size.y / 2
+            let legless = (o.category == "chair" || o.category == "table") && lowest - base > max(0.15, 0.3 * o.size.y)
+            if area >= 0.5 * o.size.x * o.size.z && !legless {
                 replaced.insert(o.id)
             } else {
                 boxes.append((frame, half))
