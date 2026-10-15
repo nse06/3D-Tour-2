@@ -19,7 +19,7 @@ def held_out_error(truth, mesh, count=5):
     for k in range(count):
         pose = look(np.array([1.2 + 0.1 * k, 1.45, 1.4 + 0.2 * math.sin(k)]), 0.9 * k + 0.3, -0.2)
         hits = caster.view(truth["K"], pose, room.W, room.H)
-        exact = room.truth_color(truth["charts"], truth["mesh"], hits)
+        exact = np.clip(room.truth_color(truth["charts"], truth["mesh"], hits), 0, 1)  # what a model can show
         errors.append(np.abs(views.render(mesh, hits) - exact).mean())
     return float(np.mean(errors))
 
@@ -185,3 +185,22 @@ def test_many_photos_seldom_seen_dont_turn_the_skins_to_rainbows(tmp_path):
     tint = np.abs(change - change.mean(-1, keepdims=True))  # how much a texel's change differs between its channels
     seen = result.seen[0] > 0
     assert tint[seen].mean() < 0.02 and tint[~seen].mean() < 0.005, (tint[seen].mean(), tint[~seen].mean())
+
+
+def test_a_blown_out_window_comes_out_white(tmp_path):
+    """Glass brighter than any photo holds is white in every photo, whatever its exposure: it says the
+    glass is at least that bright, not that it's grey (the brighter photos pulled a real home's windows
+    down to a dull grey). Around it the wall stays as the photos show it."""
+    truth = room.write(tmp_path, glow=2.0, brightness_spread=0.3, smeared=())
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    capture = load(tmp_path / "capture")
+    cfg = skins.SkinConfig(**FAST)
+    result = skins.train(mesh, skins.prepare_photos(mesh, capture, cfg, log=lambda _: None), cfg, log=lambda _: None)
+    x0, y0, _, _ = truth["charts"][4].rect
+    a0, a1, b0, b1 = (round(v / room.TEXEL) for v in room.GLOW)
+    glass = slice(2 * (y0 + room.PAD + b0) + 6, 2 * (y0 + room.PAD + b1) - 6), slice(2 * (x0 + room.PAD + a0) + 6, 2 * (x0 + room.PAD + a1) - 6)
+    seen = result.seen[0][glass] > 0
+    assert seen.mean() > 0.5, "photos see the glass"
+    trained = result.mesh.atlases[0][glass][seen]
+    assert trained.mean() > 0.985 and np.quantile(trained.min(-1), 0.05) > 0.95, (trained.mean(), np.quantile(trained.min(-1), 0.05))
+    assert held_out_error(truth, result.mesh) < 0.8 * held_out_error(truth, mesh), "the rest still beats the painting"

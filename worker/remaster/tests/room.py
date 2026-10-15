@@ -41,6 +41,7 @@ class Chart:
     height: float
     hue: tuple[float, float, float]
     rect: tuple[int, int, int, int] = (0, 0, 0, 0)  # x, y, w, h in texels, padding included
+    glow: tuple[float, float, float, float, float] | None = None  # a0, a1, b0, b1 (meters along u, v), brightness
 
 
 def charts() -> list[Chart]:
@@ -69,8 +70,11 @@ def pattern(chart: Chart, a: np.ndarray, b: np.ndarray) -> np.ndarray:
     line = (np.abs(((a + 0.07) % 0.3) - 0.15) < 0.012) | (np.abs(((b + 0.11) % 0.3) - 0.15) < 0.012)
     base = np.asarray(chart.hue)
     color = base * (0.75 + 0.35 * check[..., None])
-    color = np.where(line[..., None], 0.15, color)
-    return np.clip(color, 0, 1)
+    color = np.clip(np.where(line[..., None], 0.15, color), 0, 1)
+    if chart.glow is not None:
+        a0, a1, b0, b1, bright = chart.glow
+        color = np.where(((a >= a0) & (a <= a1) & (b >= b0) & (b <= b1))[..., None], bright, color)
+    return color
 
 
 def pack(items: list[Chart]) -> None:
@@ -94,7 +98,7 @@ def truth_atlas(items: list[Chart]) -> np.ndarray:
         ii, jj = np.meshgrid(np.arange(w), np.arange(h))
         a = (ii + 0.5 - PAD) * TEXEL
         b = (jj + 0.5 - PAD) * TEXEL
-        atlas[y0 : y0 + h, x0 : x0 + w] = pattern(c, a, b)
+        atlas[y0 : y0 + h, x0 : x0 + w] = np.clip(pattern(c, a, b), 0, 1)
     return atlas
 
 
@@ -197,15 +201,30 @@ def layout_doc(cabinet: str = "storage") -> dict:
     }
 
 
+# Where `write(glow=...)` puts a patch brighter than any photo holds (a window's glass in the sun): on
+# the z = 3 wall, a meter square (meters along its chart's u and v).
+GLOW = (1.0, 2.0, 0.6, 1.6)
+
+
 def write(
-    folder: Path, cameras: int = 16, smeared=(3, 8), smear_px: int = 5, brightness_spread: float = 0.15, noise: float = 0.01, seed: int = 0, layout: dict | None = None
+    folder: Path,
+    cameras: int = 16,
+    smeared=(3, 8),
+    smear_px: int = 5,
+    brightness_spread: float = 0.15,
+    noise: float = 0.01,
+    seed: int = 0,
+    layout: dict | None = None,
+    glow: float | None = None,
 ) -> dict:
     """Writes the room into `folder` (capture/ and model.glb) and returns the truth: the charts, the
-    truth atlas and the mesh."""
+    truth atlas and the mesh. `glow`: the GLOW patch this many times white (the photos clip it)."""
     folder = Path(folder)
     capture = folder / "capture"
     (capture / "frames").mkdir(parents=True, exist_ok=True)
     items = charts()
+    if glow is not None:
+        items[4].glow = (*GLOW, glow)
     pack(items)
     truth = truth_atlas(items)
     mesh = build_mesh(items, truth)

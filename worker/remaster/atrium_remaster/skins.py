@@ -10,7 +10,8 @@ phone's auto exposure and white balance) and a small shift, turn and zoom (what 
 the phone left), a smeared photo is compared with the render smeared the same way
 (atrium_photoreal.sharpness), and where a photo shows people, a surface at a grazing angle, or the
 edge of something (where a small error in the shapes would put one surface's color on another) it
-says nothing.
+says nothing. Where it's blown out (a window, a lamp) it says only that the surface is at least that
+bright: counted like any other pixel, a photo brighter than the rest pulls a window's glass down to grey.
 
 The atlases are learned at a finer texel than the phone painted (`scale`), as a pyramid of coarser and
 coarser layers that add up, so broad corrections spread at once and fine detail follows; each pixel
@@ -62,6 +63,7 @@ class SkinConfig:
     align: bool = True  # learn each photo's small shift, turn and zoom
     color_prior: float = 0.05  # how strongly a photo's color correction stays near what it started at
     huber: float = 0.03
+    clipped: float = 0.98  # a photo channel this bright (0-1) is blown out: the surface is at least that bright
     anneal: float = 0.1  # the learning rate eases down to this share of itself by the last step (cosine)
     confidence: float = 0.0  # texels whose photos' weight is below about this keep the painting's colors (0: off)
     seed: int = 0
@@ -492,9 +494,13 @@ def train(
                     inner[:, -pad:] = False
                 if not bool(inner.any()):
                     continue
-                diff = smeared[inner] - target[inner]
+                seen = target[inner]
+                diff = smeared[inner] - seen
             else:
-                diff = colors - target[valid]
+                seen = target[valid]
+                diff = colors - seen
+            # A blown-out channel is wrong only where the render is darker.
+            diff = torch.where(seen >= cfg.clipped, diff.clamp(max=0), diff)
             err = torch.sqrt(diff * diff + cfg.huber**2) - cfg.huber
             loss = loss + v.weight * err.mean()
             count += 1

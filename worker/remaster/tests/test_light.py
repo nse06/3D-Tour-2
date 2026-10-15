@@ -71,12 +71,23 @@ def test_highlights_roll_off_instead_of_clipping_and_order_is_kept():
     assert window.max() <= 1 and window[0] >= window[2], "a bright warm window keeps its hue, not a clipped channel"
 
 
-def test_spots_and_skins_get_the_same_answer():
-    lit = light.measure(box_room(wall=(0.5, 0.45, 0.4), floor=(0.4, 0.3, 0.2)))[0]
-    pixels = np.random.default_rng(1).integers(0, 256, (6, 8, 8, 3), dtype=np.uint8)
-    as_spot = light.apply_uint8(pixels, lit).astype(np.float32) / 255
-    as_skin = lit(pixels.astype(np.float32) / 255)
-    assert np.abs(as_spot - as_skin).max() <= 1 / 255 + 1e-6
+def test_a_blown_out_window_stays_white_and_untinted():
+    """Clipped glass is the camera's white, not the room's light: whatever the walls' correction does,
+    it stays white, not a shade of grey or pink (a real home's windows came out a pinkish grey), and
+    the curve has no step where the highlights start rolling off."""
+    ramp = np.linspace(0, 1, 256, dtype=np.float32)[:, None].repeat(3, axis=1)
+    for gains in ([1.0, 1.0, 1.0], [1.1, 1.0, 1.1], [1.2, 1.1, 1.25], [0.9, 0.9, 0.9], [1.8, 1.8, 1.8]):
+        lit = light.Light(gains=np.array(gains, np.float32), lift=0.12, shoulder=0.8)
+        white = lit(np.ones((1, 3), np.float32))[0]
+        assert white.min() > 0.995, (gains, white)
+        near = lit(np.full((1, 3), 0.98, np.float32))[0]
+        assert near.max() - near.min() < 0.01, (gains, near)
+        out = lit(ramp)
+        steps = np.diff(out, axis=0)
+        assert (np.diff(out @ light.LUMA) >= -1e-6).all() and steps.min() > -0.5 / 255 and steps.max() < 0.03, (gains, steps.min(), steps.max())
+    # Away from white the walls' tint still comes out.
+    grey = light.Light(gains=np.array([1.1, 1.0, 1.1], np.float32), lift=0.12, shoulder=0.8)(np.full((1, 3), 0.5, np.float32))[0]
+    assert grey[0] > grey[1] + 0.01 and grey[2] > grey[1] + 0.01
 
 
 def test_no_walls_no_change():

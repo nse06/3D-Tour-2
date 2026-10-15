@@ -194,6 +194,7 @@ def remaster(
                 views=int(options.get("furnitureViews", 5)),
                 in_frame=float(options.get("furnitureInFrame", 0.9)),
                 min_iou=float(options.get("furnitureMinFit", 0.6)),
+                better_by=float(options.get("furnitureBetterBy", 0.05)),
             )
             mesh, furniture_stats = furniture_mod.run(
                 mesh,

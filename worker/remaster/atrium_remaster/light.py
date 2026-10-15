@@ -9,7 +9,10 @@ Painted walls are close to neutral and are the bulk of every home, so they show 
 * exposure: the walls' median brightness is raised toward a bright daylight level (and only darkened
   a little, when a scan came out too bright);
 * tone: shadows open up a little, and a soft shoulder rolls highlights off instead of clipping them,
-  so windows and lamps keep their detail.
+  so windows and lamps keep their detail, with white landing on white;
+* near white (a blown-out window, a lamp: the camera's white, not the room's light) the white balance
+  eases off, so windows stay white rather than taking on the walls' correction (a real home's windows
+  came out a pinkish grey).
 
 Per pixel only, nothing spatial: every surface keeps its own texture and shading, and a pixel gets the
 same answer in the skins and in a photo spot. Nothing is added or removed (site: /legal/ai).
@@ -46,6 +49,7 @@ class LightConfig:
     min_gain: float = 0.9  # darkening at most this much
     lift: float = 0.12  # shadow lift: luminance is raised to the power (1 - lift)
     shoulder: float = 0.8  # linear luminance above which highlights roll off toward white
+    white_from: float = 0.9  # sRGB: colors with every channel above this lose the white balance by white
     samples: int = 200_000  # wall texels sampled to measure the light
     max_chroma_distance: float = 0.05  # wall samples whose tint is further than this from the walls' typical tint (accent walls, art) aren't used
     min_samples: int = 500  # fewer neutral wall samples than this: the light is left as it is
@@ -58,6 +62,7 @@ class Light:
     gains: np.ndarray = field(default_factory=lambda: np.ones(3, np.float32))  # linear, per channel
     lift: float = 0.0
     shoulder: float = 1.0
+    white_from: float = 0.9
 
     @property
     def identity(self) -> bool:
@@ -66,13 +71,22 @@ class Light:
     def __call__(self, srgb: np.ndarray) -> np.ndarray:
         if self.identity:
             return srgb
-        lin = linear_of_srgb(srgb) * self.gains
+        srgb = np.asarray(srgb, np.float32)
+        exposure = float(self.gains @ LUMA)
+        # Near white, exposure only: what the camera clipped has no color of the light's to take out.
+        k = np.clip((srgb.min(axis=-1, keepdims=True) - self.white_from) / max(1 - self.white_from, 1e-6), 0, 1)
+        k = k * k * (3 - 2 * k)
+        lin = linear_of_srgb(srgb) * (self.gains + (exposure - self.gains) * k)
         y = np.maximum(lin @ LUMA, 1e-6)[..., None]
         y2 = np.power(y, 1 - self.lift)
-        s = self.shoulder
-        if s < 1:
-            over = np.maximum(y2 - s, 0)
-            y2 = np.where(y2 > s, s + (1 - s) * (1 - np.exp(-over / (1 - s))), y2)
+        # Above the shoulder highlights roll off to land white on white: as steep as below where they
+        # start, flattening out toward white (or, where the exposure darkens, rising a little faster).
+        s, top = self.shoulder, exposure ** (1 - self.lift)  # top: where white is before the shoulder
+        if s < 1 and top > s:
+            t = np.clip((y2 - s) / (top - s), 0, 1)
+            p = (top - s) / (1 - s)
+            h = 1 - np.power(1 - t, p) if p >= 1 else p * t + (1 - p) * t * t
+            y2 = np.where(y2 > s, s + (1 - s) * h, y2)
         out = lin * (y2 / y)
         # A channel over 1 would clip and shift the hue: move toward gray at the same luminance instead.
         peak = out.max(axis=-1, keepdims=True)
@@ -137,7 +151,7 @@ def measure(mesh: Mesh, cfg: LightConfig = LightConfig(), seed: int = 0) -> tupl
     target = float(linear_of_srgb(np.array([cfg.wall_target]))[0])
     median = float(np.median((neutral * wb) @ LUMA))
     exposure = float(np.clip(target / max(median, 1e-6), cfg.min_gain, cfg.max_gain))
-    light = Light(gains=(wb * exposure).astype(np.float32), lift=cfg.lift, shoulder=cfg.shoulder)
+    light = Light(gains=(wb * exposure).astype(np.float32), lift=cfg.lift, shoulder=cfg.shoulder, white_from=cfg.white_from)
     stats.update(light.stats())
     stats["lightWallBefore"] = round(float(srgb_of_linear(np.array([median]))[0]), 3)
     stats["lightExposure"] = round(exposure, 3)
@@ -155,10 +169,3 @@ def apply(mesh: Mesh, light: Light, rows: int = 512) -> Mesh:
             out[r : r + rows] = light(atlas[r : r + rows])
         atlases.append(out)
     return dataclasses.replace(mesh, atlases=atlases, face_color=light(mesh.face_color).astype(np.float32))
-
-
-def apply_uint8(images: np.ndarray, light: Light) -> np.ndarray:
-    """The adjustment on 8-bit sRGB images (the photo spots' cube faces)."""
-    if light.identity:
-        return images
-    return (light(images.astype(np.float32) / 255) * 255 + 0.5).astype(np.uint8)

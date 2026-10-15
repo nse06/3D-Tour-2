@@ -6,8 +6,11 @@ remaster renders a cube of six square views of the finished model, and in each v
 photos saw in place of the model's skins: each pixel from the photos that saw the same spot on the
 model from nearly the same direction (by its angle off the spot's line of sight), with each photo's
 color and alignment as the skins learned them, so the photos agree with each other and with the
-model. Where no photo saw it, the model shows. The viewer projects these views onto the model from the
-spot (TourScene's photo spots), so at a spot buyers see the photos, and between spots the model.
+model. Where no photo saw it, the model shows, and where a photo is blown out (a window's glass: the
+skins know it's white, the photo only that it's at least as bright as the photo could hold) the photo
+leaves it to the others or the model. The photos get the lighting the skins got (light.py); the model
+has it already. The viewer projects these views onto the model from the spot (TourScene's photo
+spots), so at a spot buyers see the photos, and between spots the model.
 
 The cube's faces follow OpenGL's cube-map layout (WebGL samples them as stored), in one JPEG per spot:
 a 3 × 2 grid, +x −x +y over −y +z −z.
@@ -27,7 +30,6 @@ from PIL import Image
 from atrium_photoreal.capture import Capture, load_photo
 from atrium_photoreal.sharpness import smear_px
 
-from .light import apply_uint8
 from .scene import Mesh
 from .views import Caster, render
 
@@ -47,6 +49,7 @@ class SpotConfig:
     feather: float = 0.04  # of a photo's long side: its say fades in from its border
     agree_abs: float = 0.03  # a photo sees a point if the model's depth there agrees within this
     agree_rel: float = 0.02  # ... plus this of the distance
+    clipped: float = 0.98  # a photo pixel with every channel this bright (0-1) is blown out
     quality: int = 85
     max_spots: int = 200
     cache: int = 48  # photos kept in memory between spots
@@ -161,7 +164,8 @@ class Photos:
         dk = K.copy()
         dk[:2] *= 0.5
         depth = self.caster.view(dk, cam.camtoworld, max(1, w // 2), max(1, h // 2)).depth
-        quiet = soft_quiet([people, self.disagree.get(cam.name)], w, h)
+        blown = rgb.min(axis=2) >= round(self.cfg.clipped * 255)
+        quiet = soft_quiet([people, self.disagree.get(cam.name), blown], w, h)
         t = lambda a: torch.from_numpy(np.ascontiguousarray(a)).to(self.device)  # noqa: E731
         entry = (t(rgb.astype(np.float32) / 255).permute(2, 0, 1)[None], K, t(depth.astype(np.float32))[None, None], t(quiet.astype(np.float32))[None, None], w, h)
         if len(self.cache) >= self.cfg.cache:
@@ -176,8 +180,9 @@ def sample(image: torch.Tensor, px: torch.Tensor, py: torch.Tensor, w: int, h: i
     return F.grid_sample(image, grid, mode=mode, padding_mode="border", align_corners=False)[0, :, 0].T
 
 
-def paint_face(spot: Spot, face: int, mesh: Mesh, caster: Caster, photos: Photos, candidates: list, fixes: dict, cfg: SpotConfig) -> np.ndarray:
-    """One cube face of a spot: (n, n, 3) uint8."""
+def paint_face(spot: Spot, face: int, mesh: Mesh, caster: Caster, photos: Photos, candidates: list, fixes: dict, cfg: SpotConfig, light=None) -> np.ndarray:
+    """One cube face of a spot: (n, n, 3) uint8. `light` (light.Light): the lighting the model got, for
+    the photos."""
     from .views import Hits, surface_points
 
     n = cfg.face
@@ -225,18 +230,19 @@ def paint_face(spot: Spot, face: int, mesh: Mesh, caster: Caster, photos: Photos
         border = torch.minimum(torch.minimum(u, w - u), torch.minimum(v, h - v)) / (cfg.feather * max(w, h))
         smear = smear_px(cam, w / cam.width) or 0.0
         say = torch.exp(-((angle / sigma) ** 2)) * border.clamp(0, 1) / (1 + 0.3 * smear)
-        # Not where it showed people or the depth model disagreed (fading in around them).
+        # Not where it showed people, was blown out or the depth model disagreed (fading in around them).
         say = say * (1 - sample(quiet, u, v, w, h)[:, 0]).clamp(0, 1)
         say = torch.where(seen, say, torch.zeros_like(say))
         total += color * say[:, None]
         weight += say
     out = base.copy()
     if len(points):
-        blend = (weight / cfg.full).clamp(0, 1)[:, None]
-        photo = total / weight.clamp(min=1e-6)[:, None]
-        mixed = torch.from_numpy(base[hit]).to(dev) * (1 - blend) + photo * blend
-        out[hit] = mixed.clamp(0, 1).cpu().numpy()
-    return (out.reshape(n, n, 3) * 255 + 0.5).astype(np.uint8)
+        blend = (weight / cfg.full).clamp(0, 1)[:, None].cpu().numpy()
+        photo = (total / weight.clamp(min=1e-6)[:, None]).clamp(0, 1).cpu().numpy()
+        if light is not None:
+            photo = light(photo)
+        out[hit] = base[hit] * (1 - blend) + photo * blend
+    return (np.clip(out.reshape(n, n, 3), 0, 1) * 255 + 0.5).astype(np.uint8)
 
 
 def grid_jpeg(faces: np.ndarray, quality: int) -> bytes:
@@ -270,8 +276,9 @@ def run(
     progress=None,
     light=None,
 ) -> list[dict]:
-    """The photo spots of the finished model: per spot its position, its cube as one JPEG and how many
-    photos it holds. `light` (light.Light): the lighting the skins got, given to the photos too."""
+    """The photo spots of the finished model (its lighting done): per spot its position, its cube as one
+    JPEG and how many photos it holds. `light` (light.Light): the lighting the skins got, given to the
+    photos too."""
     caster = Caster.of(mesh)
     spots = choose(mesh, capture, cfg, caster)
     photos = Photos(mesh, caster, cfg, device, sharpened, disagree)
@@ -284,9 +291,7 @@ def run(
             order = [i for i in np.argsort(distance) if distance[i] <= cfg.reach or capture.cameras[i].name in own]
             candidates = [capture.cameras[i] for i in order if capture.cameras[i].name in own]
             candidates += [capture.cameras[i] for i in order if capture.cameras[i].name not in own][: max(0, cfg.candidates - len(candidates))]
-            faces = np.stack([paint_face(spot, f, mesh, caster, photos, candidates, fixes, cfg) for f in range(6)])
-            if light is not None:
-                faces = apply_uint8(faces, light)
+            faces = np.stack([paint_face(spot, f, mesh, caster, photos, candidates, fixes, cfg, light) for f in range(6)])
             out.append({"position": [round(float(v), 4) for v in spot.position], "jpeg": grid_jpeg(faces, cfg.quality), "photos": len(spot.cameras)})
             if progress:
                 progress((k + 1) / len(spots))

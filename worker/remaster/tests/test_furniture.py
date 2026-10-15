@@ -82,15 +82,25 @@ class BoxMaker:
         return [edit.box(np.zeros(3), np.eye(3), np.array([1.0, 1.1, 0.6])) for _ in images]
 
 
+def scanned_short(mesh, top: float):
+    """The model with its scanned cabinet cut off at `top` (the LiDAR missed the rest)."""
+    cabinet = np.repeat(np.arange(len(room.charts())), 2) >= 6
+    v = mesh.vertices.copy()
+    ids = np.unique(mesh.faces[cabinet])
+    v[ids, 1] = np.minimum(v[ids, 1], top)
+    return scene.Mesh(v, mesh.uvs, mesh.faces, mesh.face_atlas, mesh.face_color, mesh.atlases, mesh.extras)
+
+
 def test_a_scanned_piece_is_replaced_by_the_shape_made_for_it(tmp_path):
     room.write(tmp_path, layout=room.layout_doc(cabinet="table"))
-    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    # The LiDAR caught the cabinet only up to 50 cm: the photos show all 90.
+    mesh = scanned_short(scene.from_model(glb.read((tmp_path / "model.glb").read_bytes())), 0.5)
     capture = load(tmp_path / "capture")
     lay = layout.load(tmp_path / "capture")
     maker = BoxMaker()
     cfg = furniture.FurnitureConfig(long_side=160, in_frame=0.8, crop=64, fit_px=80)  # few photos see the low cabinet whole
     out, stats = furniture.run(mesh, capture, lay, furniture.BoxSegmenter(), maker, cfg, log=lambda _: None)
-    assert stats["furnitureMade"] == 1 and stats["furnitureFit"]["CAB"] > 0.8, stats
+    assert stats["furnitureMade"] == 1 and stats["furnitureFit"]["CAB"] > 0.8 and stats["furnitureScannedFit"]["CAB"] < 0.7, stats
     assert len(maker.images) == 1 and maker.images[0].shape == (64, 64, 3), "the clearest cutout went to the maker"
     corners = np.array([[1.0, 0.0, 0.0], [1.8, 0.9, 0.5]])
     cabinet = np.repeat(np.arange(len(room.charts())), 2) >= 6
@@ -99,6 +109,18 @@ def test_a_scanned_piece_is_replaced_by_the_shape_made_for_it(tmp_path):
     new = out.vertices[np.unique(out.faces[kept:])]
     assert np.allclose(new.min(0), corners[0], atol=1e-5) and np.allclose(new.max(0), corners[1], atol=1e-5), "the shape fills the box"
     assert len(out.atlases) == len(mesh.atlases) + 1 and (out.face_atlas[kept:] == len(mesh.atlases)).all(), "with texels of its own"
+
+
+def test_a_shape_no_better_than_the_scan_leaves_the_scan(tmp_path):
+    """A piece the LiDAR caught whole (the cabinet as it is) keeps its scanned shape: the made one
+    matches the photos no better (a real armchair came out warped and lost its photo look)."""
+    room.write(tmp_path, layout=room.layout_doc(cabinet="table"))
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    capture = load(tmp_path / "capture")
+    cfg = furniture.FurnitureConfig(long_side=160, in_frame=0.8, crop=64, fit_px=80)
+    out, stats = furniture.run(mesh, capture, layout.load(tmp_path / "capture"), furniture.BoxSegmenter(), BoxMaker(), cfg, log=lambda _: None)
+    assert out is mesh and stats["furnitureMade"] == 0 and stats["furnitureKept"] == 1, stats
+    assert stats["furnitureScannedFit"]["CAB"] > 0.8 and stats["furnitureFit"]["CAB"] < stats["furnitureScannedFit"]["CAB"] + 0.05, stats
 
 
 def test_pieces_no_photo_shows_and_shapes_that_dont_match_are_left_alone(tmp_path):
@@ -126,7 +148,7 @@ def test_pieces_no_photo_shows_and_shapes_that_dont_match_are_left_alone(tmp_pat
 
 def test_the_job_makes_furniture_before_the_skins(tmp_path):
     room.write(tmp_path, layout=room.layout_doc(cabinet="table"))
-    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    mesh = scanned_short(scene.from_model(glb.read((tmp_path / "model.glb").read_bytes())), 0.5)
     capture = load(tmp_path / "capture")
     services = Services(segmenter=furniture.BoxSegmenter(), shapes=BoxMaker())
     options = {"steps": 20, "batch": 2, "tile": 128, "longSide": 160, "furnitureLongSide": 160, "furnitureInFrame": 0.8, "fill": False, "trim": False, "fixerViews": False, "depth": False}

@@ -53,7 +53,10 @@ the photos at once, by gradient descent, like the splats, except that nothing ca
   sees (`views.py`).
 * **What a pixel may say**: nothing within 3 px (at 1920 px) of a jump in depth or a seam between surfaces at more
   than 30° (where a small error in the shapes would put one surface's color on another), nothing more than 78° off
-  head-on, nothing where the photo shows people (the phone's masks).
+  head-on, nothing where the photo shows people (the phone's masks). A blown-out channel (0.98 or brighter: a
+  window's glass, a lamp) says only that the surface is at least that bright, so it pulls a texel up but never down.
+  Counted like any other pixel, a blown-out pixel in a photo brighter than the rest pulled the glass down toward
+  grey (on the test room's sunlit patch: 0.82, where it now comes out white).
 * **Per photo**: a gain and an offset per channel (auto exposure and white balance), started from the ratio of the
   photo's colors to the painting's and kept near it, their average held at the painting's (so what the photos saw
   keeps the brightness of what they didn't); and a small shift, turn and zoom (what lining the photos up on the phone
@@ -154,9 +157,11 @@ MIT; its own GPU and image), on white with 10% around it; what's hidden in it is
 TripoSG would otherwise build the gap into the shape. TripoSG makes the piece's shape (about 30 s on an A10G; it
 comes out upright, y up, and is cut to 30,000 triangles). That shape is turned about its up axis (four quarter turns, mirrored or not), stretched to fill the box
 RoomPlan measured, and the turn whose outline best matches the cutouts wins (overlap counted only where nothing
-in front hides the piece). At 60% overlap or better it replaces the scanned piece (the box's faces or the LiDAR's
-shape, never the floor, a wall or a baseboard behind it), with new texels that start as the piece's color and that
-the skins (§2) learn from the photos like the rest; below that, the scanned piece stays.
+in front hides the piece). At 60% overlap or better, and at least 5 points better than the scanned piece's own
+outline (`furnitureFit` and `furnitureScannedFit` in the stats), it replaces the scanned piece (the box's faces or
+the LiDAR's shape, never the floor, a wall or a baseboard behind it), with new texels that start as the piece's
+color and that the skins (§2) learn from the photos like the rest; otherwise the scanned piece stays. (A real
+armchair the LiDAR had caught whole was swapped for a made one that came out a lumpy blob.)
 
 TripoSG runs with its marching-cubes decoder (scikit-image). Its fast decoder's mesher (diso) and its background
 remover (RMBG-1.4) aren't used, since neither license is one we take on: the image puts a stub in place of diso
@@ -199,9 +204,13 @@ finished model and paints the photos over it: each pixel from the photos (the sp
 spot's (8° fades a photo's say by two thirds), never across something in front (the model's depth at the photo)
 nor where it showed people or the depth model disagreed (both masks coarse: what they leave out fades back in over
 a few pixels around it, instead of the phone's people grid stepping from cell to cell, which showed as jagged
-outlines on floors), fading in from each photo's border, and with each photo's
+outlines on floors) or was blown out (a window's glass: white in the photo however bright it really is, so a
+photo the skins found brighter than the rest would show it grey once its brightness is undone; the model, whose
+skins know it's white, shows there), fading in from each photo's border, and with each photo's
 color and alignment as the skins learned them, so the photos agree with each other and with the model. Where no
-photo saw the point, the model shows. Each cube is one JPEG, its faces in OpenGL's layout in a 3 × 2 grid (+x −x
+photo saw the point, the model shows. The photos get the lighting (§4.8) as they're painted in; the model has it
+already. (Lighting the finished cubes, as the first spots did, lit the model's parts twice: a real home's spot
+ceilings came out a quarter too bright and pink.) Each cube is one JPEG, its faces in OpenGL's layout in a 3 × 2 grid (+x −x
 +y over −y +z −z), which WebGL samples as stored (checked in Chromium).
 
 The pictures upload before the model (storage kind `spot`), and the model lists them in its scene's extras
@@ -226,9 +235,12 @@ measured from its walls (textured triangles facing sideways, sampled by area): t
 texels that share the walls' typical tint (feature walls and art differ from it and are left out) sets the white
 balance (85% of their tint taken out, no channel moved more than 40%), and the walls' median brightness sets the
 exposure, toward sRGB 0.8 (brightening at most 1.8×, darkening at most 0.9×). Then shadows open up a little
-(luminance to the power 0.88) and highlights roll off above linear 0.8 instead of clipping, moving toward gray
-rather than shifting hue. It is per pixel, nothing spatial, and the photo spots' cube faces get exactly the same
-adjustment, so skins and spots still agree. On unless the site asks otherwise (`"light": false`; tune with `lightTarget`,
+(luminance to the power 0.88) and highlights roll off above linear 0.8 instead of clipping, as steep where they
+start as below and landing white on white, moving toward gray rather than shifting hue. Near white (every channel
+above sRGB 0.9, all of it at 1) the white balance eases off to the exposure alone: a blown-out window is the
+camera's white, not the room's light. (Before, white came out a shade of grey, 0.97, and took on the walls'
+correction: a real home's windows were a pinkish grey.) It is per pixel, nothing spatial, and the photo spots'
+photos get exactly the same adjustment, so skins and spots still agree. On unless the site asks otherwise (`"light": false`; tune with `lightTarget`,
 `lightWhiteBalance`, `lightMaxGain`, `lightLift`, `lightShoulder`); the stats carry `lightGains`,
 `lightExposure`, `lightWallBefore` and `lightWallSamples`, or `lightSkipped` when too few plain wall texels were
 found.
@@ -260,8 +272,8 @@ Options (all optional):
   `maxMip` (4), `align` (true), `anneal` (0.1), `confidence` (0: off).
 * Cleanup: `deblur` (true), `deblurMinSmear` (1.5 px), `deblurResidual` (0.3), `tvOff` (true), `windows` (true).
 * Trim: `trim` (true: all of it), `recessDepth` (0.1 m), `baseboards`, `crowns`, `casings`, `cabinets` (true).
-* Furniture: `furniture` (true), `furnitureMinFit` (0.6), `furnitureViews` (5), `furnitureLongSide` (960),
-  `furnitureInFrame` (0.9).
+* Furniture: `furniture` (true), `furnitureMinFit` (0.6), `furnitureBetterBy` (0.05), `furnitureViews` (5),
+  `furnitureLongSide` (960), `furnitureInFrame` (0.9).
 * Depth: `depth` (true), `fuse` (true). Fixer views: `fixerViews` (false), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
   (1024), `fixerHeight` (576), `fixerWeight` (0.5), `fixerShare` (0.25), `fixerToneLock` (0.012).
 * Photo spots: `spots` (true), `spotFace` (1024), `spotSpacing` (1 m), `spotLongSide` (1920).
@@ -332,7 +344,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 55 tests (below)
+python -m pytest tests -q        # CPU, 59 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

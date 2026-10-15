@@ -7,7 +7,8 @@ are picked and the piece is cut out of them (SAM 2.1, its box as the prompt). An
 cutouts in all those photos, stretched into the box the scan measured, and put in place of the scanned
 piece. The skins (skins.py) then learn its colors from the photos like everything else; sides no
 photo saw start as the piece's color. A shape that doesn't match the photos well enough isn't used,
-and the scanned piece stays.
+nor one that matches them no better than the scanned piece does (a chair the LiDAR caught whole and
+the photos painted well stays as it is), and the scanned piece stays.
 """
 
 from __future__ import annotations
@@ -70,6 +71,7 @@ class FurnitureConfig:
     pad: float = 0.1  # with this much white around it (of its longer side), as TripoSG expects
     fit_px: int = 192  # outlines are compared this big
     min_iou: float = 0.6  # a shape matching the cutouts less well than this isn't used
+    better_by: float = 0.05  # ... nor one matching them less than this better than the scanned piece
     upright: bool = True  # the shape maker makes things standing up (y up): only turn them about it
     max_faces: int = 30000
     margin: float = 0.03  # the scanned piece: what lies within this of its box
@@ -341,7 +343,7 @@ def run(
             progress(share)
 
     pieces = [b for b in layout.objects if b.category in cfg.categories]
-    stats: dict = {"furnitureMade": 0, "furnitureKept": 0, "furnitureFit": {}, "furnitureIds": []}
+    stats: dict = {"furnitureMade": 0, "furnitureKept": 0, "furnitureFit": {}, "furnitureScannedFit": {}, "furnitureIds": []}
     if not pieces:
         return mesh, stats
     chart = mesh.charts()
@@ -404,9 +406,11 @@ def run(
             continue
         v, f = simplify(*main_parts(*shape), cfg.max_faces)
         world, f, iou = fit(v, f, b, views, cfg.upright)
+        scanned = outline_iou(mesh.vertices, mesh.faces[piece], views)
         stats["furnitureFit"][b.id] = round(iou, 3)
-        if iou < cfg.min_iou:
-            log(f"furniture: {b.category} {b.id}: its shape matches the photos {iou:.2f}, keeping the scanned one")
+        stats["furnitureScannedFit"][b.id] = round(scanned, 3)
+        if iou < max(cfg.min_iou, scanned + cfg.better_by):
+            log(f"furniture: {b.category} {b.id}: its shape matches the photos {iou:.2f}, the scanned one {scanned:.2f}: keeping the scanned one")
             stats["furnitureKept"] += 1
             continue
         log(f"furniture: {b.category} {b.id}: made ({len(f)} triangles, outline match {iou:.2f})")
