@@ -66,8 +66,13 @@ const LOOK_SPEED = 0.0042;
 const WALK_SPEED = 1.5;
 const TURN_SPEED = 1.7;
 
-/** Half a visitor's width (m): walks stop this far from walls and furniture, and side rays sit this far out. */
+/** Half a visitor's width (m): walks stop this far from walls and furniture. */
 const BODY_RADIUS = 0.22;
+/** How far out the side rays look (m): less than the shoulders, as a visitor turns a little to pass a
+ * door (a real bedroom door, its coats and its frame left 44 cm clear in the scan). */
+const SIDE_REACH = 0.15;
+/** Sideways shifts (m) tried when a walk is blocked, to line it up with a doorway's gap. */
+const SHIFTS = [0.06, -0.06, 0.12, -0.12, 0.18, -0.18, 0.24, -0.24, 0.3, -0.3, 0.4, -0.4];
 /** Heights above the floor (m) checked for obstacles: knee, waist, chest. */
 const OBSTACLE_HEIGHTS = [0.35, 0.75, 1.2];
 
@@ -330,8 +335,10 @@ export function CameraRig({
     const side = new THREE.Vector3(-dir.z, 0, dir.x);
     const probes: [number, number][] = [
       ...OBSTACLE_HEIGHTS.map((h): [number, number] => [h, 0]),
-      [0.75, BODY_RADIUS],
-      [0.75, -BODY_RADIUS],
+      [0.75, SIDE_REACH],
+      [0.75, -SIDE_REACH],
+      [1.2, SIDE_REACH],
+      [1.2, -SIDE_REACH],
     ];
     let nearest = Infinity;
     const origin = new THREE.Vector3();
@@ -448,11 +455,29 @@ export function CameraRig({
           // one or through furniture: a bed between here and there stops the walk at its edge.
           const dir = new THREE.Vector3(target.x - camera.position.x, 0, target.z - camera.position.z);
           const d = dir.length();
-          let travel = d > 0.9 ? d - 0.35 : d;
-          travel = Math.min(travel, clearDistance(camera.position, target, target.y) - BODY_RADIUS - 0.1);
+          const wanted = d > 0.9 ? d - 0.35 : d;
+          const reach = (from: THREE.Vector3, to: THREE.Vector3) => Math.min(wanted, clearDistance(from, to, target.y) - BODY_RADIUS - 0.1);
+          let start = camera.position.clone();
+          let travel = reach(start, target);
+          if (travel < wanted - 0.05 && d > 0) {
+            // Blocked on the way (a door frame, coats on a door): the same walk a little to one side, as a
+            // visitor steps over to pass through the middle of a doorway, wherever that gets furthest.
+            const side = new THREE.Vector3(-dir.z, 0, dir.x).divideScalar(d);
+            const direct = travel;
+            for (const shift of SHIFTS) {
+              const from = camera.position.clone().addScaledVector(side, shift);
+              if (clearDistance(camera.position, from, target.y) < Math.abs(shift) + BODY_RADIUS) continue;
+              const further = reach(from, tmpV.copy(target).addScaledVector(side, shift));
+              if (further > Math.max(travel, direct + 0.3)) {
+                start = from;
+                travel = further;
+              }
+            }
+          }
           if (travel > 0.2) {
-            const end = camera.position.clone().addScaledVector(dir.normalize(), travel);
-            glideTo([[end.x, eye, end.z]], st.yawTarget, THREE.MathUtils.clamp(st.pitchTarget, -0.35, 0.35), {
+            const end = start.clone().addScaledVector(dir.normalize(), travel);
+            const path: [number, number, number][] = start.equals(camera.position) ? [] : [[start.x, eye, start.z]];
+            glideTo([...path, [end.x, eye, end.z]], st.yawTarget, THREE.MathUtils.clamp(st.pitchTarget, -0.35, 0.35), {
               travelFacing: false,
               speed: 2.2,
             });
@@ -583,7 +608,12 @@ export function CameraRig({
             };
             const nx = camera.position.x + dx;
             const nz = camera.position.z + dz;
+            // Squeezing past a door frame: half a step to either side of straight ahead.
+            const sx = -dz * 0.5;
+            const sz = dx * 0.5;
             if (canStep(nx, nz)) camera.position.set(nx, camera.position.y, nz);
+            else if (canStep(nx + sx, nz + sz)) camera.position.set(nx + sx, camera.position.y, nz + sz);
+            else if (canStep(nx - sx, nz - sz)) camera.position.set(nx - sx, camera.position.y, nz - sz);
             else if (canStep(nx, camera.position.z)) camera.position.x = nx;
             else if (canStep(camera.position.x, nz)) camera.position.z = nz;
           }
