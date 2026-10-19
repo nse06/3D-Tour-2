@@ -116,6 +116,19 @@ Curved charts (LiDAR furniture patches) keep the phone's smooth fill: an image m
 
 ## 4. More stages
 
+### 4.0 Loose pieces (`loose.py`)
+The LiDAR mesh keeps whatever stood in front of it while it scanned: someone walking through leaves pieces of legs
+hanging in the room, and a shoe keeps only its top, floating over the floor. The phone drops them since builds 19
+and 20, but scans sent before still carry them. First thing, by the phone's rules: a piece that touches nothing
+(more than 12 cm off the floor, 15 cm from every wall, 60 cm under the ceiling, in no RoomPlan box, no wider than
+80 cm, no bigger than 0.25 m²) goes, and so does low clutter (starting within 17 cm of the floor, rising 3–30 cm, no
+wider than 1 m, in no box; flat at the floor it's floor, a doorway's patch). Then, once the depth model has
+measured the photos (§4.3): a piece up to 0.5 m², in no box, that the photos see straight through (inside its
+outline, in at least 3 photos and 60 pixels, 75% of them find the room farther away) goes too, near a wall or not.
+The stats carry `looseFloating`, `looseLow`, `looseArea`, `looseSeenThrough` and `looseSeenThroughArea`
+(`"loose": false` turns it off). On the published two-room scan the rules take 31 floating pieces and 14 low ones
+(1.04 m²), the floating leg pieces in the living room among them, and keep the doorway's floor patches.
+
 ### 4.1 Photo cleanup (`cleanup.py`, `nafnet.py`)
 Before the skins learn from them, photos the phone smeared by 1.5 px or more (at 1920 px, atrium_photoreal's estimate
 from how fast the phone turned) are sharpened by **NAFNet** (MIT; its REDS deblur weights, on the GPU in tiles), and
@@ -277,7 +290,7 @@ Options (all optional):
 * Depth: `depth` (true), `fuse` (true). Fixer views: `fixerViews` (false), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
   (1024), `fixerHeight` (576), `fixerWeight` (0.5), `fixerShare` (0.25), `fixerToneLock` (0.012).
 * Photo spots: `spots` (true), `spotFace` (1024), `spotSpacing` (1 m), `spotLongSide` (1920).
-* `fill` (true), `jpegQuality` (90).
+* `loose` (true), `fill` (true), `jpegQuality` (90).
 
 The remastered model is a GLB like the phone's photo models: one unlit primitive per atlas (JPEG), the scan manifest
 in the scene's extras, so the viewer loads it in place of the painted one.
@@ -344,7 +357,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 59 tests (below)
+python -m pytest tests -q        # CPU, 62 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

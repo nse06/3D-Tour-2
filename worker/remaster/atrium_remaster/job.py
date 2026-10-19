@@ -40,6 +40,7 @@ from . import fill as fill_mod
 from . import fixviews
 from . import glb, scene, skins
 from . import light as light_mod
+from . import loose as loose_mod
 from . import furniture as furniture_mod
 from . import fuse as fuse_mod
 from . import spots as spots_mod
@@ -157,6 +158,15 @@ def remaster(
     stats["layout"] = not layout.empty
     cfg = config_from(options)
     clean_cfg = cleanup_config(options)
+    # What the scanner kept that isn't there (someone walking through, the tops of shoes) goes before
+    # anything learns from the model; the photos check what's left once the depth model has seen them.
+    if options.get("loose", True):
+        try:
+            mesh, loose_stats = loose_mod.run(mesh, capture, layout, log=log)
+            stats.update(loose_stats)
+        except Exception as e:  # the model stays as the phone sent it
+            traceback.print_exc()
+            stats["looseError"] = f"{type(e).__name__}: {e}"[:200]
     sharpened: dict = {}
     if services.cleaner is not None and clean_cfg.deblur:
         report("cleanup", 0.0, "")
@@ -223,6 +233,14 @@ def remaster(
         except Exception as e:  # the skins learn without it
             traceback.print_exc()
             stats["depthError"] = f"{type(e).__name__}: {e}"[:200]
+    if depths and options.get("loose", True):
+        report("depth", 0.7, "checking every piece against the photos")
+        try:
+            mesh, seen_stats = loose_mod.seen_through(mesh, capture, layout, depths, log=log)
+            stats.update(seen_stats)
+        except Exception as e:
+            traceback.print_exc()
+            stats["looseError"] = f"{type(e).__name__}: {e}"[:200]
     if depths and layout.objects and options.get("fuse", True):
         report("depth", 0.7, "finer shapes for what the LiDAR scanned")
         try:
