@@ -53,7 +53,9 @@ gpu_image = (
     .apt_install("libegl1", "libgl1", "libgomp1", "libusb-1.0-0", "curl")
     # transformers 5.19 needs PyTorch 2.6 or later (torch.accelerator), whatever its metadata says.
     .pip_install("torch==2.7.1", "torchvision==0.22.1", index_url="https://download.pytorch.org/whl/cu126")
-    .pip_install("numpy<2.3", "scipy", "pillow>=10", "open3d-cpu==0.20.0", "transformers==5.19.0", "xatlas==0.0.11", "shapely==2.2.0", "mapbox-earcut==2.1.0", "fastapi")
+    .pip_install(
+        "numpy<2.3", "scipy", "pillow>=10", "open3d-cpu==0.20.0", "transformers==5.19.0", "xatlas==0.0.11", "shapely==2.2.0", "mapbox-earcut==2.1.0", "fastapi", "anthropic==1.15.0"
+    )
     .env({"HF_HOME": "/models/hf"})
     .run_commands(
         f"mkdir -p /models && curl -fsSL -o {LAMA_PATH} {LAMA_URL} && sha256sum {LAMA_PATH}",
@@ -130,9 +132,16 @@ class Shapes:
 def services():
     from atrium_remaster.job import Services
     from atrium_remaster.models import LaMa, NAFNetCleaner, PromptDepth, RemoteShapes, Sam2Segmenter
+    from atrium_remaster.review import reviewer_from_env
 
     return Services(
-        inpainter=LaMa(), cleaner=NAFNetCleaner(), fixer=RemoteFixer(Fixer()), depth=PromptDepth(), segmenter=Sam2Segmenter(), shapes=RemoteShapes(Shapes())
+        inpainter=LaMa(),
+        cleaner=NAFNetCleaner(),
+        fixer=RemoteFixer(Fixer()),
+        depth=PromptDepth(),
+        segmenter=Sam2Segmenter(),
+        shapes=RemoteShapes(Shapes()),
+        reviewer=reviewer_from_env(),  # Claude, if the atrium-photoreal secret has ANTHROPIC_API_KEY
     )
 
 

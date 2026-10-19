@@ -57,6 +57,11 @@ export default function AiUse() {
           <strong>Tidies details:</strong> shows TVs switched off, brightens windows that came out dark, and sets doors and windows into their
           walls.
         </li>
+        <li>
+          <strong>Checks its own work:</strong> an AI vision model (Claude, by Anthropic) compares the model with the photos, removes scan
+          debris it finds (such as bits the scanner caught of someone walking by), and has damaged furniture rebuilt — box-shaped pieces such
+          as dressers as the box the scan measured, painted from the photos. Problems it still sees are listed for the agent.
+        </li>
       </ul>
 
       <h2>What it never does</h2>
@@ -83,8 +88,9 @@ export default function AiUse() {
       <h2>Your data</h2>
       <ul>
         <li>
-          The AI models are open models that run on Atrium&apos;s own cloud GPUs (provided by Modal). We don&apos;t send your photos or scans to
-          third-party AI services.
+          The models are built by open AI models on Atrium&apos;s own cloud GPUs (provided by Modal). To check the result, a few of the
+          scan&apos;s photos and views of the model are sent to Anthropic&apos;s Claude API, which processes them for us under its commercial
+          terms and doesn&apos;t train its models on them. No other third-party AI service sees your photos or scans.
         </li>
         <li>Your scans are used only to build your own walkthroughs. We don&apos;t use them to train AI models for anyone else.</li>
         <li>

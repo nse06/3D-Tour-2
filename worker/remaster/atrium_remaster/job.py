@@ -41,6 +41,7 @@ from . import fixviews
 from . import glb, scene, skins
 from . import light as light_mod
 from . import loose as loose_mod
+from . import review as review_mod
 from . import furniture as furniture_mod
 from . import fuse as fuse_mod
 from . import spots as spots_mod
@@ -60,6 +61,7 @@ class Services:
     depth: depth_mod.DepthModel | None = None
     segmenter: furniture_mod.Segmenter | None = None  # SAM 2.1: pieces of furniture cut out of the photos
     shapes: furniture_mod.ShapeMaker | None = None  # TripoSG: a piece's shape from its cutout
+    reviewer: review_mod.Reviewer | None = None  # Claude: looks the model over as a buyer would
 
 
 def fetch(url: str, target: Path) -> int:
@@ -167,6 +169,27 @@ def remaster(
         except Exception as e:  # the model stays as the phone sent it
             traceback.print_exc()
             stats["looseError"] = f"{type(e).__name__}: {e}"[:200]
+    # An AI looks the scan over the way a buyer would: fragments it's sure of go, and furniture it finds
+    # with holes or the wrong shape is made again below.
+    rebuild: dict = {}
+    reviewer = services.reviewer if options.get("review", True) else None
+    if reviewer is not None:
+        report("cleanup", 0.0, "an AI is looking the scan over")
+        try:
+            mesh, verdict = review_mod.inspect(mesh, capture, layout, reviewer, log=log)
+            rebuild = dict(verdict.rebuild)
+            stats.update(
+                {
+                    "reviewIssues": len(verdict.issues),
+                    "reviewFound": review_mod.summary(verdict.issues),
+                    "reviewRemoved": verdict.removed,
+                    "reviewRemovedArea": verdict.removed_area,
+                    "reviewRebuild": rebuild,
+                }
+            )
+        except Exception as e:  # the stages run as they would without it
+            traceback.print_exc()
+            stats["reviewError"] = f"{type(e).__name__}: {e}"[:200]
     sharpened: dict = {}
     if services.cleaner is not None and clean_cfg.deblur:
         report("cleanup", 0.0, "")
@@ -217,6 +240,7 @@ def remaster(
                 log=log,
                 inpainter=services.inpainter,
                 progress=lambda p: report("furniture", p, ""),
+                also=rebuild,
             )
             stats.update(furniture_stats)
         except Exception as e:  # the scanned pieces stay
@@ -321,6 +345,15 @@ def remaster(
             traceback.print_exc()
             stats["lightError"] = f"{type(e).__name__}: {e}"[:200]
             light = light_mod.Light()
+    if reviewer is not None:
+        report("light", 0.5, "an AI is checking the result")
+        try:
+            stats["reviewLeft"] = review_mod.summary(review_mod.final(out, capture, reviewer, log=log))
+        except Exception as e:
+            traceback.print_exc()
+            stats["reviewError"] = f"{type(e).__name__}: {e}"[:200]
+        if hasattr(reviewer, "usage"):
+            stats["reviewTokens"] = reviewer.usage()
     if spots is not None and options.get("spots", True):
         report("spots", 0.0, "")
         try:

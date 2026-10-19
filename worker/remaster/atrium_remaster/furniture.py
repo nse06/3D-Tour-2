@@ -21,7 +21,7 @@ from typing import Protocol
 import numpy as np
 from PIL import Image, ImageDraw
 
-from .edit import Addition, apply
+from .edit import Addition, apply, box
 from .layout import Box, Layout
 from .scene import Mesh
 from .views import Caster
@@ -329,12 +329,17 @@ def run(
     log=print,
     inpainter=None,
     progress=None,
+    also: dict | None = None,
 ) -> tuple[Mesh, dict]:
     """The mesh with its movable pieces made by the shape maker, where their shapes match the photos.
+    `also`: RoomPlan ids made too whatever their category, each "made" (by the shape maker) or "box"
+    (RoomPlan's own box: a dresser, a cabinet), the reviewer's picks (review.py).
     `inpainter` (fill.Inpainter): what's hidden behind something in the cutout's photo is painted in
     before the shape maker sees it (else the gap would end up in the piece's shape). `progress(share
     done)`: the cutouts are the first 20%, the shapes (a piece at a time) the next 65%, the fits the rest."""
     from scipy import ndimage
+
+    also = also or {}
 
     from .fill import flat_charts
 
@@ -342,7 +347,7 @@ def run(
         if progress is not None:
             progress(share)
 
-    pieces = [b for b in layout.objects if b.category in cfg.categories]
+    pieces = [b for b in layout.objects if b.category in cfg.categories or b.id in also]
     stats: dict = {"furnitureMade": 0, "furnitureKept": 0, "furnitureFit": {}, "furnitureScannedFit": {}, "furnitureIds": []}
     if not pieces:
         return mesh, stats
@@ -395,7 +400,8 @@ def run(
     shapes = []
     for i, plan in enumerate(plans):
         done(0.2 + 0.65 * i / len(plans))
-        shapes += maker([plan[2]])
+        # Box-shaped furniture with holes or warped sides is the box RoomPlan measured, the photos painting it.
+        shapes += [box(np.zeros(3), np.eye(3), np.full(3, 2.0))] if also.get(plan[0].id) == "box" else maker([plan[2]])
     remove = np.zeros(len(mesh.faces), bool)
     additions: list[Addition] = []
     for i, ((b, piece, _, color, views), shape) in enumerate(zip(plans, shapes)):

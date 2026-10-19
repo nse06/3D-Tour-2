@@ -258,6 +258,31 @@ photos get exactly the same adjustment, so skins and spots still agree. On unles
 `lightExposure`, `lightWallBefore` and `lightWallSamples`, or `lightSkipped` when too few plain wall texels were
 found.
 
+### 4.9 The AI reviewer (`review.py`)
+
+Every other AI here is a specialist (SAM cuts out, the depth model measures, TripoSG makes one shape from
+one photo, LaMa fills a patch); none looks at the home and asks whether it makes sense. Claude (Opus 5.5,
+through the Anthropic API, medium effort) does: shown a photo and the model rendered from the same camera
+(8 sharp photos spread along the walk, 1024 px), it lists what a buyer would notice as structured JSON,
+each with a box on the render, what the thing is and whether it's a box in real life: fragments that
+aren't in the photo, objects with holes or missing parts, smeared patches, wrong shapes.
+
+* **The scan, first** (right after the loose-piece rules, §4.0): a fragment it's sure of goes if it's a
+  loose piece of at most 1 m² in no RoomPlan box, with 40% of it inside the reviewer's box. Furniture it
+  finds broken is made again by the furniture stage (§4.4), storage too but never storage next to a sink,
+  stove or other fixture: what it says is a box in real life (a dresser, cabinet, nightstand, TV stand)
+  as the box RoomPlan measured, which the skins then paint from the photos, anything else by TripoSG.
+  Either way the new piece is kept only if its outline matches the photos 5 points better than the scan.
+* **The result, last** (after the lighting): what it still finds goes to the stats for the dashboard.
+
+Requests use server-side fallbacks (`fallbacks: "default"`); a refusal or an error is no issues. Stats:
+`reviewIssues`, `reviewFound`, `reviewRemoved`, `reviewRemovedArea`, `reviewRebuild` (RoomPlan id: `box` or
+`made`), `reviewLeft`, `reviewTokens` (input and output tokens and their list price in dollars; thinking
+is output and most of it). Two passes of 8 views come to roughly half a dollar a home at medium effort
+(about twice that at high). `"review": false` turns it off. It needs `ANTHROPIC_API_KEY` in the
+`atrium-photoreal` Modal secret; without it the review is skipped. The legal pages name Anthropic as a
+subprocessor and say what it sees.
+
 ## 5. The job (`atrium_remaster/job.py`)
 
 ```
@@ -290,7 +315,7 @@ Options (all optional):
 * Depth: `depth` (true), `fuse` (true). Fixer views: `fixerViews` (false), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
   (1024), `fixerHeight` (576), `fixerWeight` (0.5), `fixerShare` (0.25), `fixerToneLock` (0.012).
 * Photo spots: `spots` (true), `spotFace` (1024), `spotSpacing` (1 m), `spotLongSide` (1920).
-* `loose` (true), `fill` (true), `jpegQuality` (90).
+* `loose` (true), `review` (true), `fill` (true), `jpegQuality` (90).
 
 The remastered model is a GLB like the phone's photo models: one unlit primitive per atlas (JPEG), the scan manifest
 in the scene's extras, so the viewer loads it in place of the painted one.
@@ -357,7 +382,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 62 tests (below)
+python -m pytest tests -q        # CPU, 68 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

@@ -111,6 +111,29 @@ def test_a_scanned_piece_is_replaced_by_the_shape_made_for_it(tmp_path):
     assert len(out.atlases) == len(mesh.atlases) + 1 and (out.face_atlas[kept:] == len(mesh.atlases)).all(), "with texels of its own"
 
 
+def test_box_shaped_furniture_the_reviewer_flags_becomes_roomplans_box(tmp_path):
+    """A dresser (RoomPlan's "storage", which the shape maker never makes) the reviewer says is a box
+    with holes or warped sides: it comes back as the box RoomPlan measured, without asking the shape
+    maker, and the photos paint it. Unflagged, storage stays as scanned."""
+    room.write(tmp_path, layout=room.layout_doc())
+    mesh = scanned_short(scene.from_model(glb.read((tmp_path / "model.glb").read_bytes())), 0.5)
+    capture = load(tmp_path / "capture")
+    lay = layout.load(tmp_path / "capture")
+
+    def maker(images):
+        raise AssertionError("a box needs no shape maker")
+
+    cfg = furniture.FurnitureConfig(long_side=160, in_frame=0.8, crop=64, fit_px=80)
+    same, stats = furniture.run(mesh, capture, lay, furniture.BoxSegmenter(), maker, cfg, log=lambda _: None)
+    assert same is mesh and stats["furnitureMade"] == 0, "storage isn't made unless the reviewer asks"
+    out, stats = furniture.run(mesh, capture, lay, furniture.BoxSegmenter(), maker, cfg, log=lambda _: None, also={"CAB": "box"})
+    assert stats["furnitureMade"] == 1 and stats["furnitureFit"]["CAB"] > stats["furnitureScannedFit"]["CAB"] + 0.05, stats
+    cabinet = np.repeat(np.arange(len(room.charts())), 2) >= 6
+    kept = len(mesh.faces) - int(cabinet.sum())
+    new = out.vertices[np.unique(out.faces[kept:])]
+    assert len(out.faces) == kept + 12 and np.allclose(new.min(0), [1.0, 0.0, 0.0], atol=1e-5) and np.allclose(new.max(0), [1.8, 0.9, 0.5], atol=1e-5)
+
+
 def test_a_shape_no_better_than_the_scan_leaves_the_scan(tmp_path):
     """A piece the LiDAR caught whole (the cabinet as it is) keeps its scanned shape: the made one
     matches the photos no better (a real armchair came out warped and lost its photo look)."""

@@ -77,8 +77,9 @@ export default function Privacy() {
         <li>To provide Atrium: build, enhance, store and show your walkthroughs; run your account; send sign-in and account emails.</li>
         <li>
           To process scans with AI: our cloud GPUs rebuild the 3D model from your scan&apos;s photos (see{" "}
-          <Link href="/legal/ai">How we use AI</Link>). Your scans are used only for your own listings. We don&apos;t use them to train AI
-          models for anyone else, and we don&apos;t send them to third-party AI services.
+          <Link href="/legal/ai">How we use AI</Link>), and Anthropic&apos;s Claude checks the result from a few of the photos. Your scans
+          are used only for your own listings. We don&apos;t use them to train AI models for anyone else, Anthropic doesn&apos;t train its models
+          on what it checks, and no other third-party AI service sees them.
         </li>
         <li>To bill you, prevent fraud, and keep the service secure.</li>
         <li>To answer your questions and fix problems you report.</li>

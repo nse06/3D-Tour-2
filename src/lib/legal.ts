@@ -12,7 +12,7 @@ export const LEGAL = {
   /** The US state whose law governs the Terms. */
   governingLaw: process.env.LEGAL_GOVERNING_LAW?.trim() || "Illinois",
   /** When the current versions took effect (update with every material change). */
-  effective: "October 13, 2026",
+  effective: "October 19, 2026",
 };
 
 /** Services that process personal data for Atrium (the privacy policy lists them). */
@@ -21,4 +21,5 @@ export const SUBPROCESSORS = [
   { name: "Supabase", purpose: "Accounts, sign-in emails, database and file storage", location: "United States" },
   { name: "Stripe", purpose: "Payments, invoices and subscriptions", location: "United States" },
   { name: "Modal", purpose: "Cloud GPUs that build AI-enhanced models from scan photos", location: "United States" },
+  { name: "Anthropic", purpose: "AI review of AI-enhanced models (a few scan photos and views of the model)", location: "United States" },
 ];
