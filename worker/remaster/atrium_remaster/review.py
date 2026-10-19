@@ -356,6 +356,28 @@ def final(mesh: Mesh, capture: Capture, reviewer: Reviewer, cfg: ReviewConfig = 
     return issues
 
 
+def selftest(reviewer: Reviewer) -> dict:
+    """One review of a made-up room, to check the reviewer reaches its model (a few cents): a photo of
+    a wall and a dresser, and a "model" with a dark fragment in the air and a hole in the dresser's
+    front. Never shows the key; an error says only what kind it was."""
+    photo = np.empty((384, 512, 3), np.uint8)
+    photo[:] = (228, 220, 202)  # wall
+    photo[260:] = (150, 112, 76)  # wooden floor
+    photo[170:290, 160:360] = (112, 74, 46)  # dresser
+    photo[200:205, 175:345] = photo[240:245, 175:345] = (80, 52, 32)  # its drawers
+    rendered = photo.copy()
+    rendered[60:110, 60:100] = (40, 40, 44)  # a fragment in the air
+    rendered[190:240, 230:300] = (228, 220, 202)  # a hole in the dresser
+    try:
+        issues = reviewer(photo, rendered)
+    except Exception as e:
+        return {"ok": False, "why": f"{type(e).__name__}: {e}"[:300]}
+    out = {"ok": True, "issues": summary(issues), "fixes": sorted({i.fix for i in issues}), "boxy": any(i.boxy for i in issues)}
+    if hasattr(reviewer, "usage"):
+        out["tokens"] = reviewer.usage()
+    return out
+
+
 def summary(issues: list[Issue], limit: int = 10) -> list[str]:
     """Short lines for the dashboard, each problem once."""
     out: list[str] = []

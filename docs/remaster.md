@@ -281,7 +281,8 @@ Requests use server-side fallbacks (`fallbacks: "default"`); a refusal or an err
 is output and most of it). Two passes of 8 views come to roughly half a dollar a home at medium effort
 (about twice that at high). `"review": false` turns it off. It needs `ANTHROPIC_API_KEY` in the
 `atrium-photoreal` Modal secret; without it the review is skipped. The legal pages name Anthropic as a
-subprocessor and say what it sees.
+subprocessor and say what it sees. To check the key works: `modal run modal_app.py::check_reviewer` (one review of
+a made-up room on a CPU, a few cents; prints what it found and the tokens, never the key).
 
 ## 5. The job (`atrium_remaster/job.py`)
 
@@ -382,7 +383,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 68 tests (below)
+python -m pytest tests -q        # CPU, 69 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

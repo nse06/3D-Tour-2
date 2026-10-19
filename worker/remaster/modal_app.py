@@ -208,6 +208,26 @@ def remaster_folder(capture: str, model: str, out: str, options: str = "{}"):
     print(json.dumps(result["stats"], indent=2))
 
 
+@app.function(image=gpu_image, secrets=secrets, timeout=300)
+def review_check() -> dict:
+    """Whether the AI reviewer reaches Claude with the secret's key: one review of a made-up room, on
+    a CPU, a few cents. The key is never shown."""
+    from atrium_remaster.review import reviewer_from_env, selftest
+
+    reviewer = reviewer_from_env()
+    if reviewer is None:
+        return {"ok": False, "why": "no ANTHROPIC_API_KEY in the atrium-photoreal secret"}
+    return selftest(reviewer)
+
+
+@app.local_entrypoint()
+def check_reviewer():
+    """modal run modal_app.py::check_reviewer"""
+    import json
+
+    print(json.dumps(review_check.remote(), indent=2))
+
+
 @app.local_entrypoint()
 def make_shape(image: str, box: str, out: str):
     """One piece of furniture's shape from a photo: SAM 2.1 cuts out what's in `box` (x0,y0,x1,y1 in

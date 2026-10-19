@@ -127,3 +127,18 @@ def test_the_job_reviews_the_scan_first_and_the_result_last(tmp_path):
     assert stats["reviewRemoved"] == 1 and stats["reviewFound"] == ["fragment: grey box in the air"], stats
     assert stats["reviewLeft"] == [] and spotter.calls == 2 * review.ReviewConfig().views, "the result checked too (8 photos each time), and it's clean"
     assert boxes_left(out, [GHOST]) == [False]
+
+
+def test_the_selftest_says_whether_the_reviewer_answers():
+    answer = {"issues": [
+        {"kind": "fragment", "what": "dark piece in the air", "box": [110, 150, 200, 290], "fix": "remove", "sure": "high", "boxy": False},
+        {"kind": "incomplete", "what": "dresser with a hole", "box": [440, 490, 590, 630], "fix": "rebuild", "sure": "high", "boxy": True},
+    ]}
+    result = review.selftest(review.ClaudeReviewer(client=FakeClient(json.dumps(answer))))
+    assert result["ok"] and result["fixes"] == ["rebuild", "remove"] and result["boxy"] and result["tokens"]["input"] == 2600, result
+
+    class Broken:
+        def __call__(self, photo, rendered):
+            raise PermissionError("invalid x-api-key")
+
+    assert review.selftest(Broken()) == {"ok": False, "why": "PermissionError: invalid x-api-key"}
