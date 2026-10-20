@@ -12,7 +12,7 @@ export const LEGAL = {
   /** The US state whose law governs the Terms. */
   governingLaw: process.env.LEGAL_GOVERNING_LAW?.trim() || "Illinois",
   /** When the current versions took effect (update with every material change). */
-  effective: "October 19, 2026",
+  effective: "October 20, 2026",
 };
 
 /** Services that process personal data for Atrium (the privacy policy lists them). */

@@ -135,7 +135,7 @@ export default function Privacy() {
           account.
         </li>
         <li>
-          <strong>Photos checked by the AI reviewer:</strong> up to eight photos per AI-enhanced model, with views of the model, are sent to Anthropic. It
+          <strong>Photos checked by the AI reviewer:</strong> up to ten photos per AI-enhanced model, with views of the model, are sent to Anthropic. It
           doesn&apos;t keep them beyond the limited period its commercial terms allow for safety and abuse monitoring, and doesn&apos;t train its models on
           them.
         </li>
