@@ -295,10 +295,13 @@ def box_map(mesh: Mesh, hits, boxes: list[Box], margin: float) -> np.ndarray:
     return out
 
 
-def make_views(mesh: Mesh, capture: Capture, cfg: ReviewConfig, of_face: np.ndarray | None = None, boxes: list[Box] | None = None) -> list[View]:
+def make_views(
+    mesh: Mesh, capture: Capture, cfg: ReviewConfig, of_face: np.ndarray | None = None, boxes: list[Box] | None = None, cameras: list | None = None
+) -> list[View]:
+    """The picked photos (or `cameras`) and the model rendered from each."""
     caster = Caster.of(mesh)
     out = []
-    for i, cam in enumerate(pick_cameras(capture, cfg, mesh, boxes)):
+    for i, cam in enumerate(cameras if cameras is not None else pick_cameras(capture, cfg, mesh, boxes)):
         photo, K, _ = load_photo(cam, cfg.long_side)
         h, w = photo.shape[:2]
         hits = caster.view(K, cam.camtoworld, w, h)
@@ -390,6 +393,7 @@ class Verdict:
     removed: int = 0
     removed_area: float = 0.0
     rebuild: dict[str, str] = field(default_factory=dict)  # RoomPlan id: "box" or "made"
+    cameras: list = field(default_factory=list)  # the photos it was shown (`final` shows the same: no more go to it)
 
 
 def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cfg: ReviewConfig = ReviewConfig(), log=print) -> tuple[Mesh, Verdict]:
@@ -400,8 +404,9 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
     in_box = np.array([any(bool(b.contains(m[None], 0.1)[0]) for b in layout.objects) for m in found.middle], bool)
     removable = (found.area <= cfg.remove_area) & ~in_box
     pieces = rebuildable(layout, cfg)
-    views = make_views(mesh, capture, cfg, found.of_face, pieces)
-    verdict = Verdict(ask(reviewer, views, cfg, log))
+    cameras = pick_cameras(capture, cfg, mesh, pieces)
+    views = make_views(mesh, capture, cfg, found.of_face, pieces, cameras)
+    verdict = Verdict(ask(reviewer, views, cfg, log), cameras=cameras)
     by_view = {v.index: v for v in views}
     remove = np.zeros(len(found.area), bool)
     for issue in verdict.issues:
@@ -446,9 +451,12 @@ def rebuilt(verdict: Verdict, made: list[str]) -> None:
             issue.outcome = ("rebuilt as a box" if box else "made again") if issue.piece in made else "tried, but the scan stayed"
 
 
-def final(mesh: Mesh, capture: Capture, reviewer: Reviewer, cfg: ReviewConfig = ReviewConfig(), log=print, layout: Layout | None = None) -> list[Issue]:
-    """What the reviewer still finds in the finished model (from photos picked as for `inspect`)."""
-    views = make_views(mesh, capture, cfg, boxes=rebuildable(layout, cfg) if layout is not None else None)
+def final(
+    mesh: Mesh, capture: Capture, reviewer: Reviewer, cfg: ReviewConfig = ReviewConfig(), log=print, layout: Layout | None = None, cameras: list | None = None
+) -> list[Issue]:
+    """What the reviewer still finds in the finished model, from `cameras` (those `inspect` showed it,
+    so no more photos go to it) or photos picked as `inspect` picks them."""
+    views = make_views(mesh, capture, cfg, boxes=rebuildable(layout, cfg) if layout is not None else None, cameras=cameras or None)
     issues = [i for i in ask(reviewer, views, cfg, log) if i.sure != "low"]
     log(f"review: {len(issues)} issues left in the finished model")
     return issues

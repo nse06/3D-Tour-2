@@ -22,9 +22,11 @@ class GhostSpotter:
 
     def __init__(self):
         self.calls = 0
+        self.photos = []
 
     def __call__(self, photo, rendered):
         self.calls += 1
+        self.photos.append(photo)
         ghost = (np.abs(rendered.astype(int) - GREY).max(-1) <= 3) & (np.abs(rendered.astype(int) - photo.astype(int)).sum(-1) > 60)
         if ghost.sum() < 30:
             return []
@@ -176,7 +178,8 @@ def test_the_job_reviews_the_scan_first_and_the_result_last(tmp_path):
     options = {"steps": 10, "batch": 2, "tile": 128, "longSide": 160, "fill": False, "trim": False, "fixerViews": False, "depth": False, "loose": False}
     out, stats = remaster(mesh, capture, options, Services(reviewer=spotter), "cpu", lambda *a: None, log=lambda _: None, layout=plan)
     assert stats["reviewRemoved"] == 1 and stats["reviewFound"] == ["fragment: grey box in the air (removed)"], stats
-    assert stats["reviewLeft"] == [] and spotter.calls == 2 * review.ReviewConfig().views, "the result checked too (8 photos each time), and it's clean"
+    assert stats["reviewLeft"] == [] and spotter.calls == 2 * review.ReviewConfig().views, "the result checked too (10 photos each time), and it's clean"
+    assert len({p.tobytes() for p in spotter.photos}) == review.ReviewConfig().views, "the same photos both times: no more go to the reviewer"
     assert boxes_left(out, [GHOST]) == [False]
 
 

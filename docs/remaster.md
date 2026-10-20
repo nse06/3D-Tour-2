@@ -287,7 +287,8 @@ aren't in the photo, objects with holes or missing parts, smeared patches, wrong
 * **What came of it**: each problem in `reviewFound` ends with what was done (removed; to be rebuilt as a
   box, then rebuilt or "tried, but the scan stayed"; left, and why: no furniture RoomPlan measured there,
   not a small loose piece, repainting isn't built yet). Those acted on come first, 12 at most.
-* **The result, last** (after the lighting): what it still finds goes to the stats for the dashboard.
+* **The result, last** (after the lighting), from the same photos (no more go to it than the 10 the privacy
+  page names; change both together): what it still finds goes to the stats for the dashboard.
 
 Requests use server-side fallbacks (`fallbacks: "default"`); a refusal or an error is no issues. Stats:
 `reviewIssues`, `reviewFound`, `reviewRemoved`, `reviewRemovedArea`, `reviewRebuild` (RoomPlan id: `box` or

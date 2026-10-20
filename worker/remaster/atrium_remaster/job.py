@@ -357,7 +357,7 @@ def remaster(
     if reviewer is not None:
         report("light", 0.5, "an AI is checking the result")
         try:
-            stats["reviewLeft"] = review_mod.summary(review_mod.final(out, capture, reviewer, log=log, layout=layout))
+            stats["reviewLeft"] = review_mod.summary(review_mod.final(out, capture, reviewer, log=log, layout=layout, cameras=verdict.cameras if verdict is not None else None))
         except Exception as e:
             traceback.print_exc()
             stats["reviewError"] = f"{type(e).__name__}: {e}"[:200]
