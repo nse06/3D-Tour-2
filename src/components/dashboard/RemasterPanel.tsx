@@ -34,7 +34,10 @@ function aiChanges(stats: Record<string, unknown>): string[] {
     const n = stats[key];
     return typeof n === "number" && n > 0 ? `${n} ${n === 1 ? one : many}` : null;
   };
+  const loose = ["looseFloating", "looseLow", "looseSeenThrough"].reduce((n, key) => n + (typeof stats[key] === "number" ? (stats[key] as number) : 0), 0);
   return [
+    loose > 0 ? `${loose} loose scan ${loose === 1 ? "piece" : "pieces"} removed (floating bits, the tops of shoes)` : null,
+    count("reviewRemoved", "fragment the AI check spotted removed", "fragments the AI check spotted removed"),
     count("furnitureMade", "piece of furniture reshaped", "pieces of furniture reshaped"),
     count("fused", "scanned shape sharpened", "scanned shapes sharpened"),
     count("recessed", "door or window set into its wall", "doors and windows set into their walls"),
@@ -47,6 +50,21 @@ function aiChanges(stats: Record<string, unknown>): string[] {
     count("photosSharpened", "blurry photo sharpened", "blurry photos sharpened"),
     typeof stats.lightExposure === "number" ? "lighting evened out" : null,
   ].filter((s): s is string => s !== null);
+}
+
+/** What the AI check (worker/remaster/review.py) found in the scan, what it still sees, and what it cost. */
+function aiCheck(stats: Record<string, unknown>) {
+  const lines = (key: string) => (Array.isArray(stats[key]) ? (stats[key] as unknown[]).filter((v): v is string => typeof v === "string") : []);
+  if (typeof stats.reviewIssues !== "number" && !Array.isArray(stats.reviewLeft)) return null;
+  const tokens = stats.reviewTokens as { dollars?: unknown } | undefined;
+  const rebuild = stats.reviewRebuild && typeof stats.reviewRebuild === "object" ? Object.keys(stats.reviewRebuild).length : 0;
+  return {
+    issues: typeof stats.reviewIssues === "number" ? stats.reviewIssues : null,
+    found: lines("reviewFound"),
+    left: lines("reviewLeft"),
+    rebuild,
+    dollars: typeof tokens?.dollars === "number" ? tokens.dollars : null,
+  };
 }
 
 /**
@@ -123,6 +141,7 @@ export function RemasterPanel({
   const busy = pending || leaving;
   const done = Math.round((job?.progress ?? 0) * 100);
   const stats = job?.stats ?? {};
+  const review = aiCheck(stats);
   const minutes = job?.startedAt && job.finishedAt ? Math.round((Date.parse(job.finishedAt) - Date.parse(job.startedAt)) / 60000) : null;
   const startButton = (label: string, icon: "play" | "again" | "retry") =>
     gpuReady && photosReady ? (
@@ -202,6 +221,42 @@ export function RemasterPanel({
           </p>
           {job.message && <p className="text-xs text-amber-700">{job.message}</p>}
           {aiChanges(stats).length > 0 && <p className="text-xs text-neutral-500">What the AI changed: {aiChanges(stats).join(", ")}.</p>}
+          {review && (
+            <div className="space-y-1.5 rounded-lg bg-linen/60 p-3 text-xs text-neutral-600">
+              <p className="font-medium text-ink">AI check</p>
+              <p>
+                {[
+                  review.issues != null ? `Found ${review.issues} ${review.issues === 1 ? "problem" : "problems"} in the scan` : null,
+                  review.rebuild > 0 ? `asked for ${review.rebuild} ${review.rebuild === 1 ? "piece" : "pieces"} of furniture to be rebuilt` : null,
+                  review.dollars != null ? `cost $${review.dollars.toFixed(2)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+              {review.left.length > 0 ? (
+                <div>
+                  <p>Still visible in the AI-enhanced model:</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                    {review.left.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p>Nothing left that it would flag.</p>
+              )}
+              {review.found.length > 0 && (
+                <details>
+                  <summary className="cursor-pointer">What it found in the scan</summary>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                    {review.found.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
           <p className="text-xs text-neutral-400">
             {[
               typeof stats.photos === "number" ? `${stats.photos} photos` : null,

@@ -33,7 +33,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/remaster/jo
     if (!job) return apiError(404, "No such remaster job.");
     if (job.status === "done" || job.status === "failed") return apiError(409, `The job is already ${job.status}.`);
     const text = (value: unknown, max: number) => (typeof value === "string" ? value.slice(0, max) : null);
-    const statsOf = (value: unknown) => (value && typeof value === "object" && JSON.stringify(value).length < 8192 ? (value as Record<string, unknown>) : null);
+    const statsOf = (value: unknown) =>
+      value && typeof value === "object" && JSON.stringify(value).length < 32768 ? (value as Record<string, unknown>) : null;
     const finish = async () => {
       // The photos a finished job held on to may go now, if a newer upload replaced them.
       await pruneListingPhotos(repo, job.userId, job.propertyId).catch((e) => console.error("remaster: could not delete older photos:", (e as Error).message));
