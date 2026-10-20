@@ -176,6 +176,12 @@ the LiDAR's shape, never the floor, a wall or a baseboard behind it), with new t
 color and that the skins (§2) learn from the photos like the rest; otherwise the scanned piece stays. (A real
 armchair the LiDAR had caught whole was swapped for a made one that came out a lumpy blob.)
 
+When the AI reviewer (§4.9) has looked the scan over, only the pieces it picks are made (none picked, the stage
+doesn't run): on a real two-room home all ten pieces kept their scans for 12.6 minutes of GPU. A pick replaces the
+scan without having to beat its outline, since a hole hardly changes an outline and the reviewer saw the scan is
+broken: a made shape at 60% overlap, RoomPlan's box (for what's a box in real life) at 30%, just enough to show
+it's where the photos see the piece. `furnitureAll: true` makes every movable piece as before.
+
 TripoSG runs with its marching-cubes decoder (scikit-image). Its fast decoder's mesher (diso) and its background
 remover (RMBG-1.4) aren't used, since neither license is one we take on: the image puts a stub in place of diso
 for TripoSG's imports, and the cutouts come from SAM. To try it on one photo:
@@ -272,7 +278,13 @@ aren't in the photo, objects with holes or missing parts, smeared patches, wrong
   finds broken is made again by the furniture stage (§4.4), storage too but never storage next to a sink,
   stove or other fixture: what it says is a box in real life (a dresser, cabinet, nightstand, TV stand)
   as the box RoomPlan measured, which the skins then paint from the photos, anything else by TripoSG.
-  Either way the new piece is kept only if its outline matches the photos 5 points better than the scan.
+  Which piece it means is what the model shows inside its box: the RoomPlan box (grown 5 cm) that at
+  least 30% of those surface points lie in, the most of them winning; only if none does, the box whose
+  outline overlaps the reviewer's box 30% (IoU): a box drawn tight around a dresser's hole overlaps the
+  dresser's outline far less than that. It's asked to box the whole object for these, too.
+* **What came of it**: each problem in `reviewFound` ends with what was done (removed; to be rebuilt as a
+  box, then rebuilt or "tried, but the scan stayed"; left, and why: no furniture RoomPlan measured there,
+  not a small loose piece, repainting isn't built yet). Those acted on come first, 12 at most.
 * **The result, last** (after the lighting): what it still finds goes to the stats for the dashboard.
 
 Requests use server-side fallbacks (`fallbacks: "default"`); a refusal or an error is no issues. Stats:
@@ -312,7 +324,7 @@ Options (all optional):
 * Cleanup: `deblur` (true), `deblurMinSmear` (1.5 px), `deblurResidual` (0.3), `tvOff` (true), `windows` (true).
 * Trim: `trim` (true: all of it), `recessDepth` (0.1 m), `baseboards`, `crowns`, `casings`, `cabinets` (true).
 * Furniture: `furniture` (true), `furnitureMinFit` (0.6), `furnitureBetterBy` (0.05), `furnitureViews` (5),
-  `furnitureLongSide` (960), `furnitureInFrame` (0.9).
+  `furnitureLongSide` (960), `furnitureInFrame` (0.9), `furnitureAll` (false: with the reviewer, only its picks).
 * Depth: `depth` (true), `fuse` (true). Fixer views: `fixerViews` (false), `fixerRounds` (2), `fixerViewCount` (80), `fixerWidth`
   (1024), `fixerHeight` (576), `fixerWeight` (0.5), `fixerShare` (0.25), `fixerToneLock` (0.012).
 * Photo spots: `spots` (true), `spotFace` (1024), `spotSpacing` (1 m), `spotLongSide` (1920).
@@ -383,7 +395,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 69 tests (below)
+python -m pytest tests -q        # CPU, 72 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

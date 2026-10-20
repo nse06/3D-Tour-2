@@ -172,12 +172,14 @@ def remaster(
     # An AI looks the scan over the way a buyer would: fragments it's sure of go, and furniture it finds
     # with holes or the wrong shape is made again below.
     rebuild: dict = {}
+    verdict = None
+    reviewed = False  # the reviewer looked the scan over: the furniture stage makes only its picks
     reviewer = services.reviewer if options.get("review", True) else None
     if reviewer is not None:
         report("cleanup", 0.0, "an AI is looking the scan over")
         try:
             mesh, verdict = review_mod.inspect(mesh, capture, layout, reviewer, log=log)
-            rebuild = dict(verdict.rebuild)
+            rebuild, reviewed = dict(verdict.rebuild), not options.get("furnitureAll", False)
             stats.update(
                 {
                     "reviewIssues": len(verdict.issues),
@@ -219,7 +221,7 @@ def remaster(
         except Exception as e:  # the model keeps its flat walls
             traceback.print_exc()
             stats["trimError"] = f"{type(e).__name__}: {e}"[:200]
-    if layout.objects and services.segmenter is not None and services.shapes is not None and options.get("furniture", True):
+    if layout.objects and services.segmenter is not None and services.shapes is not None and options.get("furniture", True) and (rebuild or not reviewed):
         report("furniture", 0.0, "")
         try:
             furniture_cfg = furniture_mod.FurnitureConfig(
@@ -241,8 +243,12 @@ def remaster(
                 inpainter=services.inpainter,
                 progress=lambda p: report("furniture", p, ""),
                 also=rebuild,
+                only_also=reviewed,
             )
             stats.update(furniture_stats)
+            if verdict is not None and rebuild:
+                review_mod.rebuilt(verdict, furniture_stats.get("furnitureIds", []))
+                stats["reviewFound"] = review_mod.summary(verdict.issues)
         except Exception as e:  # the scanned pieces stay
             traceback.print_exc()
             stats["furnitureError"] = f"{type(e).__name__}: {e}"[:200]

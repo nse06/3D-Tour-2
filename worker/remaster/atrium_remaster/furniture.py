@@ -9,6 +9,12 @@ piece. The skins (skins.py) then learn its colors from the photos like everythin
 photo saw start as the piece's color. A shape that doesn't match the photos well enough isn't used,
 nor one that matches them no better than the scanned piece does (a chair the LiDAR caught whole and
 the photos painted well stays as it is), and the scanned piece stays.
+
+The AI reviewer (review.py) can pick pieces too, storage among them, and when it has looked the scan
+over, only its picks are made (shapes for every piece cost minutes of GPU and real homes' scans rarely
+lose to them on outlines). It saw the scanned piece is broken, so a pick needn't match the photos
+better than the scan does (a hole hardly changes an outline): a box only roughly where the photos
+show the piece, a made shape as well as any other.
 """
 
 from __future__ import annotations
@@ -72,6 +78,7 @@ class FurnitureConfig:
     fit_px: int = 192  # outlines are compared this big
     min_iou: float = 0.6  # a shape matching the cutouts less well than this isn't used
     better_by: float = 0.05  # ... nor one matching them less than this better than the scanned piece
+    box_iou: float = 0.3  # a reviewer's box pick (RoomPlan's box) matching the cutouts less than this isn't used
     upright: bool = True  # the shape maker makes things standing up (y up): only turn them about it
     max_faces: int = 30000
     margin: float = 0.03  # the scanned piece: what lies within this of its box
@@ -330,10 +337,11 @@ def run(
     inpainter=None,
     progress=None,
     also: dict | None = None,
+    only_also: bool = False,
 ) -> tuple[Mesh, dict]:
     """The mesh with its movable pieces made by the shape maker, where their shapes match the photos.
     `also`: RoomPlan ids made too whatever their category, each "made" (by the shape maker) or "box"
-    (RoomPlan's own box: a dresser, a cabinet), the reviewer's picks (review.py).
+    (RoomPlan's own box: a dresser, a cabinet), the reviewer's picks (review.py); `only_also`: only those.
     `inpainter` (fill.Inpainter): what's hidden behind something in the cutout's photo is painted in
     before the shape maker sees it (else the gap would end up in the piece's shape). `progress(share
     done)`: the cutouts are the first 20%, the shapes (a piece at a time) the next 65%, the fits the rest."""
@@ -347,7 +355,7 @@ def run(
         if progress is not None:
             progress(share)
 
-    pieces = [b for b in layout.objects if b.category in cfg.categories or b.id in also]
+    pieces = [b for b in layout.objects if b.id in also or (b.category in cfg.categories and not only_also)]
     stats: dict = {"furnitureMade": 0, "furnitureKept": 0, "furnitureFit": {}, "furnitureScannedFit": {}, "furnitureIds": []}
     if not pieces:
         return mesh, stats
@@ -359,7 +367,9 @@ def run(
         done(0.2 * i / len(pieces))
         piece = piece_faces(mesh, b, chart, flat, cfg.margin)
         found = sights(caster, piece, b, capture.cameras, cfg) if piece.any() else []
-        whole = [s for s in found if s.framed >= cfg.in_frame]
+        boxed = also.get(b.id) == "box"
+        # RoomPlan's box needs no cutout to make it from, only photos to check it against.
+        whole = [s for s in found if s.framed >= cfg.in_frame] or (found if boxed else [])
         if not whole:
             log(f"furniture: {b.category} {b.id}: no photo shows it whole")
             stats["furnitureKept"] += 1
@@ -391,8 +401,10 @@ def run(
                     (image,) = inpainter([image], [best_hides])
                     cut = mask | best_hides
                 crop, color = cutout(image, cut, cfg.crop, cfg.pad), np.median(image[mask], 0) / 255
+            if color is None:
+                color = np.median(image[mask], 0) / 255
             views.append(fit_view(s, mask, scene, cfg.fit_px))
-        if crop is None:
+        if crop is None and not (boxed and views):
             log(f"furniture: {b.category} {b.id}: no cutout")
             stats["furnitureKept"] += 1
             continue
@@ -415,8 +427,10 @@ def run(
         scanned = outline_iou(mesh.vertices, mesh.faces[piece], views)
         stats["furnitureFit"][b.id] = round(iou, 3)
         stats["furnitureScannedFit"][b.id] = round(scanned, 3)
-        if iou < max(cfg.min_iou, scanned + cfg.better_by):
-            log(f"furniture: {b.category} {b.id}: its shape matches the photos {iou:.2f}, the scanned one {scanned:.2f}: keeping the scanned one")
+        pick = also.get(b.id)
+        need = cfg.box_iou if pick == "box" else cfg.min_iou if pick == "made" else max(cfg.min_iou, scanned + cfg.better_by)
+        if iou < need:
+            log(f"furniture: {b.category} {b.id}: its {'box' if pick == 'box' else 'shape'} matches the photos {iou:.2f}, the scanned one {scanned:.2f}: keeping the scanned one")
             stats["furnitureKept"] += 1
             continue
         log(f"furniture: {b.category} {b.id}: made ({len(f)} triangles, outline match {iou:.2f})")

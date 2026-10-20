@@ -134,6 +134,22 @@ def test_box_shaped_furniture_the_reviewer_flags_becomes_roomplans_box(tmp_path)
     assert len(out.faces) == kept + 12 and np.allclose(new.min(0), [1.0, 0.0, 0.0], atol=1e-5) and np.allclose(new.max(0), [1.8, 0.9, 0.5], atol=1e-5)
 
 
+def test_the_reviewers_picks_replace_the_scan_without_beating_its_outline(tmp_path):
+    """The reviewer saw the scanned piece is broken (holes hardly change an outline): its pick replaces
+    the scan though it matches the photos no better, and with `only_also` nothing else is made."""
+    room.write(tmp_path, layout=room.layout_doc(cabinet="table"))
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    capture = load(tmp_path / "capture")
+    lay = layout.load(tmp_path / "capture")
+    cfg = furniture.FurnitureConfig(long_side=160, in_frame=0.8, crop=64, fit_px=80)
+    for pick in ("made", "box"):
+        out, stats = furniture.run(mesh, capture, lay, furniture.BoxSegmenter(), BoxMaker(), cfg, log=lambda _: None, also={"CAB": pick})
+        assert stats["furnitureMade"] == 1 and stats["furnitureFit"]["CAB"] < stats["furnitureScannedFit"]["CAB"] + 0.05, (pick, stats)
+    maker = BoxMaker()
+    out, stats = furniture.run(mesh, capture, lay, furniture.BoxSegmenter(), maker, cfg, log=lambda _: None, also={}, only_also=True)
+    assert out is mesh and stats["furnitureMade"] == 0 and not maker.images, "the reviewer picked nothing: nothing made"
+
+
 def test_a_shape_no_better_than_the_scan_leaves_the_scan(tmp_path):
     """A piece the LiDAR caught whole (the cabinet as it is) keeps its scanned shape: the made one
     matches the photos no better (a real armchair came out warped and lost its photo look)."""
@@ -182,6 +198,20 @@ def test_the_job_makes_furniture_before_the_skins(tmp_path):
     made = [value for stage, value in reports if stage == "furniture"]
     assert made == sorted(made) and made[-1] >= 0.85, "how far along it is, piece by piece"
     assert len(out.atlases) == len(mesh.atlases) + 1
+
+
+def test_once_the_reviewer_has_looked_only_its_picks_are_made(tmp_path):
+    """The reviewer found nothing to make again: the furniture stage (minutes of GPU) doesn't run,
+    unless `furnitureAll` asks for every piece as before."""
+    room.write(tmp_path, layout=room.layout_doc(cabinet="table"))
+    mesh = scanned_short(scene.from_model(glb.read((tmp_path / "model.glb").read_bytes())), 0.5)
+    capture = load(tmp_path / "capture")
+    options = {"steps": 4, "batch": 2, "tile": 128, "longSide": 160, "furnitureLongSide": 160, "furnitureInFrame": 0.8, "fill": False, "trim": False, "fixerViews": False, "depth": False, "loose": False}
+    for every, made in ((False, 0), (True, 1)):
+        maker = BoxMaker()
+        services = Services(segmenter=furniture.BoxSegmenter(), shapes=maker, reviewer=lambda photo, rendered: [])
+        _, stats = remaster(mesh, capture, {**options, "furnitureAll": every}, services, "cpu", lambda *a: None, log=lambda _: None, layout=layout.load(tmp_path / "capture"))
+        assert stats["reviewIssues"] == 0 and stats.get("furnitureMade", 0) == made and len(maker.images) == made, (every, stats)
 
 
 def test_what_hides_a_piece_is_painted_over_before_the_maker_sees_it(tmp_path):

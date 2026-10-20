@@ -11,8 +11,10 @@ wrong, where (a box on the render) and what the thing should be. Then:
   a small loose piece in no RoomPlan box; a piece of furniture it says has holes or missing parts is
   made again by the furniture stage (furniture.py), a dresser or a TV stand too (not a kitchen's
   cabinets): what's a box in real life (a dresser, a cabinet, a nightstand) as the box RoomPlan
-  measured, anything else by the shape maker; either is kept only if it then matches the photos better
-  than the scan did;
+  measured, anything else by the shape maker. Which piece it means is what the model shows inside its
+  box (the RoomPlan box most of those surface points lie in), so a box drawn tight around a hole still
+  finds its dresser. The reviewer having seen the scan is broken, a pick replaces it without having to
+  match the photos' outlines better than the scan does (holes don't show in an outline);
 * `final`, once the remaster is done: what it still finds goes into the stats, for the dashboard.
 
 It needs ANTHROPIC_API_KEY in the worker's environment (the atrium-photoreal secret); without it the
@@ -68,8 +70,8 @@ rebuild.
 Don't report: differences in lighting, exposure or color cast; slight misalignment between the images; \
 people or pets in the photo; parts of the render that are grey background; small imperfections a buyer \
 wouldn't notice; anything you aren't fairly sure of. Report each problem once, with a tight box around it \
-on the render (the second image) as [x0, y0, x1, y1] in thousandths of its width and height, and say in a \
-few words what the thing is ("wooden dresser", "painting over the dresser", "fragments on the floor"). Say \
+on the render (the second image) as [x0, y0, x1, y1] in thousandths of its width and height (for incomplete \
+and wrong_shape, around the whole object, not just its hole), and say in a few words what the thing is ("wooden dresser", "painting over the dresser", "fragments on the floor"). Say \
 whether the real thing is basically a box (boxy: a dresser, chest of drawers, cabinet, nightstand, TV stand, \
 bookcase, desk, ottoman) or not (a sofa, armchair, bed, plant, lamp). An empty list is a fine answer."""
 
@@ -112,6 +114,8 @@ class Issue:
     sure: str
     boxy: bool = False
     view: int = -1
+    outcome: str = ""  # what was done about it, for the dashboard
+    piece: str = ""  # the RoomPlan id of the furniture it's sent to be made again
 
 
 class Reviewer(Protocol):
@@ -215,7 +219,8 @@ class ReviewConfig:
     max_smear: float = 2.0  # pixels (at the review size): blurrier photos aren't shown
     remove_area: float = 1.0  # m²: the most a piece the reviewer removes may have
     remove_share: float = 0.4  # ... and this much of it, as the render shows it, inside the reviewer's box
-    rebuild_share: float = 0.3  # a RoomPlan box rebuilt: its outline and the reviewer's box overlap this much (IoU)
+    rebuild_share: float = 0.3  # a RoomPlan box rebuilt: this much of what the reviewer's box shows lies in it
+    box_margin: float = 0.05  # m: a surface point this close to a RoomPlan box is in it
     fixture_reach: float = 1.0  # m: storage this close to a fixture is built in
     workers: int = 8
 
@@ -228,6 +233,7 @@ class View:
     piece: np.ndarray  # (H, W) the loose-piece id each pixel shows, -1 for none
     K: np.ndarray
     camtoworld: np.ndarray
+    box_of: np.ndarray | None = None  # (H, W) the index of the RoomPlan box (of those asked) each pixel shows, -1 for none
 
 
 def pick_cameras(capture: Capture, cfg: ReviewConfig) -> list:
@@ -238,7 +244,24 @@ def pick_cameras(capture: Capture, cfg: ReviewConfig) -> list:
     return [sharp[int(i)] for i in np.linspace(0, len(sharp) - 1, cfg.views).round()]
 
 
-def make_views(mesh: Mesh, capture: Capture, cfg: ReviewConfig, of_face: np.ndarray | None = None) -> list[View]:
+def box_map(mesh: Mesh, hits, boxes: list[Box], margin: float) -> np.ndarray:
+    """(H, W) the index of the box each pixel's surface point lies in (the smallest, where boxes
+    overlap: a nightstand against a bed), -1 for none."""
+    out = np.full(hits.shape, -1, np.int64)
+    if not boxes:
+        return out
+    hit = hits.hit
+    corners = mesh.vertices[mesh.faces[hits.face[hit]]].astype(np.float64)
+    b = hits.bary[hit].astype(np.float64)
+    points = corners[:, 0] * (1 - b[:, :1] - b[:, 1:]) + corners[:, 1] * b[:, :1] + corners[:, 2] * b[:, 1:]
+    flat = np.full(len(points), -1, np.int64)
+    for i in sorted(range(len(boxes)), key=lambda i: -float(np.prod(boxes[i].size))):
+        flat[boxes[i].contains(points, margin)] = i
+    out[hit] = flat
+    return out
+
+
+def make_views(mesh: Mesh, capture: Capture, cfg: ReviewConfig, of_face: np.ndarray | None = None, boxes: list[Box] | None = None) -> list[View]:
     caster = Caster.of(mesh)
     out = []
     for i, cam in enumerate(pick_cameras(capture, cfg)):
@@ -249,7 +272,8 @@ def make_views(mesh: Mesh, capture: Capture, cfg: ReviewConfig, of_face: np.ndar
         piece = np.full((h, w), -1, np.int64)
         if of_face is not None:
             piece[hits.hit] = of_face[hits.face[hits.hit]]
-        out.append(View(i, np.asarray(photo, np.uint8), rendered, piece, K, cam.camtoworld))
+        box_of = box_map(mesh, hits, boxes, cfg.box_margin) if boxes is not None else None
+        out.append(View(i, np.asarray(photo, np.uint8), rendered, piece, K, cam.camtoworld, box_of))
     return out
 
 
@@ -297,6 +321,24 @@ def iou(a, b) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def pointed_at(issue: Issue, view: View, boxes: list[Box], cfg: ReviewConfig) -> Box | None:
+    """The RoomPlan box the reviewer means: the one most of what its box shows lies in, or failing
+    that (the piece barely in the model at all), the one whose outline best matches its box."""
+    if view.box_of is not None:
+        ys, xs = pixel_box(issue, view.box_of.shape)
+        inside = view.box_of[ys, xs]
+        counts = np.bincount(inside[inside >= 0], minlength=len(boxes))
+        if counts.size and counts.max() >= cfg.rebuild_share * inside.size:
+            return boxes[int(counts.argmax())]
+    best, best_iou = None, cfg.rebuild_share
+    for box in boxes:
+        outline = projected_box(box, view)
+        score = iou(outline, issue.box) if outline is not None else 0.0
+        if score >= best_iou:
+            best, best_iou = box, score
+    return best
+
+
 def built_in(box: Box, layout: Layout, reach: float) -> bool:
     if box.category != "storage":
         return False
@@ -318,13 +360,15 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
     found = measure(mesh, LooseConfig())
     in_box = np.array([any(bool(b.contains(m[None], 0.1)[0]) for b in layout.objects) for m in found.middle], bool)
     removable = (found.area <= cfg.remove_area) & ~in_box
-    views = make_views(mesh, capture, cfg, found.of_face)
+    rebuildable = [b for b in layout.objects if b.category in REBUILDABLE and not built_in(b, layout, cfg.fixture_reach)]
+    views = make_views(mesh, capture, cfg, found.of_face, rebuildable)
     verdict = Verdict(ask(reviewer, views, cfg, log))
     by_view = {v.index: v for v in views}
     remove = np.zeros(len(found.area), bool)
     for issue in verdict.issues:
         view = by_view.get(issue.view)
         if view is None or issue.sure == "low":
+            issue.outcome = "not sure enough to act on" if view is not None else ""
             continue
         if issue.fix == "remove":
             ys, xs = pixel_box(issue, view.piece.shape)
@@ -332,21 +376,35 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
             seen = np.bincount(view.piece[view.piece >= 0], minlength=len(found.area))
             there = np.bincount(inside[inside >= 0], minlength=len(found.area))
             share = np.where(seen > 0, there / np.maximum(seen, 1), 0.0)
-            remove |= removable & (share >= cfg.remove_share) & (there > 0)
+            these = removable & (share >= cfg.remove_share) & (there > 0)
+            remove |= these
+            issue.outcome = "removed" if these.any() else "left: not a small loose piece"
         elif issue.fix == "rebuild":
-            for box in layout.objects:
-                if box.category not in REBUILDABLE or built_in(box, layout, cfg.fixture_reach):
-                    continue
-                outline = projected_box(box, view)
-                if outline is not None and iou(outline, issue.box) >= cfg.rebuild_share and verdict.rebuild.get(box.id) != "box":
-                    # Boxy in any view, a box (the photos paint its drawers on it).
-                    verdict.rebuild[box.id] = "box" if issue.boxy else "made"
+            box = pointed_at(issue, view, rebuildable, cfg)
+            if box is None:
+                issue.outcome = "left: no furniture piece RoomPlan measured there"
+                continue
+            # Boxy in any view, a box (the photos paint its drawers on it).
+            if verdict.rebuild.get(box.id) != "box":
+                verdict.rebuild[box.id] = "box" if issue.boxy else "made"
+            issue.piece = box.id
+            issue.outcome = "to be rebuilt as a box" if issue.boxy else "to be made again by the shape AI"
+        elif issue.fix == "repaint":
+            issue.outcome = "left: repainting isn't built yet"
     verdict.removed = int(remove.sum())
     verdict.removed_area = round(float(found.area[remove].sum()), 3)
     if remove.any():
         mesh, _ = apply(mesh, remove[found.of_face], [])
     log(f"review: {len(verdict.issues)} issues in {len(views)} views; {verdict.removed} fragments removed, {len(verdict.rebuild)} pieces to make again")
     return mesh, verdict
+
+
+def rebuilt(verdict: Verdict, made: list[str]) -> None:
+    """Once the furniture stage has run: each pick's problem says whether its piece was replaced."""
+    for issue in verdict.issues:
+        if issue.piece:
+            box = verdict.rebuild.get(issue.piece) == "box"
+            issue.outcome = ("rebuilt as a box" if box else "made again") if issue.piece in made else "tried, but the scan stayed"
 
 
 def final(mesh: Mesh, capture: Capture, reviewer: Reviewer, cfg: ReviewConfig = ReviewConfig(), log=print) -> list[Issue]:
@@ -378,11 +436,13 @@ def selftest(reviewer: Reviewer) -> dict:
     return out
 
 
-def summary(issues: list[Issue], limit: int = 10) -> list[str]:
-    """Short lines for the dashboard, each problem once."""
+def summary(issues: list[Issue], limit: int = 12) -> list[str]:
+    """Short lines for the dashboard, each problem once, what was acted on and the surest first."""
+    rank = {"rebuild": 0, "remove": 1, "repaint": 2, "none": 3}
+    sure = {"high": 0, "medium": 1, "low": 2}
     out: list[str] = []
-    for issue in issues:
-        line = f"{issue.kind.replace('_', ' ')}: {issue.what}"[:90]
+    for issue in sorted(issues, key=lambda i: (rank.get(i.fix, 4), sure.get(i.sure, 3))):
+        line = f"{issue.kind.replace('_', ' ')}: {issue.what}"[:90] + (f" ({issue.outcome})" if issue.outcome else "")
         if line not in out:
             out.append(line)
     return out[:limit]

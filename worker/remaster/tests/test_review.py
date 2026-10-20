@@ -72,8 +72,45 @@ def test_furniture_it_finds_broken_is_made_again_but_not_built_ins(tmp_path, mon
         spotter.calls, spotter.boxy = 0, boxy
         _, verdict = review.inspect(mesh, capture, plan, spotter, cfg, log=lambda _: None)
         assert verdict.rebuild == {"CAB": made}, verdict
+    assert verdict.issues[0].piece == "CAB" and verdict.issues[0].outcome == "to be rebuilt as a box"
     sink = review.Box("SINK", "sink", cabinet.center + np.array([1.0, 0, 0]), np.eye(3), np.array([0.6, 0.9, 0.5]))
     assert review.built_in(cabinet, layout.Layout(objects=[cabinet, sink]), 1.0) and not review.built_in(cabinet, plan, 1.0)
+
+
+def test_a_box_drawn_tight_around_a_hole_still_finds_its_piece(tmp_path, monkeypatch):
+    """The reviewer boxes the hole in the cabinet's front, not the cabinet: far too small to match the
+    cabinet's outline, but what it shows is the cabinet, so the cabinet is made again. A box on the
+    bare wall finds nothing, and says so."""
+    capture, plan, mesh = setup(tmp_path)
+    cabinet = next(b for b in plan.objects if b.id == "CAB")
+    seen = []
+    make = review.make_views
+    monkeypatch.setattr(review, "make_views", lambda *a, **k: seen.extend(make(*a, **k)) or list(seen))
+    hits = []
+
+    def spotter(photo, rendered):
+        view = seen[spotter.calls % len(seen)]
+        spotter.calls += 1
+        outline = review.projected_box(cabinet, view)
+        if outline is None or not (view.box_of >= 0).any():
+            return []
+        ys, xs = np.nonzero(view.box_of >= 0)
+        h, w = view.box_of.shape
+        cx, cy = xs.mean() / w, ys.mean() / h
+        hole = (cx - 0.02, cy - 0.02, cx + 0.02, cy + 0.02)
+        hits.append(review.iou(outline, hole))
+        return [review.Issue("incomplete", "cabinet with a hole", hole, "rebuild", "high", True),
+                review.Issue("incomplete", "patch of wall", (0.0, 0.0, 0.05, 0.05), "rebuild", "high")]
+
+    spotter.calls = 0
+    _, verdict = review.inspect(mesh, capture, plan, spotter, review.ReviewConfig(views=6, long_side=160, workers=1), log=lambda _: None)
+    assert hits and max(hits) < review.ReviewConfig().rebuild_share, "outlines alone wouldn't have found it"
+    assert verdict.rebuild == {"CAB": "box"}, verdict
+    assert {i.outcome for i in verdict.issues if i.what == "patch of wall"} == {"left: no furniture piece RoomPlan measured there"}
+    review.rebuilt(verdict, ["CAB"])
+    assert review.summary(verdict.issues)[0] == "incomplete: cabinet with a hole (rebuilt as a box)"
+    review.rebuilt(verdict, [])
+    assert review.summary(verdict.issues)[0] == "incomplete: cabinet with a hole (tried, but the scan stayed)"
 
 
 class FakeClient:
@@ -124,7 +161,7 @@ def test_the_job_reviews_the_scan_first_and_the_result_last(tmp_path):
     spotter = GhostSpotter()
     options = {"steps": 10, "batch": 2, "tile": 128, "longSide": 160, "fill": False, "trim": False, "fixerViews": False, "depth": False, "loose": False}
     out, stats = remaster(mesh, capture, options, Services(reviewer=spotter), "cpu", lambda *a: None, log=lambda _: None, layout=plan)
-    assert stats["reviewRemoved"] == 1 and stats["reviewFound"] == ["fragment: grey box in the air"], stats
+    assert stats["reviewRemoved"] == 1 and stats["reviewFound"] == ["fragment: grey box in the air (removed)"], stats
     assert stats["reviewLeft"] == [] and spotter.calls == 2 * review.ReviewConfig().views, "the result checked too (8 photos each time), and it's clean"
     assert boxes_left(out, [GHOST]) == [False]
 

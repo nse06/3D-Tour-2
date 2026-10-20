@@ -57,12 +57,14 @@ function aiCheck(stats: Record<string, unknown>) {
   const lines = (key: string) => (Array.isArray(stats[key]) ? (stats[key] as unknown[]).filter((v): v is string => typeof v === "string") : []);
   if (typeof stats.reviewIssues !== "number" && !Array.isArray(stats.reviewLeft)) return null;
   const tokens = stats.reviewTokens as { dollars?: unknown } | undefined;
-  const rebuild = stats.reviewRebuild && typeof stats.reviewRebuild === "object" ? Object.keys(stats.reviewRebuild).length : 0;
+  const picked = stats.reviewRebuild && typeof stats.reviewRebuild === "object" ? Object.keys(stats.reviewRebuild) : [];
+  const made = Array.isArray(stats.furnitureIds) ? stats.furnitureIds : [];
   return {
     issues: typeof stats.reviewIssues === "number" ? stats.reviewIssues : null,
     found: lines("reviewFound"),
     left: lines("reviewLeft"),
-    rebuild,
+    rebuild: picked.length,
+    rebuilt: picked.filter((id) => made.includes(id)).length,
     dollars: typeof tokens?.dollars === "number" ? tokens.dollars : null,
   };
 }
@@ -227,7 +229,9 @@ export function RemasterPanel({
               <p>
                 {[
                   review.issues != null ? `Found ${review.issues} ${review.issues === 1 ? "problem" : "problems"} in the scan` : null,
-                  review.rebuild > 0 ? `asked for ${review.rebuild} ${review.rebuild === 1 ? "piece" : "pieces"} of furniture to be rebuilt` : null,
+                  review.rebuild > 0
+                    ? `asked for ${review.rebuild} ${review.rebuild === 1 ? "piece" : "pieces"} of furniture to be rebuilt (${review.rebuilt} done)`
+                    : null,
                   review.dollars != null ? `cost $${review.dollars.toFixed(2)}` : null,
                 ]
                   .filter(Boolean)
