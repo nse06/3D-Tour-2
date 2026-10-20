@@ -179,8 +179,10 @@ armchair the LiDAR had caught whole was swapped for a made one that came out a l
 When the AI reviewer (§4.9) has looked the scan over, only the pieces it picks are made (none picked, the stage
 doesn't run): on a real two-room home all ten pieces kept their scans for 12.6 minutes of GPU. A pick replaces the
 scan without having to beat its outline, since a hole hardly changes an outline and the reviewer saw the scan is
-broken: a made shape at 60% overlap, RoomPlan's box (for what's a box in real life) at 30%, just enough to show
-it's where the photos see the piece. `furnitureAll: true` makes every movable piece as before.
+broken: a made shape at 60% overlap; RoomPlan's box (for what's a box in real life) at 30%, just enough to show
+it's where the photos see the piece, and no more than 10 points worse than the scan, since RoomPlan's box isn't
+always the piece (a real sofa's, taking in its back cushions, came out a block at 0.55 to the scan's 0.76; a side
+table's box, which looked right, scored 0.55 to about 0.59). `furnitureAll: true` makes every movable piece as before.
 
 TripoSG runs with its marching-cubes decoder (scikit-image). Its fast decoder's mesher (diso) and its background
 remover (RMBG-1.4) aren't used, since neither license is one we take on: the image puts a stub in place of diso
@@ -279,11 +281,17 @@ aren't in the photo, objects with holes or missing parts, smeared patches, wrong
   loose piece of at most 1 m² in no RoomPlan box, with 40% of it inside the reviewer's box. Furniture it
   finds broken is made again by the furniture stage (§4.4), storage too but never storage next to a sink,
   stove or other fixture: what it says is a box in real life (a dresser, cabinet, nightstand, TV stand)
-  as the box RoomPlan measured, which the skins then paint from the photos, anything else by TripoSG.
-  Which piece it means is what the model shows inside its box: the RoomPlan box (grown 5 cm) that at
-  least 30% of those surface points lie in, the most of them winning; only if none does, the box whose
-  outline overlaps the reviewer's box 30% (IoU): a box drawn tight around a dresser's hole overlaps the
-  dresser's outline far less than that. It's asked to box the whole object for these, too.
+  as the box RoomPlan measured if RoomPlan filed it as storage or a table (never a sofa's or a bed's box),
+  which the skins then paint from the photos, anything else by TripoSG. A box-shaped piece whose sides
+  are ragged, warped or blotched (the photos painting badly onto a lumpy scan: a real dresser by a
+  window) counts as incomplete, not a smear. It also says what kind of furniture it is (sofa, chair,
+  bed, table, storage or none), and only RoomPlan boxes of that kind can be it (storage and tables
+  stand for each other, as do sofas and chairs; none is never rebuilt): a cabinet's problem landed on
+  the sofa beside it before. Which piece it means is what the model shows inside its box: the RoomPlan
+  box (grown 5 cm) that at least 30% of those surface points lie in, the most of them winning; only if
+  none does, the box whose outline overlaps the reviewer's box 30% (IoU): a box drawn tight around a
+  dresser's hole overlaps the dresser's outline far less than that. It's asked to box the whole object
+  for these, too.
 * **What came of it**: each problem in `reviewFound` ends with what was done (removed; to be rebuilt as a
   box, then rebuilt or "tried, but the scan stayed"; left, and why: no furniture RoomPlan measured there,
   not a small loose piece, repainting isn't built yet). Those acted on come first, 12 at most.
@@ -398,7 +406,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 73 tests (below)
+python -m pytest tests -q        # CPU, 74 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

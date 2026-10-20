@@ -150,6 +150,29 @@ def test_the_reviewers_picks_replace_the_scan_without_beating_its_outline(tmp_pa
     assert out is mesh and stats["furnitureMade"] == 0 and not maker.images, "the reviewer picked nothing: nothing made"
 
 
+def test_a_box_much_worse_than_the_scan_isnt_used(tmp_path):
+    """RoomPlan's box for a sofa takes in its back cushions. Here the box is twice the cabinet's height
+    and the photos show the cabinet (the lower half): the box matches them far worse than the scan,
+    so the reviewer's box pick isn't used."""
+    doc = room.layout_doc()
+    cab = next(o for o in doc["objects"] if o["id"] == "CAB")
+    cab["center"], cab["size"] = [1.4, 0.9, 0.25], [0.8, 1.8, 0.5]
+    room.write(tmp_path, layout=doc)
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+
+    class LowerHalf(furniture.BoxSegmenter):
+        def __call__(self, image, boxes):
+            masks = super().__call__(image, boxes)
+            for mask, (_, y0, _, y1) in zip(masks, boxes):
+                mask[: int((y0 + y1) / 2)] = False
+            return masks
+
+    cfg = furniture.FurnitureConfig(long_side=160, in_frame=0.8, crop=64, fit_px=80)
+    out, stats = furniture.run(mesh, load(tmp_path / "capture"), layout.load(tmp_path / "capture"), LowerHalf(), BoxMaker(), cfg, log=lambda _: None, also={"CAB": "box"}, only_also=True)
+    assert out is mesh and stats["furnitureMade"] == 0, stats
+    assert stats["furnitureFit"]["CAB"] < stats["furnitureScannedFit"]["CAB"] - cfg.box_slack, stats
+
+
 def test_a_shape_no_better_than_the_scan_leaves_the_scan(tmp_path):
     """A piece the LiDAR caught whole (the cabinet as it is) keeps its scanned shape: the made one
     matches the photos no better (a real armchair came out warped and lost its photo look)."""

@@ -49,6 +49,10 @@ MODEL = "claude-opus-5-5"
 PRICE = (4.0, 20.0)  # its US dollars per million input and output tokens (thinking is output)
 KINDS = ("fragment", "incomplete", "smear", "wrong_shape", "other")
 FIXES = ("remove", "rebuild", "repaint", "none")
+FURNITURE = ("sofa", "chair", "bed", "table", "storage", "none")
+# What the reviewer calls a piece, and the RoomPlan categories that can be it (RoomPlan files some
+# cabinets as tables and some armchairs as sofas): a cabinet's problem never lands on the sofa beside it.
+MATCHES = {"sofa": ("sofa", "chair"), "chair": ("chair", "sofa"), "bed": ("bed",), "table": ("table", "storage"), "storage": ("storage", "table"), "none": ()}
 
 SYSTEM = """You review 3D models of homes made from a phone scan, before they go on a real estate listing.
 
@@ -60,9 +64,11 @@ List what's wrong with the model that a home buyer would notice:
 - fragment: a piece of the model that isn't in the photo (bits floating in the air, shards on the floor, \
 remains of a person who walked by). Fix: remove.
 - incomplete: an object that's whole in the photo but has holes, missing sides or chunks in the model (a \
-dresser with a hole in its top, a chair without legs, a sofa cut in half). Fix: rebuild.
-- smear: a blurry, smeared, stretched or wrongly colored patch on a surface that's sharp and clean in the \
-photo (a grey smear across a painting, a wall's color on a sofa). Fix: repaint.
+dresser with a hole in its top, a chair without legs, a sofa cut in half). A box-shaped piece of furniture (a \
+dresser, a cabinet) whose sides are ragged, warped or blotched with patches of the wrong color is incomplete \
+too: its shape is what's wrong, so the photos paint badly onto it. Fix: rebuild.
+- smear: a blurry, smeared, stretched or wrongly colored patch on a wall, floor, painting or other flat surface \
+that's sharp and clean in the photo (a grey smear across a painting). Fix: repaint.
 - wrong_shape: an object whose shape is clearly wrong (a lumpy blob where the photo shows an armchair). Fix: \
 rebuild.
 - other: anything else clearly broken. Fix: none.
@@ -73,7 +79,10 @@ wouldn't notice; anything you aren't fairly sure of. Report each problem once, w
 on the render (the second image) as [x0, y0, x1, y1] in thousandths of its width and height (for incomplete \
 and wrong_shape, around the whole object, not just its hole), and say in a few words what the thing is ("wooden dresser", "painting over the dresser", "fragments on the floor"). Say \
 whether the real thing is basically a box (boxy: a dresser, chest of drawers, cabinet, nightstand, TV stand, \
-bookcase, desk, ottoman) or not (a sofa, armchair, bed, plant, lamp). An empty list is a fine answer."""
+bookcase, desk, ottoman) or not (a sofa, armchair, bed, plant, lamp), and what kind of furniture it is as a \
+floor plan app would file it (furniture: sofa, chair, bed, table, storage for dressers, chests, cabinets, \
+shelves, nightstands and TV stands, or none for anything else: a lamp, a plant, a hamper, a rug, a wall). An \
+empty list is a fine answer."""
 
 SCHEMA = {
     "type": "object",
@@ -89,8 +98,9 @@ SCHEMA = {
                     "fix": {"type": "string", "enum": list(FIXES)},
                     "sure": {"type": "string", "enum": ["low", "medium", "high"]},
                     "boxy": {"type": "boolean"},
+                    "furniture": {"type": "string", "enum": list(FURNITURE)},
                 },
-                "required": ["kind", "what", "box", "fix", "sure", "boxy"],
+                "required": ["kind", "what", "box", "fix", "sure", "boxy", "furniture"],
                 "additionalProperties": False,
             },
         }
@@ -101,6 +111,10 @@ SCHEMA = {
 
 # Furniture the furniture stage may make again when the reviewer asks (built-ins it never touches).
 REBUILDABLE = ("sofa", "chair", "bed", "table", "storage")
+# Those whose RoomPlan box is the piece itself when it's boxy (a dresser, a cabinet, a nightstand, a
+# table that's a cube); never a sofa's (its box takes in the back cushions: a real chaise came out a
+# block twice its height) or a bed's.
+BOXES = ("storage", "table")
 # A "storage" box this close to one of these is a kitchen's or a bathroom's cabinets: built in.
 FIXTURES = ("sink", "stove", "oven", "dishwasher", "refrigerator", "washerDryer", "toilet", "bathtub")
 
@@ -113,6 +127,7 @@ class Issue:
     fix: str
     sure: str
     boxy: bool = False
+    furniture: str = ""  # one of FURNITURE, or "" (unsaid: any piece)
     view: int = -1
     outcome: str = ""  # what was done about it, for the dashboard
     piece: str = ""  # the RoomPlan id of the furniture it's sent to be made again
@@ -142,7 +157,8 @@ def parse_issues(text: str) -> list[Issue]:
         x0, y0, x1, y1 = (min(max(float(v), 0.0), 1000.0) / 1000 for v in box)
         if x1 <= x0 or y1 <= y0:
             continue
-        out.append(Issue(item["kind"], str(item.get("what", ""))[:80], (x0, y0, x1, y1), item["fix"], str(item.get("sure", "medium")), bool(item.get("boxy", False))))
+        furniture = item.get("furniture") if item.get("furniture") in FURNITURE else ""
+        out.append(Issue(item["kind"], str(item.get("what", ""))[:80], (x0, y0, x1, y1), item["fix"], str(item.get("sure", "medium")), bool(item.get("boxy", False)), furniture))
     return out
 
 
@@ -359,16 +375,21 @@ def iou(a, b) -> float:
 
 
 def pointed_at(issue: Issue, view: View, boxes: list[Box], cfg: ReviewConfig) -> Box | None:
-    """The RoomPlan box the reviewer means: the one most of what its box shows lies in, or failing
-    that (the piece barely in the model at all), the one whose outline best matches its box."""
+    """The RoomPlan box the reviewer means, of the kind it names: the one most of what its box shows
+    lies in, or failing that (the piece barely in the model at all), the one whose outline best
+    matches its box."""
+    allowed = MATCHES.get(issue.furniture)
+    fits = np.array([allowed is None or box.category in allowed for box in boxes], bool)
     if view.box_of is not None:
         ys, xs = pixel_box(issue, view.box_of.shape)
         inside = view.box_of[ys, xs]
-        counts = np.bincount(inside[inside >= 0], minlength=len(boxes))
+        counts = np.where(fits, np.bincount(inside[inside >= 0], minlength=len(boxes)), 0)
         if counts.size and counts.max() >= cfg.rebuild_share * inside.size:
             return boxes[int(counts.argmax())]
     best, best_iou = None, cfg.rebuild_share
-    for box in boxes:
+    for box, ok in zip(boxes, fits):
+        if not ok:
+            continue
         outline = projected_box(box, view)
         score = iou(outline, issue.box) if outline is not None else 0.0
         if score >= best_iou:
@@ -424,15 +445,19 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
             remove |= these
             issue.outcome = "removed" if these.any() else "left: not a small loose piece"
         elif issue.fix == "rebuild":
+            if issue.furniture == "none":
+                issue.outcome = "left: not furniture RoomPlan measures"
+                continue
             box = pointed_at(issue, view, pieces, cfg)
             if box is None:
                 issue.outcome = "left: no furniture piece RoomPlan measured there"
                 continue
             # Boxy in any view, a box (the photos paint its drawers on it).
+            boxed = issue.boxy and box.category in BOXES
             if verdict.rebuild.get(box.id) != "box":
-                verdict.rebuild[box.id] = "box" if issue.boxy else "made"
+                verdict.rebuild[box.id] = "box" if boxed else "made"
             issue.piece = box.id
-            issue.outcome = "to be rebuilt as a box" if issue.boxy else "to be made again by the shape AI"
+            issue.outcome = "to be rebuilt as a box" if boxed else "to be made again by the shape AI"
         elif issue.fix == "repaint":
             issue.outcome = "left: repainting isn't built yet"
     verdict.removed = int(remove.sum())

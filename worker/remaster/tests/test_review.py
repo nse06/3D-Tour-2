@@ -75,6 +75,12 @@ def test_furniture_it_finds_broken_is_made_again_but_not_built_ins(tmp_path, mon
         _, verdict = review.inspect(mesh, capture, plan, spotter, cfg, log=lambda _: None)
         assert verdict.rebuild == {"CAB": made}, verdict
     assert verdict.issues[0].piece == "CAB" and verdict.issues[0].outcome == "to be rebuilt as a box"
+    # A sofa's box takes in its back cushions: boxy or not, a sofa is made by the shape maker.
+    plan.objects[:] = [review.Box(b.id, "sofa", b.center, b.axes, b.size) if b.id == "CAB" else b for b in plan.objects]
+    seen.clear()
+    spotter.calls = 0
+    _, verdict = review.inspect(mesh, capture, plan, spotter, cfg, log=lambda _: None)
+    assert verdict.rebuild == {"CAB": "made"}, verdict
     sink = review.Box("SINK", "sink", cabinet.center + np.array([1.0, 0, 0]), np.eye(3), np.array([0.6, 0.9, 0.5]))
     assert review.built_in(cabinet, layout.Layout(objects=[cabinet, sink]), 1.0) and not review.built_in(cabinet, plan, 1.0)
 
@@ -101,14 +107,15 @@ def test_a_box_drawn_tight_around_a_hole_still_finds_its_piece(tmp_path, monkeyp
         cx, cy = xs.mean() / w, ys.mean() / h
         hole = (cx - 0.02, cy - 0.02, cx + 0.02, cy + 0.02)
         hits.append(review.iou(outline, hole))
-        return [review.Issue("incomplete", "cabinet with a hole", hole, "rebuild", "high", True),
+        return [review.Issue("incomplete", "cabinet with a hole", hole, "rebuild", "high", True, "storage"),
+                review.Issue("incomplete", "sofa with a hole", hole, "rebuild", "high", True, "sofa"),
                 review.Issue("incomplete", "patch of wall", (0.0, 0.0, 0.05, 0.05), "rebuild", "high")]
 
     spotter.calls = 0
     _, verdict = review.inspect(mesh, capture, plan, spotter, review.ReviewConfig(views=6, long_side=160, workers=1), log=lambda _: None)
     assert hits and max(hits) < review.ReviewConfig().rebuild_share, "outlines alone wouldn't have found it"
     assert verdict.rebuild == {"CAB": "box"}, verdict
-    assert {i.outcome for i in verdict.issues if i.what == "patch of wall"} == {"left: no furniture piece RoomPlan measured there"}
+    assert {i.outcome for i in verdict.issues if i.what in ("patch of wall", "sofa with a hole")} == {"left: no furniture piece RoomPlan measured there"}, "a sofa's problem never lands on a cabinet"
     review.rebuilt(verdict, ["CAB"])
     assert review.summary(verdict.issues)[0] == "incomplete: cabinet with a hole (rebuilt as a box)"
     review.rebuilt(verdict, [])
@@ -145,7 +152,7 @@ class FakeClient:
 
 def test_claude_is_asked_with_both_images_and_answers_in_boxes():
     answer = {"issues": [
-        {"kind": "incomplete", "what": "wooden dresser", "box": [100, 500, 600, 900], "fix": "rebuild", "sure": "high", "boxy": True},
+        {"kind": "incomplete", "what": "wooden dresser", "box": [100, 500, 600, 900], "fix": "rebuild", "sure": "high", "boxy": True, "furniture": "storage"},
         {"kind": "smear", "what": "painting", "box": [300, 100, 300, 200], "fix": "repaint", "sure": "medium"},  # empty box: dropped
         {"kind": "nonsense", "what": "?", "box": [0, 0, 10, 10], "fix": "none", "sure": "low"},  # unknown kind: dropped
     ]}
@@ -159,7 +166,7 @@ def test_claude_is_asked_with_both_images_and_answers_in_boxes():
     images = [c for c in request["messages"][0]["content"] if c["type"] == "image"]
     assert len(images) == 2 and all(i["source"]["media_type"] == "image/jpeg" for i in images)
     assert [(i.kind, i.what, i.fix) for i in issues] == [("incomplete", "wooden dresser", "rebuild")]
-    assert issues[0].box == (0.1, 0.5, 0.6, 0.9) and issues[0].boxy
+    assert issues[0].box == (0.1, 0.5, 0.6, 0.9) and issues[0].boxy and issues[0].furniture == "storage"
     assert reviewer.usage() == {"input": 2600, "output": 1500, "dollars": 0.04}, "what it cost, counted"
     assert review.ClaudeReviewer(client=FakeClient(stop="refusal"))(photo, photo) == []
 

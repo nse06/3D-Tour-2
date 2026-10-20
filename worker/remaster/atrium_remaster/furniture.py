@@ -14,7 +14,9 @@ The AI reviewer (review.py) can pick pieces too, storage among them, and when it
 over, only its picks are made (shapes for every piece cost minutes of GPU and real homes' scans rarely
 lose to them on outlines). It saw the scanned piece is broken, so a pick needn't match the photos
 better than the scan does (a hole hardly changes an outline): a box only roughly where the photos
-show the piece, a made shape as well as any other.
+show the piece and not much worse than the scan (a real sofa's box, taking in its back cushions, came
+out a block: 0.55 to the scan's 0.76; a side table's box, which looked right, 0.55 to about 0.59), a
+made shape as well as any other.
 """
 
 from __future__ import annotations
@@ -79,6 +81,7 @@ class FurnitureConfig:
     min_iou: float = 0.6  # a shape matching the cutouts less well than this isn't used
     better_by: float = 0.05  # ... nor one matching them less than this better than the scanned piece
     box_iou: float = 0.3  # a reviewer's box pick (RoomPlan's box) matching the cutouts less than this isn't used
+    box_slack: float = 0.1  # ... nor one matching them this much worse than the scan (RoomPlan's box isn't the piece)
     upright: bool = True  # the shape maker makes things standing up (y up): only turn them about it
     max_faces: int = 30000
     margin: float = 0.03  # the scanned piece: what lies within this of its box
@@ -428,7 +431,7 @@ def run(
         stats["furnitureFit"][b.id] = round(iou, 3)
         stats["furnitureScannedFit"][b.id] = round(scanned, 3)
         pick = also.get(b.id)
-        need = cfg.box_iou if pick == "box" else cfg.min_iou if pick == "made" else max(cfg.min_iou, scanned + cfg.better_by)
+        need = max(cfg.box_iou, scanned - cfg.box_slack) if pick == "box" else cfg.min_iou if pick == "made" else max(cfg.min_iou, scanned + cfg.better_by)
         if iou < need:
             log(f"furniture: {b.category} {b.id}: its {'box' if pick == 'box' else 'shape'} matches the photos {iou:.2f}, the scanned one {scanned:.2f}: keeping the scanned one")
             stats["furnitureKept"] += 1
