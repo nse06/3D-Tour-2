@@ -122,6 +122,37 @@ def test_a_box_drawn_tight_around_a_hole_still_finds_its_piece(tmp_path, monkeyp
     assert review.summary(verdict.issues)[0] == "incomplete: cabinet with a hole (tried, but the scan stayed)"
 
 
+def test_a_point_on_the_piece_or_a_loose_box_around_it_finds_it(tmp_path, monkeypatch):
+    """The reviewer's boxes can be off: a point on the cabinet finds it even with its box elsewhere,
+    and a box twice the cabinet's size each way (most of it wall and floor) still takes in all of it."""
+    capture, plan, mesh = setup(tmp_path)
+    seen = []
+    make = review.make_views
+    monkeypatch.setattr(review, "make_views", lambda *a, **k: seen.extend(make(*a, **k)) or list(seen))
+    shown = []
+
+    def spotter(photo, rendered):
+        view = seen[spotter.calls % len(seen)]
+        spotter.calls += 1
+        if (view.box_of >= 0).sum() < 200:
+            return []
+        ys, xs = np.nonzero(view.box_of >= 0)
+        h, w = view.box_of.shape
+        x0, x1, y0, y1 = xs.min() / w, (xs.max() + 1) / w, ys.min() / h, (ys.max() + 1) / h
+        cx, cy, dx, dy = (x0 + x1) / 2, (y0 + y1) / 2, x1 - x0, y1 - y0
+        loose = (max(0.0, cx - dx), max(0.0, cy - dy), min(1.0, cx + dx), min(1.0, cy + dy))
+        shown.append(view.index)
+        return [review.Issue("incomplete", "pointed at", (0.0, 0.0, 0.03, 0.03), "rebuild", "high", True, "storage", (xs.mean() / w, ys.mean() / h)),
+                review.Issue("incomplete", "loosely boxed", loose, "rebuild", "high", True, "storage")]
+
+    spotter.calls = 0
+    logs = []
+    _, verdict = review.inspect(mesh, capture, plan, spotter, review.ReviewConfig(views=6, long_side=160, workers=1), log=logs.append)
+    assert shown and verdict.rebuild == {"CAB": "box"}, (verdict, logs)
+    assert all(i.piece == "CAB" for i in verdict.issues), [(i.what, i.outcome) for i in verdict.issues]
+    assert any("(by its point)" in line for line in logs) and any("(by its box)" in line for line in logs), logs
+
+
 def test_the_photos_reviewed_show_every_piece_of_furniture(tmp_path):
     """Photos picked evenly along the walk can all miss a piece: the first picked shows the most
     furniture not yet shown, the most of it on a tie."""

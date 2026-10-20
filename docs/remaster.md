@@ -287,14 +287,18 @@ aren't in the photo, objects with holes or missing parts, smeared patches, wrong
   window) counts as incomplete, not a smear. It also says what kind of furniture it is (sofa, chair,
   bed, table, storage or none), and only RoomPlan boxes of that kind can be it (storage and tables
   stand for each other, as do sofas and chairs; none is never rebuilt): a cabinet's problem landed on
-  the sofa beside it before. Which piece it means is what the model shows inside its box: the RoomPlan
-  box (grown 5 cm) that at least 30% of those surface points lie in, the most of them winning; only if
-  none does, the box whose outline overlaps the reviewer's box 30% (IoU): a box drawn tight around a
-  dresser's hole overlaps the dresser's outline far less than that. It's asked to box the whole object
-  for these, too.
+  the sofa beside it before. Which piece it means is what the model shows (each pixel's surface point
+  in a RoomPlan box grown 5 cm): first, around the point it gives on the object (2% of the long side
+  each way), the piece most of those pixels show; failing that, the piece at least 30% of its box
+  shows, or half of which (as this view shows it) its box takes in while being 8% of it (a loose box),
+  the most of both winning; only if none does, the box whose outline overlaps the reviewer's box 30%
+  (IoU): a box drawn tight around a dresser's hole overlaps the dresser's outline far less than that.
+  Its boxes can be off (on Sheridan, 7 of 12 problems matched nothing, a white cabinet among them though
+  RoomPlan has two white storage boxes in that room), hence the point. It's asked to box the whole object for these, too. Each match,
+  and what came nearest when none did, goes to the log; the furniture stage logs where each piece is.
 * **What came of it**: each problem in `reviewFound` ends with what was done (removed; to be rebuilt as a
   box, then rebuilt or "tried, but the scan stayed"; left, and why: no furniture RoomPlan measured there,
-  not a small loose piece, repainting isn't built yet). Those acted on come first, 12 at most.
+  not a small loose piece, repainting isn't built yet). Those acted on come first, 25 at most.
 * **The result, last** (after the lighting), from the same photos (no more go to it than the 10 the privacy
   page names; change both together): what it still finds goes to the stats for the dashboard.
 
@@ -406,7 +410,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 74 tests (below)
+python -m pytest tests -q        # CPU, 75 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

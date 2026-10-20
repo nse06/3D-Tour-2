@@ -77,7 +77,9 @@ Don't report: differences in lighting, exposure or color cast; slight misalignme
 people or pets in the photo; parts of the render that are grey background; small imperfections a buyer \
 wouldn't notice; anything you aren't fairly sure of. Report each problem once, with a tight box around it \
 on the render (the second image) as [x0, y0, x1, y1] in thousandths of its width and height (for incomplete \
-and wrong_shape, around the whole object, not just its hole), and say in a few words what the thing is ("wooden dresser", "painting over the dresser", "fragments on the floor"). Say \
+and wrong_shape, around the whole object, not just its hole), a point [x, y] on the object itself near its \
+middle (in the same thousandths; on the object, not on a hole in it or on what's behind it), and say in a few \
+words what the thing is ("wooden dresser", "painting over the dresser", "fragments on the floor"). Say \
 whether the real thing is basically a box (boxy: a dresser, chest of drawers, cabinet, nightstand, TV stand, \
 bookcase, desk, ottoman) or not (a sofa, armchair, bed, plant, lamp), and what kind of furniture it is as a \
 floor plan app would file it (furniture: sofa, chair, bed, table, storage for dressers, chests, cabinets, \
@@ -95,12 +97,13 @@ SCHEMA = {
                     "kind": {"type": "string", "enum": list(KINDS)},
                     "what": {"type": "string"},
                     "box": {"type": "array", "items": {"type": "integer"}},
+                    "point": {"type": "array", "items": {"type": "integer"}},
                     "fix": {"type": "string", "enum": list(FIXES)},
                     "sure": {"type": "string", "enum": ["low", "medium", "high"]},
                     "boxy": {"type": "boolean"},
                     "furniture": {"type": "string", "enum": list(FURNITURE)},
                 },
-                "required": ["kind", "what", "box", "fix", "sure", "boxy", "furniture"],
+                "required": ["kind", "what", "box", "point", "fix", "sure", "boxy", "furniture"],
                 "additionalProperties": False,
             },
         }
@@ -128,6 +131,7 @@ class Issue:
     sure: str
     boxy: bool = False
     furniture: str = ""  # one of FURNITURE, or "" (unsaid: any piece)
+    point: tuple[float, float] | None = None  # on the object, 0-1 of the render's width and height
     view: int = -1
     outcome: str = ""  # what was done about it, for the dashboard
     piece: str = ""  # the RoomPlan id of the furniture it's sent to be made again
@@ -158,7 +162,9 @@ def parse_issues(text: str) -> list[Issue]:
         if x1 <= x0 or y1 <= y0:
             continue
         furniture = item.get("furniture") if item.get("furniture") in FURNITURE else ""
-        out.append(Issue(item["kind"], str(item.get("what", ""))[:80], (x0, y0, x1, y1), item["fix"], str(item.get("sure", "medium")), bool(item.get("boxy", False)), furniture))
+        point = item.get("point") or []
+        at = (min(max(float(point[0]), 0.0), 1000.0) / 1000, min(max(float(point[1]), 0.0), 1000.0) / 1000) if len(point) == 2 else None
+        out.append(Issue(item["kind"], str(item.get("what", ""))[:80], (x0, y0, x1, y1), item["fix"], str(item.get("sure", "medium")), bool(item.get("boxy", False)), furniture, at))
     return out
 
 
@@ -237,7 +243,10 @@ class ReviewConfig:
     max_smear: float = 2.0  # pixels (at the review size): blurrier photos aren't shown
     remove_area: float = 1.0  # m²: the most a piece the reviewer removes may have
     remove_share: float = 0.4  # ... and this much of it, as the render shows it, inside the reviewer's box
-    rebuild_share: float = 0.3  # a RoomPlan box rebuilt: this much of what the reviewer's box shows lies in it
+    point_reach: float = 0.02  # of the long side: what the model shows this close to the reviewer's point is what it points at
+    rebuild_share: float = 0.3  # a RoomPlan box rebuilt: this much of what the reviewer's box shows lies in it,
+    rebuild_taken: float = 0.5  # ... or this much of what the view shows of the piece is in the reviewer's box
+    rebuild_least: float = 0.08  # ... and it's at least this much of the box (a loose box)
     box_margin: float = 0.05  # m: a surface point this close to a RoomPlan box is in it
     fixture_reach: float = 1.0  # m: storage this close to a fixture is built in
     workers: int = 8
@@ -374,18 +383,37 @@ def iou(a, b) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def pointed_at(issue: Issue, view: View, boxes: list[Box], cfg: ReviewConfig) -> Box | None:
-    """The RoomPlan box the reviewer means, of the kind it names: the one most of what its box shows
-    lies in, or failing that (the piece barely in the model at all), the one whose outline best
-    matches its box."""
+def pointed_at(issue: Issue, view: View, boxes: list[Box], cfg: ReviewConfig) -> tuple[Box | None, str]:
+    """The RoomPlan box the reviewer means, of the kind it names, and how it was found: the one the
+    model shows around its point on the object; failing that, the one most of its box shows, or most
+    of which its box takes in (a loose box); failing that (the piece barely in the model at all), the
+    one whose outline best matches its box. None, with what came nearest, if none does."""
     allowed = MATCHES.get(issue.furniture)
     fits = np.array([allowed is None or box.category in allowed for box in boxes], bool)
+    if not fits.any():
+        return None, "no RoomPlan piece of that kind"
+    nearest = "nothing RoomPlan measured in its box"
     if view.box_of is not None:
-        ys, xs = pixel_box(issue, view.box_of.shape)
+        h, w = view.box_of.shape
+        n = len(boxes)
+        if issue.point is not None:
+            r = max(2, round(cfg.point_reach * max(w, h)))
+            px, py = int(issue.point[0] * w), int(issue.point[1] * h)
+            near = view.box_of[max(0, py - r) : py + r + 1, max(0, px - r) : px + r + 1]
+            counts = np.where(fits, np.bincount(near[near >= 0], minlength=n), 0)
+            if counts.max() > 0:
+                return boxes[int(counts.argmax())], "its point"
+        ys, xs = pixel_box(issue, (h, w))
         inside = view.box_of[ys, xs]
-        counts = np.where(fits, np.bincount(inside[inside >= 0], minlength=len(boxes)), 0)
-        if counts.size and counts.max() >= cfg.rebuild_share * inside.size:
-            return boxes[int(counts.argmax())]
+        there = np.where(fits, np.bincount(inside[inside >= 0], minlength=n), 0)
+        share = there / max(inside.size, 1)
+        taken = there / np.maximum(np.bincount(view.box_of[view.box_of >= 0], minlength=n), 1)
+        ok = (share >= cfg.rebuild_share) | ((taken >= cfg.rebuild_taken) & (share >= cfg.rebuild_least))
+        if ok.any():
+            return boxes[int(np.argmax(np.where(ok, share + taken, -1.0)))], "its box"
+        if there.any():
+            i = int(np.argmax(share + taken))
+            nearest = f"nearest the {boxes[i].category} {boxes[i].id[:8]}: {share[i]:.2f} of its box, {taken[i]:.2f} of the piece"
     best, best_iou = None, cfg.rebuild_share
     for box, ok in zip(boxes, fits):
         if not ok:
@@ -394,7 +422,7 @@ def pointed_at(issue: Issue, view: View, boxes: list[Box], cfg: ReviewConfig) ->
         score = iou(outline, issue.box) if outline is not None else 0.0
         if score >= best_iou:
             best, best_iou = box, score
-    return best
+    return (best, "its outline") if best is not None else (None, nearest)
 
 
 def built_in(box: Box, layout: Layout, reach: float) -> bool:
@@ -448,10 +476,12 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
             if issue.furniture == "none":
                 issue.outcome = "left: not furniture RoomPlan measures"
                 continue
-            box = pointed_at(issue, view, pieces, cfg)
+            box, how = pointed_at(issue, view, pieces, cfg)
             if box is None:
+                log(f"review: view {issue.view}: {issue.what!r} ({issue.furniture or 'any'}) matched no piece: {how}"[:240])
                 issue.outcome = "left: no furniture piece RoomPlan measured there"
                 continue
+            log(f"review: view {issue.view}: {issue.what!r} is the {box.category} {box.id[:8]} (by {how})"[:240])
             # Boxy in any view, a box (the photos paint its drawers on it).
             boxed = issue.boxy and box.category in BOXES
             if verdict.rebuild.get(box.id) != "box":
@@ -509,7 +539,7 @@ def selftest(reviewer: Reviewer) -> dict:
     return out
 
 
-def summary(issues: list[Issue], limit: int = 12) -> list[str]:
+def summary(issues: list[Issue], limit: int = 25) -> list[str]:
     """Short lines for the dashboard, each problem once, what was acted on and the surest first."""
     rank = {"rebuild": 0, "remove": 1, "repaint": 2, "none": 3}
     sure = {"high": 0, "medium": 1, "low": 2}

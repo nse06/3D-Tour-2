@@ -115,6 +115,11 @@ class FitView:
     scene: np.ndarray  # (h, w) depth of the model without the piece (inf: nothing)
 
 
+def named(b: Box) -> str:
+    """A piece for the log: its category, id and where it is."""
+    return f"{b.category} {b.id} at {np.round(b.center, 2).tolist()}, {np.round(b.size, 2).tolist()} m"
+
+
 def piece_faces(mesh: Mesh, box: Box, chart: np.ndarray, flat: set[int], margin: float) -> np.ndarray:
     """(F,) bool: the scanned piece. Triangles wholly in its box, of charts lying mostly in it (a box's
     faces) or of the LiDAR's curved shapes; never the floor, a wall or a baseboard running under or
@@ -374,7 +379,7 @@ def run(
         # RoomPlan's box needs no cutout to make it from, only photos to check it against.
         whole = [s for s in found if s.framed >= cfg.in_frame] or (found if boxed else [])
         if not whole:
-            log(f"furniture: {b.category} {b.id}: no photo shows it whole")
+            log(f"furniture: {named(b)}: no photo shows it whole")
             stats["furnitureKept"] += 1
             continue
         scene = Caster(mesh.vertices, mesh.faces[~piece])
@@ -408,7 +413,7 @@ def run(
                 color = np.median(image[mask], 0) / 255
             views.append(fit_view(s, mask, scene, cfg.fit_px))
         if crop is None and not (boxed and views):
-            log(f"furniture: {b.category} {b.id}: no cutout")
+            log(f"furniture: {named(b)}: no cutout")
             stats["furnitureKept"] += 1
             continue
         plans.append((b, piece, crop, color, views))
@@ -422,7 +427,7 @@ def run(
     for i, ((b, piece, _, color, views), shape) in enumerate(zip(plans, shapes)):
         done(0.85 + 0.15 * i / len(plans))
         if shape is None or len(shape[1]) < 4:
-            log(f"furniture: {b.category} {b.id}: no shape made")
+            log(f"furniture: {named(b)}: no shape made")
             stats["furnitureKept"] += 1
             continue
         v, f = simplify(*main_parts(*shape), cfg.max_faces)
@@ -433,10 +438,10 @@ def run(
         pick = also.get(b.id)
         need = max(cfg.box_iou, scanned - cfg.box_slack) if pick == "box" else cfg.min_iou if pick == "made" else max(cfg.min_iou, scanned + cfg.better_by)
         if iou < need:
-            log(f"furniture: {b.category} {b.id}: its {'box' if pick == 'box' else 'shape'} matches the photos {iou:.2f}, the scanned one {scanned:.2f}: keeping the scanned one")
+            log(f"furniture: {named(b)}: its {'box' if pick == 'box' else 'shape'} matches the photos {iou:.2f}, the scanned one {scanned:.2f}: keeping the scanned one")
             stats["furnitureKept"] += 1
             continue
-        log(f"furniture: {b.category} {b.id}: made{' as RoomPlan box' if pick == 'box' else ''} ({len(f)} triangles, outline match {iou:.2f})")
+        log(f"furniture: {named(b)}: made{' as RoomPlan box' if pick == 'box' else ''} ({len(f)} triangles, outline match {iou:.2f})")
         remove |= piece
         stats["furnitureIds"].append(b.id)
         additions.append(Addition(world.astype(np.float32), f, color=tuple(float(c) for c in color), name=f"furniture-{b.id}"))
