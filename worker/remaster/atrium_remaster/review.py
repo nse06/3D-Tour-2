@@ -76,9 +76,9 @@ rebuild.
 Don't report: differences in lighting, exposure or color cast; slight misalignment between the images; \
 people or pets in the photo; parts of the render that are grey background; small imperfections a buyer \
 wouldn't notice; anything you aren't fairly sure of. Report each problem once, with a tight box around it \
-on the render (the second image) as [x0, y0, x1, y1] in thousandths of its width and height (for incomplete \
+on the render (the second image) as [x0, y0, x1, y1] in its pixels (its size comes with the images; for incomplete \
 and wrong_shape, around the whole object, not just its hole), a point [x, y] on the object itself near its \
-middle (in the same thousandths; on the object, not on a hole in it or on what's behind it), and say in a few \
+middle (in the same pixels; on the object, not on a hole in it or on what's behind it), and say in a few \
 words what the thing is ("wooden dresser", "painting over the dresser", "fragments on the floor"). Say \
 whether the real thing is basically a box (boxy: a dresser, chest of drawers, cabinet, nightstand, TV stand, \
 bookcase, desk, ottoman) or not (a sofa, armchair, bed, plant, lamp), and what kind of furniture it is as a \
@@ -151,19 +151,22 @@ def jpeg_b64(image: np.ndarray, quality: int = 85) -> str:
     return base64.standard_b64encode(out.getvalue()).decode("ascii")
 
 
-def parse_issues(text: str) -> list[Issue]:
-    """The reviewer's JSON answer as issues (malformed entries dropped)."""
+def parse_issues(text: str, size: tuple[int, int] = (1000, 1000)) -> list[Issue]:
+    """The reviewer's JSON answer as issues (malformed entries dropped), its pixels on a render of
+    `size` (width, height) as 0-1 of it."""
+    w, h = size
     out = []
     for item in json.loads(text).get("issues", []):
         box = item.get("box") or []
         if len(box) != 4 or item.get("kind") not in KINDS or item.get("fix") not in FIXES:
             continue
-        x0, y0, x1, y1 = (min(max(float(v), 0.0), 1000.0) / 1000 for v in box)
+        x0, x1 = (min(max(float(v), 0.0), w) / w for v in box[::2])
+        y0, y1 = (min(max(float(v), 0.0), h) / h for v in box[1::2])
         if x1 <= x0 or y1 <= y0:
             continue
         furniture = item.get("furniture") if item.get("furniture") in FURNITURE else ""
         point = item.get("point") or []
-        at = (min(max(float(point[0]), 0.0), 1000.0) / 1000, min(max(float(point[1]), 0.0), 1000.0) / 1000) if len(point) == 2 else None
+        at = (min(max(float(point[0]), 0.0), w) / w, min(max(float(point[1]), 0.0), h) / h) if len(point) == 2 else None
         out.append(Issue(item["kind"], str(item.get("what", ""))[:80], (x0, y0, x1, y1), item["fix"], str(item.get("sure", "medium")), bool(item.get("boxy", False)), furniture, at))
     return out
 
@@ -191,6 +194,7 @@ class ClaudeReviewer:
         return {**self.tokens, "dollars": round(cost, 3)}
 
     def __call__(self, photo: np.ndarray, rendered: np.ndarray) -> list[Issue]:
+        h, w = rendered.shape[:2]
         response = self.client.beta.messages.create(
             model=self.model,
             max_tokens=16000,
@@ -206,7 +210,7 @@ class ClaudeReviewer:
                         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": jpeg_b64(photo)}},
                         {"type": "text", "text": "The model from the same camera:"},
                         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": jpeg_b64(rendered)}},
-                        {"type": "text", "text": "What's wrong with the model? Boxes on the second image."},
+                        {"type": "text", "text": f"What's wrong with the model? Both images are {w}x{h} pixels: boxes and points in the second one's pixels."},
                     ],
                 }
             ],
@@ -219,7 +223,7 @@ class ClaudeReviewer:
         if response.stop_reason in ("refusal", "max_tokens"):
             return []
         text = next((b.text for b in response.content if b.type == "text"), "")
-        return parse_issues(text) if text else []
+        return parse_issues(text, (w, h)) if text else []
 
 
 def reviewer_from_env(log=print) -> Reviewer | None:
@@ -261,6 +265,20 @@ class View:
     K: np.ndarray
     camtoworld: np.ndarray
     box_of: np.ndarray | None = None  # (H, W) the index of the RoomPlan box (of those asked) each pixel shows, -1 for none
+    depth: np.ndarray | None = None  # (H, W) along the camera's axis, inf for none
+
+
+def landed(view: View, point: tuple[float, float] | None) -> list[float] | None:
+    """Where in the home (m) the reviewer's point is: what the model shows at that pixel."""
+    if point is None or view.depth is None:
+        return None
+    h, w = view.depth.shape
+    x, y = min(int(point[0] * w), w - 1), min(int(point[1] * h), h - 1)
+    d = float(view.depth[y, x])
+    if not np.isfinite(d):
+        return None
+    local = np.array([(x + 0.5 - view.K[0, 2]) / view.K[0, 0] * d, (y + 0.5 - view.K[1, 2]) / view.K[1, 1] * d, d])
+    return np.round(view.camtoworld[:3, :3] @ local + view.camtoworld[:3, 3], 2).tolist()
 
 
 def furniture_shown(mesh: Mesh, cameras: list, boxes: list[Box], cfg: ReviewConfig) -> list[dict[int, int]]:
@@ -335,7 +353,7 @@ def make_views(
         if of_face is not None:
             piece[hits.hit] = of_face[hits.face[hits.hit]]
         box_of = box_map(mesh, hits, boxes, cfg.box_margin) if boxes is not None else None
-        out.append(View(i, np.asarray(photo, np.uint8), rendered, piece, K, cam.camtoworld, box_of))
+        out.append(View(i, np.asarray(photo, np.uint8), rendered, piece, K, cam.camtoworld, box_of, hits.depth))
     return out
 
 
@@ -478,10 +496,10 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
                 continue
             box, how = pointed_at(issue, view, pieces, cfg)
             if box is None:
-                log(f"review: view {issue.view}: {issue.what!r} ({issue.furniture or 'any'}) matched no piece: {how}"[:240])
+                log(f"review: view {issue.view}: {issue.what!r} ({issue.furniture or 'any'}, point at {landed(view, issue.point)}) matched no piece: {how}"[:260])
                 issue.outcome = "left: no furniture piece RoomPlan measured there"
                 continue
-            log(f"review: view {issue.view}: {issue.what!r} is the {box.category} {box.id[:8]} (by {how})"[:240])
+            log(f"review: view {issue.view}: {issue.what!r} is the {box.category} {box.id[:8]} (by {how}; point at {landed(view, issue.point)})"[:260])
             # Boxy in any view, a box (the photos paint its drawers on it).
             boxed = issue.boxy and box.category in BOXES
             if verdict.rebuild.get(box.id) != "box":
@@ -534,6 +552,14 @@ def selftest(reviewer: Reviewer) -> dict:
     except Exception as e:
         return {"ok": False, "why": f"{type(e).__name__}: {e}"[:300]}
     out = {"ok": True, "issues": summary(issues), "fixes": sorted({i.fix for i in issues}), "boxy": any(i.boxy for i in issues)}
+    # How well it aims: its box against the truth (the fragment's, or the whole dresser's), its point in it.
+    truth = {"fragment": (60 / 512, 60 / 384, 100 / 512, 110 / 384), "dresser": (160 / 512, 170 / 384, 360 / 512, 290 / 384)}
+    aim = []
+    for i in issues:
+        t = truth["fragment" if i.kind == "fragment" else "dresser"]
+        inside = i.point is not None and t[0] <= i.point[0] <= t[2] and t[1] <= i.point[1] <= t[3]
+        aim.append({"kind": i.kind, "furniture": i.furniture, "boxIoU": round(iou(i.box, t), 2), "pointOnIt": inside})
+    out["aim"] = aim
     if hasattr(reviewer, "usage"):
         out["tokens"] = reviewer.usage()
     return out

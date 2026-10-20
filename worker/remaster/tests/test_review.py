@@ -150,7 +150,7 @@ def test_a_point_on_the_piece_or_a_loose_box_around_it_finds_it(tmp_path, monkey
     _, verdict = review.inspect(mesh, capture, plan, spotter, review.ReviewConfig(views=6, long_side=160, workers=1), log=logs.append)
     assert shown and verdict.rebuild == {"CAB": "box"}, (verdict, logs)
     assert all(i.piece == "CAB" for i in verdict.issues), [(i.what, i.outcome) for i in verdict.issues]
-    assert any("(by its point)" in line for line in logs) and any("(by its box)" in line for line in logs), logs
+    assert any("(by its point; point at [" in line for line in logs) and any("(by its box;" in line for line in logs), logs
 
 
 def test_the_photos_reviewed_show_every_piece_of_furniture(tmp_path):
@@ -183,7 +183,7 @@ class FakeClient:
 
 def test_claude_is_asked_with_both_images_and_answers_in_boxes():
     answer = {"issues": [
-        {"kind": "incomplete", "what": "wooden dresser", "box": [100, 500, 600, 900], "fix": "rebuild", "sure": "high", "boxy": True, "furniture": "storage"},
+        {"kind": "incomplete", "what": "wooden dresser", "box": [8, 24, 40, 45], "point": [16, 36], "fix": "rebuild", "sure": "high", "boxy": True, "furniture": "storage"},
         {"kind": "smear", "what": "painting", "box": [300, 100, 300, 200], "fix": "repaint", "sure": "medium"},  # empty box: dropped
         {"kind": "nonsense", "what": "?", "box": [0, 0, 10, 10], "fix": "none", "sure": "low"},  # unknown kind: dropped
     ]}
@@ -197,7 +197,9 @@ def test_claude_is_asked_with_both_images_and_answers_in_boxes():
     images = [c for c in request["messages"][0]["content"] if c["type"] == "image"]
     assert len(images) == 2 and all(i["source"]["media_type"] == "image/jpeg" for i in images)
     assert [(i.kind, i.what, i.fix) for i in issues] == [("incomplete", "wooden dresser", "rebuild")]
-    assert issues[0].box == (0.1, 0.5, 0.6, 0.9) and issues[0].boxy and issues[0].furniture == "storage"
+    assert issues[0].box == (0.125, 0.5, 0.625, 0.9375) and issues[0].point == (0.25, 0.75), "the render's pixels (64x48), as 0-1 of it"
+    assert issues[0].boxy and issues[0].furniture == "storage"
+    assert "64x48 pixels" in request["messages"][0]["content"][-1]["text"]
     assert reviewer.usage() == {"input": 2600, "output": 1500, "dollars": 0.04}, "what it cost, counted"
     assert review.ClaudeReviewer(client=FakeClient(stop="refusal"))(photo, photo) == []
 
@@ -223,11 +225,14 @@ def test_the_job_reviews_the_scan_first_and_the_result_last(tmp_path):
 
 def test_the_selftest_says_whether_the_reviewer_answers():
     answer = {"issues": [
-        {"kind": "fragment", "what": "dark piece in the air", "box": [110, 150, 200, 290], "fix": "remove", "sure": "high", "boxy": False},
-        {"kind": "incomplete", "what": "dresser with a hole", "box": [440, 490, 590, 630], "fix": "rebuild", "sure": "high", "boxy": True},
+        {"kind": "fragment", "what": "dark piece in the air", "box": [58, 58, 102, 112], "point": [80, 85], "fix": "remove", "sure": "high", "boxy": False, "furniture": "none"},
+        {"kind": "incomplete", "what": "dresser with a hole", "box": [230, 190, 300, 240], "point": [265, 215], "fix": "rebuild", "sure": "high", "boxy": True, "furniture": "storage"},
     ]}
     result = review.selftest(review.ClaudeReviewer(client=FakeClient(json.dumps(answer))))
     assert result["ok"] and result["fixes"] == ["rebuild", "remove"] and result["boxy"] and result["tokens"]["input"] == 2600, result
+    fragment, dresser = result["aim"]
+    assert fragment["boxIoU"] > 0.8 and fragment["pointOnIt"], "it aimed true at the fragment"
+    assert dresser["boxIoU"] < 0.2 and dresser["pointOnIt"], "its box is the hole, not the dresser (asked for the whole), its point on the dresser"
 
     class Broken:
         def __call__(self, photo, rendered):

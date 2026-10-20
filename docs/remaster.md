@@ -294,8 +294,13 @@ aren't in the photo, objects with holes or missing parts, smeared patches, wrong
   the most of both winning; only if none does, the box whose outline overlaps the reviewer's box 30%
   (IoU): a box drawn tight around a dresser's hole overlaps the dresser's outline far less than that.
   Its boxes can be off (on Sheridan, 7 of 12 problems matched nothing, a white cabinet among them though
-  RoomPlan has two white storage boxes in that room), hence the point. It's asked to box the whole object for these, too. Each match,
-  and what came nearest when none did, goes to the log; the furniture stage logs where each piece is.
+  RoomPlan has two white storage boxes in that room), hence the point. With points, the bed, the sofa
+  and the tables matched; a chair, a nightstand and a side table didn't (a box over 2% of the chair), so
+  boxes and points are asked for in the render's pixels (its size given with each request), not
+  thousandths. It's asked to box the whole object for these, too. Each match, where in the home its
+  point lands and, when none matched, what came nearest go to the log; the furniture stage logs where
+  each piece is. `check_reviewer` reports how well it aims on the made-up room (`aim`: each box's IoU with
+  the truth, whether its point is on it).
 * **What came of it**: each problem in `reviewFound` ends with what was done (removed; to be rebuilt as a
   box, then rebuilt or "tried, but the scan stayed"; left, and why: no furniture RoomPlan measured there,
   not a small loose piece, repainting isn't built yet). Those acted on come first, 25 at most.
