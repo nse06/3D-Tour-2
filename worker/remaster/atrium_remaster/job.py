@@ -148,6 +148,9 @@ def light_config(options: dict) -> light_mod.LightConfig:
     )
 
 
+REVIEW_KEYS = ("reviewFound", "reviewRebuild", "reviewLeft", "reviewTokens", "furnitureIds", "furnitureFit", "furnitureScannedFit")
+
+
 def remaster(
     mesh: scene.Mesh, capture, options: dict, services: Services, device: str, report, log=print, layout: Layout | None = None, spots: list | None = None
 ) -> tuple[scene.Mesh, dict]:
@@ -354,7 +357,7 @@ def remaster(
     if reviewer is not None:
         report("light", 0.5, "an AI is checking the result")
         try:
-            stats["reviewLeft"] = review_mod.summary(review_mod.final(out, capture, reviewer, log=log))
+            stats["reviewLeft"] = review_mod.summary(review_mod.final(out, capture, reviewer, log=log, layout=layout))
         except Exception as e:
             traceback.print_exc()
             stats["reviewError"] = f"{type(e).__name__}: {e}"[:200]
@@ -456,6 +459,8 @@ def run_job(payload: dict, secret: str, workdir: str | Path = "/tmp/atrium-remas
         # For whoever watches the logs: the numbers only (an error's text can hold a signed URL).
         print("remaster done: " + json.dumps({k: v for k, v in stats.items() if isinstance(v, (bool, int, float))}), flush=True)
         print("remaster stages (s): " + json.dumps(clock.seconds), flush=True)
+        # And what the AI check made of it: its own words and RoomPlan ids, no URLs.
+        print("remaster review: " + json.dumps({k: stats[k] for k in REVIEW_KEYS if k in stats}), flush=True)
         return stats
     except Exception as e:
         traceback.print_exc()

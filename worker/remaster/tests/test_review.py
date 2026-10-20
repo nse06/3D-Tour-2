@@ -113,6 +113,20 @@ def test_a_box_drawn_tight_around_a_hole_still_finds_its_piece(tmp_path, monkeyp
     assert review.summary(verdict.issues)[0] == "incomplete: cabinet with a hole (tried, but the scan stayed)"
 
 
+def test_the_photos_reviewed_show_every_piece_of_furniture(tmp_path):
+    """Photos picked evenly along the walk can all miss a piece: the first picked shows the most
+    furniture not yet shown, the most of it on a tie."""
+    capture, plan, mesh = setup(tmp_path)
+    cabinet = next(b for b in plan.objects if b.id == "CAB")
+    cfg = review.ReviewConfig(views=1, long_side=160)
+    sharp = review.pick_cameras(capture, review.ReviewConfig(views=99, long_side=160))
+    shows = review.furniture_shown(mesh, sharp, [cabinet], cfg)
+    assert any(0 in s for s in shows) and any(0 not in s for s in shows), "some photos show the cabinet, some don't"
+    (picked,) = review.pick_cameras(capture, cfg, mesh, [cabinet])
+    assert picked is sharp[max(range(len(sharp)), key=lambda i: shows[i].get(0, 0))]
+    assert review.pick_cameras(capture, cfg) == [sharp[0]], "without furniture, evenly along the walk"
+
+
 class FakeClient:
     """Records the request; answers with `text` (or a refusal)."""
 

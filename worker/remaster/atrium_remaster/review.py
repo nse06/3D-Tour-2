@@ -214,7 +214,9 @@ def reviewer_from_env(log=print) -> Reviewer | None:
 
 @dataclass(frozen=True)
 class ReviewConfig:
-    views: int = 8  # photos reviewed, spread along the walk
+    views: int = 10  # photos reviewed: between them showing every piece of furniture, then spread along the walk
+    survey_px: int = 160  # each photo is checked for the furniture it shows at this size
+    survey_share: float = 0.01  # ... a piece filling this much of it counting as shown
     long_side: int = 1024  # each image at this size
     max_smear: float = 2.0  # pixels (at the review size): blurrier photos aren't shown
     remove_area: float = 1.0  # m²: the most a piece the reviewer removes may have
@@ -236,12 +238,44 @@ class View:
     box_of: np.ndarray | None = None  # (H, W) the index of the RoomPlan box (of those asked) each pixel shows, -1 for none
 
 
-def pick_cameras(capture: Capture, cfg: ReviewConfig) -> list:
-    """Up to `views` sharp photos, evenly along the walk (so every room gets some)."""
+def furniture_shown(mesh: Mesh, cameras: list, boxes: list[Box], cfg: ReviewConfig) -> list[dict[int, int]]:
+    """For each photo, the boxes it shows (their index: the pixels showing them, at the survey size)."""
+    caster = Caster.of(mesh)
+    out = []
+    for cam in cameras:
+        scale = cfg.survey_px / max(cam.width, cam.height)
+        w, h = max(8, round(cam.width * scale)), max(8, round(cam.height * scale))
+        K = np.asarray(cam.K, np.float64).copy()
+        K[0] *= w / cam.width
+        K[1] *= h / cam.height
+        ids = box_map(mesh, caster.view(K, cam.camtoworld, w, h), boxes, cfg.box_margin)
+        counts = np.bincount(ids[ids >= 0], minlength=len(boxes))
+        out.append({i: int(c) for i, c in enumerate(counts) if c >= cfg.survey_share * w * h})
+    return out
+
+
+def pick_cameras(capture: Capture, cfg: ReviewConfig, mesh: Mesh | None = None, boxes: list[Box] | None = None) -> list:
+    """Up to `views` sharp photos, in the order they were taken. First, one at a time, the photo
+    showing the most furniture no photo picked so far shows (the most of it, on a tie), so every
+    piece the reviewer could have made again is looked at; then the rest evenly along the walk (so
+    every room gets some). Evenly alone, a few photos can miss a piece altogether."""
     sharp = [c for c in capture.cameras if (smear_px(c, cfg.long_side / max(c.width, c.height)) or 0.0) <= cfg.max_smear] or list(capture.cameras)
     if len(sharp) <= cfg.views:
         return sharp
-    return [sharp[int(i)] for i in np.linspace(0, len(sharp) - 1, cfg.views).round()]
+    picked: set[int] = set()
+    if mesh is not None and boxes:
+        shows = furniture_shown(mesh, sharp, boxes, cfg)
+        left = set().union(*shows)
+        while left and len(picked) < cfg.views:
+            best = max(range(len(sharp)), key=lambda i: (len(shows[i].keys() & left), sum(shows[i][b] for b in shows[i].keys() & left)))
+            if not shows[best].keys() & left:
+                break
+            picked.add(best)
+            left -= shows[best].keys()
+    rest = [i for i in range(len(sharp)) if i not in picked]
+    if len(picked) < cfg.views and rest:
+        picked |= {rest[int(j)] for j in np.linspace(0, len(rest) - 1, cfg.views - len(picked)).round()}
+    return [sharp[i] for i in sorted(picked)]
 
 
 def box_map(mesh: Mesh, hits, boxes: list[Box], margin: float) -> np.ndarray:
@@ -264,7 +298,7 @@ def box_map(mesh: Mesh, hits, boxes: list[Box], margin: float) -> np.ndarray:
 def make_views(mesh: Mesh, capture: Capture, cfg: ReviewConfig, of_face: np.ndarray | None = None, boxes: list[Box] | None = None) -> list[View]:
     caster = Caster.of(mesh)
     out = []
-    for i, cam in enumerate(pick_cameras(capture, cfg)):
+    for i, cam in enumerate(pick_cameras(capture, cfg, mesh, boxes)):
         photo, K, _ = load_photo(cam, cfg.long_side)
         h, w = photo.shape[:2]
         hits = caster.view(K, cam.camtoworld, w, h)
@@ -345,6 +379,11 @@ def built_in(box: Box, layout: Layout, reach: float) -> bool:
     return any(np.linalg.norm(o.center - box.center) - (o.size.max() + box.size.max()) / 2 < reach for o in layout.objects if o.category in FIXTURES)
 
 
+def rebuildable(layout: Layout, cfg: ReviewConfig) -> list[Box]:
+    """The furniture the reviewer may have made again."""
+    return [b for b in layout.objects if b.category in REBUILDABLE and not built_in(b, layout, cfg.fixture_reach)]
+
+
 @dataclass
 class Verdict:
     issues: list[Issue] = field(default_factory=list)
@@ -360,8 +399,8 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
     found = measure(mesh, LooseConfig())
     in_box = np.array([any(bool(b.contains(m[None], 0.1)[0]) for b in layout.objects) for m in found.middle], bool)
     removable = (found.area <= cfg.remove_area) & ~in_box
-    rebuildable = [b for b in layout.objects if b.category in REBUILDABLE and not built_in(b, layout, cfg.fixture_reach)]
-    views = make_views(mesh, capture, cfg, found.of_face, rebuildable)
+    pieces = rebuildable(layout, cfg)
+    views = make_views(mesh, capture, cfg, found.of_face, pieces)
     verdict = Verdict(ask(reviewer, views, cfg, log))
     by_view = {v.index: v for v in views}
     remove = np.zeros(len(found.area), bool)
@@ -380,7 +419,7 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
             remove |= these
             issue.outcome = "removed" if these.any() else "left: not a small loose piece"
         elif issue.fix == "rebuild":
-            box = pointed_at(issue, view, rebuildable, cfg)
+            box = pointed_at(issue, view, pieces, cfg)
             if box is None:
                 issue.outcome = "left: no furniture piece RoomPlan measured there"
                 continue
@@ -407,9 +446,10 @@ def rebuilt(verdict: Verdict, made: list[str]) -> None:
             issue.outcome = ("rebuilt as a box" if box else "made again") if issue.piece in made else "tried, but the scan stayed"
 
 
-def final(mesh: Mesh, capture: Capture, reviewer: Reviewer, cfg: ReviewConfig = ReviewConfig(), log=print) -> list[Issue]:
-    """What the reviewer still finds in the finished model."""
-    issues = [i for i in ask(reviewer, make_views(mesh, capture, cfg), cfg, log) if i.sure != "low"]
+def final(mesh: Mesh, capture: Capture, reviewer: Reviewer, cfg: ReviewConfig = ReviewConfig(), log=print, layout: Layout | None = None) -> list[Issue]:
+    """What the reviewer still finds in the finished model (from photos picked as for `inspect`)."""
+    views = make_views(mesh, capture, cfg, boxes=rebuildable(layout, cfg) if layout is not None else None)
+    issues = [i for i in ask(reviewer, views, cfg, log) if i.sure != "low"]
     log(f"review: {len(issues)} issues left in the finished model")
     return issues
 

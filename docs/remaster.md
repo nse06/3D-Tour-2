@@ -269,7 +269,9 @@ found.
 Every other AI here is a specialist (SAM cuts out, the depth model measures, TripoSG makes one shape from
 one photo, LaMa fills a patch); none looks at the home and asks whether it makes sense. Claude (Opus 5.5,
 through the Anthropic API, medium effort) does: shown a photo and the model rendered from the same camera
-(8 sharp photos spread along the walk, 1024 px), it lists what a buyer would notice as structured JSON,
+(10 sharp photos at 1024 px: first, one at a time, the photo showing the most furniture it could have made again that
+no photo picked so far shows, then the rest evenly along the walk; evenly alone, a few photos can miss a piece
+altogether), it lists what a buyer would notice as structured JSON,
 each with a box on the render, what the thing is and whether it's a box in real life: fragments that
 aren't in the photo, objects with holes or missing parts, smeared patches, wrong shapes.
 
@@ -290,8 +292,8 @@ aren't in the photo, objects with holes or missing parts, smeared patches, wrong
 Requests use server-side fallbacks (`fallbacks: "default"`); a refusal or an error is no issues. Stats:
 `reviewIssues`, `reviewFound`, `reviewRemoved`, `reviewRemovedArea`, `reviewRebuild` (RoomPlan id: `box` or
 `made`), `reviewLeft`, `reviewTokens` (input and output tokens and their list price in dollars; thinking
-is output and most of it). Two passes of 8 views come to roughly half a dollar a home at medium effort
-(about twice that at high). `"review": false` turns it off. It needs `ANTHROPIC_API_KEY` in the
+is output and most of it). Two passes of 10 views come to roughly 60 cents a home at medium effort
+(about twice that at high). The worker's log ends with `remaster review:`, these lists and the furniture's fits. `"review": false` turns it off. It needs `ANTHROPIC_API_KEY` in the
 `atrium-photoreal` Modal secret; without it the review is skipped. The legal pages name Anthropic as a
 subprocessor and say what it sees. To check the key works: `modal run modal_app.py::check_reviewer` (one review of
 a made-up room on a CPU, a few cents; prints what it found and the tokens, never the key).
@@ -395,7 +397,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 72 tests (below)
+python -m pytest tests -q        # CPU, 73 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

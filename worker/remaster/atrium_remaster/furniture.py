@@ -433,7 +433,7 @@ def run(
             log(f"furniture: {b.category} {b.id}: its {'box' if pick == 'box' else 'shape'} matches the photos {iou:.2f}, the scanned one {scanned:.2f}: keeping the scanned one")
             stats["furnitureKept"] += 1
             continue
-        log(f"furniture: {b.category} {b.id}: made ({len(f)} triangles, outline match {iou:.2f})")
+        log(f"furniture: {b.category} {b.id}: made{' as RoomPlan box' if pick == 'box' else ''} ({len(f)} triangles, outline match {iou:.2f})")
         remove |= piece
         stats["furnitureIds"].append(b.id)
         additions.append(Addition(world.astype(np.float32), f, color=tuple(float(c) for c in color), name=f"furniture-{b.id}"))
