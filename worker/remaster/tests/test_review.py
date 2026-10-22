@@ -194,6 +194,42 @@ def test_the_photos_reviewed_show_every_piece_of_furniture(tmp_path):
     assert review.pick_cameras(capture, cfg) == [sharp[0]], "without furniture, evenly along the walk"
 
 
+class PieceChecker:
+    """Finds nothing looking over the home; asked about one outlined piece, says what it's told to
+    (and keeps the crops it was shown)."""
+
+    name = "stub"
+
+    def __init__(self, broken: bool):
+        self.broken, self.shown = broken, []
+
+    def __call__(self, photo, rendered):
+        return []
+
+    def check_piece(self, photo, rendered):
+        self.shown.append((photo, rendered))
+        return {"closed_box": True, "broken": self.broken, "sure": "high"}
+
+
+def test_each_dresser_and_cabinet_is_checked_on_its_own(tmp_path):
+    """Looking over the home, the reviewer noticed a real dresser one run and missed it the next:
+    asked about each piece on its own (outlined in the photo showing most of it), a broken closed box
+    is made again as RoomPlan's box, whether or not the open look noticed it."""
+    capture, plan, mesh = setup(tmp_path)
+    cfg = review.ReviewConfig(views=6, long_side=160, workers=1)
+    for broken, rebuild in ((True, {"CAB": "box"}), (False, {})):
+        checker = PieceChecker(broken)
+        _, verdict = review.inspect(mesh, capture, plan, checker, cfg, log=lambda _: None)
+        assert verdict.rebuild == rebuild, verdict
+        assert len(checker.shown) == 1, "one question for the one cabinet"
+        photo, rendered = checker.shown[0]
+        magenta = lambda im: ((im[..., 0] > 200) & (im[..., 1] < 60) & (im[..., 2] > 200)).sum()
+        assert magenta(photo) > 20 and magenta(rendered) > 20, "outlined on both"
+    _, verdict = review.inspect(mesh, capture, plan, PieceChecker(True), cfg, log=lambda _: None)
+    (issue,) = verdict.issues
+    assert issue.piece == "CAB" and issue.outcome == "to be rebuilt as a box" and issue.what.startswith("dresser or cabinet")
+
+
 class FakeClient:
     """Records the request; answers with `text` (or a refusal)."""
 
@@ -231,6 +267,17 @@ def test_claude_is_asked_with_both_images_and_answers_in_boxes():
     assert review.ClaudeReviewer(client=FakeClient(stop="refusal"))(photo, photo) == []
 
 
+def test_claude_is_asked_about_one_piece_at_low_effort():
+    client = FakeClient(json.dumps({"closed_box": True, "broken": True, "sure": "medium"}))
+    reviewer = review.ClaudeReviewer(client=client)
+    crop = np.zeros((40, 60, 3), np.uint8)
+    assert reviewer.check_piece(crop, crop) == {"closed_box": True, "broken": True, "sure": "medium"}
+    (request,) = client.requests
+    assert request["output_config"]["effort"] == "low" and request["output_config"]["format"]["schema"] == review.PIECE_SCHEMA
+    assert request["system"] == review.PIECE_SYSTEM and sum(c["type"] == "image" for c in request["messages"][0]["content"]) == 2
+    assert review.ClaudeReviewer(client=FakeClient(stop="refusal")).check_piece(crop, crop) is None
+
+
 def test_without_a_key_there_is_no_reviewer(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert review.reviewer_from_env(log=lambda _: None) is None
@@ -256,7 +303,8 @@ def test_the_selftest_says_whether_the_reviewer_answers():
         {"kind": "incomplete", "what": "dresser with a hole", "box": [230, 190, 300, 240], "point": [265, 215], "fix": "rebuild", "sure": "high", "boxy": True, "furniture": "storage"},
     ]}
     result = review.selftest(review.ClaudeReviewer(client=FakeClient(json.dumps(answer))))
-    assert result["ok"] and result["fixes"] == ["rebuild", "remove"] and result["boxy"] and result["tokens"]["input"] == 2600, result
+    assert result["ok"] and result["fixes"] == ["rebuild", "remove"] and result["boxy"] and result["tokens"]["input"] == 2 * 2600, result
+    assert result["piece"] == {"closed_box": False, "broken": False, "sure": "medium"}, "the one-piece question asked too (the recorded answer has none of its fields)"
     fragment, dresser = result["aim"]
     assert fragment["boxIoU"] > 0.8 and fragment["pointOnIt"], "it aimed true at the fragment"
     assert dresser["boxIoU"] < 0.2 and dresser["pointOnIt"], "its box is the hole, not the dresser (asked for the whole), its point on the dresser"

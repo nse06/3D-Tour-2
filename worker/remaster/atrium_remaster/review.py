@@ -15,6 +15,11 @@ wrong, where (a box on the render) and what the thing should be. Then:
   box (the RoomPlan box most of those surface points lie in), so a box drawn tight around a hole still
   finds its dresser. The reviewer having seen the scan is broken, a pick replaces it without having to
   match the photos' outlines better than the scan does (holes don't show in an outline);
+* `check_pieces`, right after: every dresser, cabinet and box-like table RoomPlan measured is shown to
+  it on its own (outlined, cropped from the photo that shows it best) with two questions: is it a
+  closed box, and is the model of it broken? A broken closed box is made again as RoomPlan's box. The
+  open look over the home notices a piece one run and misses it the next (a real dresser by a window);
+  asked about each piece, it doesn't have to notice;
 * `final`, once the remaster is done: what it still finds goes into the stats, for the dashboard.
 
 It needs ANTHROPIC_API_KEY in the worker's environment (the atrium-photoreal secret); without it the
@@ -113,6 +118,23 @@ SCHEMA = {
 }
 
 # Furniture the furniture stage may make again when the reviewer asks (built-ins it never touches).
+PIECE_SYSTEM = """You check one piece of furniture in a 3D model of a home made from a phone scan, before it goes on a \
+real estate listing. You get two images from the same camera, cropped around the piece: first a photo of the real \
+room, then the 3D model rendered from that viewpoint (flat-shaded from its own textures; grey background means the \
+model has nothing there). The piece is outlined in magenta on both. Answer about the outlined piece only:
+- closed_box: in the photo, is it basically a closed box: a dresser, chest of drawers, cabinet, nightstand, TV stand \
+or sideboard with doors or drawers? Not open shelves, not a table on legs, not a chair, sofa or bed.
+- broken: in the model, is it clearly broken next to the photo: holes, missing chunks, ragged or warped sides, lumps, \
+or blotched with patches of the wrong color where the photo shows a clean surface? Ignore lighting and color cast.
+- sure: how sure you are of both."""
+
+PIECE_SCHEMA = {
+    "type": "object",
+    "properties": {"closed_box": {"type": "boolean"}, "broken": {"type": "boolean"}, "sure": {"type": "string", "enum": ["low", "medium", "high"]}},
+    "required": ["closed_box", "broken", "sure"],
+    "additionalProperties": False,
+}
+
 REBUILDABLE = ("sofa", "chair", "bed", "table", "storage")
 # Those whose RoomPlan box is the piece itself when it's boxy (a dresser, a cabinet, a nightstand, a
 # table that's a cube); never a sofa's (its box takes in the back cushions: a real chaise came out a
@@ -193,15 +215,15 @@ class ClaudeReviewer:
         cost = (self.tokens["input"] * PRICE[0] + self.tokens["output"] * PRICE[1]) / 1e6
         return {**self.tokens, "dollars": round(cost, 3)}
 
-    def __call__(self, photo: np.ndarray, rendered: np.ndarray) -> list[Issue]:
-        h, w = rendered.shape[:2]
+    def _answer(self, system: str, schema: dict, effort: str, photo: np.ndarray, rendered: np.ndarray, question: str) -> str:
+        """The JSON text of its answer to the two images and a question ("" when refused or cut off)."""
         response = self.client.beta.messages.create(
             model=self.model,
             max_tokens=16000,
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
-            output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": SCHEMA}},
-            system=SYSTEM,
+            output_config={"effort": effort, "format": {"type": "json_schema", "schema": schema}},
+            system=system,
             messages=[
                 {
                     "role": "user",
@@ -210,7 +232,7 @@ class ClaudeReviewer:
                         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": jpeg_b64(photo)}},
                         {"type": "text", "text": "The model from the same camera:"},
                         {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": jpeg_b64(rendered)}},
-                        {"type": "text", "text": f"What's wrong with the model? Both images are {w}x{h} pixels: boxes and points in the second one's pixels."},
+                        {"type": "text", "text": question},
                     ],
                 }
             ],
@@ -221,9 +243,22 @@ class ClaudeReviewer:
                 self.tokens["input"] += int(getattr(used, "input_tokens", 0) or 0)
                 self.tokens["output"] += int(getattr(used, "output_tokens", 0) or 0)
         if response.stop_reason in ("refusal", "max_tokens"):
-            return []
-        text = next((b.text for b in response.content if b.type == "text"), "")
+            return ""
+        return next((b.text for b in response.content if b.type == "text"), "")
+
+    def __call__(self, photo: np.ndarray, rendered: np.ndarray) -> list[Issue]:
+        h, w = rendered.shape[:2]
+        question = f"What's wrong with the model? Both images are {w}x{h} pixels: boxes and points in the second one's pixels."
+        text = self._answer(SYSTEM, SCHEMA, self.effort, photo, rendered, question)
         return parse_issues(text, (w, h)) if text else []
+
+    def check_piece(self, photo: np.ndarray, rendered: np.ndarray) -> dict | None:
+        """One outlined piece: {"closed_box", "broken", "sure"}, or None. A narrow question: low effort."""
+        text = self._answer(PIECE_SYSTEM, PIECE_SCHEMA, "low", photo, rendered, "The outlined piece: is it a closed box, and is the model of it broken?")
+        if not text:
+            return None
+        answer = json.loads(text)
+        return {"closed_box": bool(answer.get("closed_box")), "broken": bool(answer.get("broken")), "sure": str(answer.get("sure", "medium"))}
 
 
 def reviewer_from_env(log=print) -> Reviewer | None:
@@ -253,6 +288,10 @@ class ReviewConfig:
     rebuild_least: float = 0.08  # ... and it's at least this much of the box (a loose box)
     box_margin: float = 0.05  # m: a surface point this close to a RoomPlan box is in it
     fixture_reach: float = 1.0  # m: storage this close to a fixture is built in
+    piece_checks: int = 12  # pieces asked about on their own, the most visible first
+    piece_shown: float = 0.01  # ... in the view showing the most of them, at least this much of it
+    piece_pad: float = 0.25  # the crop: the outline's box grown this much each way
+    piece_side: int = 768  # ... at most this long
     workers: int = 8
 
 
@@ -511,6 +550,7 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
             issue.outcome = "to be rebuilt as a box" if boxed else "to be made again by the shape AI"
         elif issue.fix == "repaint":
             issue.outcome = "left: repainting isn't built yet"
+    check_pieces(reviewer, views, pieces, verdict, cfg, log)
     verdict.removed = int(remove.sum())
     verdict.removed_area = round(float(found.area[remove].sum()), 3)
     if remove.any():
@@ -525,6 +565,77 @@ def rebuilt(verdict: Verdict, made: list[str]) -> None:
         if issue.piece:
             box = verdict.rebuild.get(issue.piece) == "box"
             issue.outcome = ("rebuilt as a box" if box else "made again") if issue.piece in made else "tried, but the scan stayed"
+
+
+def outlined_crops(view: View, box: Box, cfg: ReviewConfig) -> tuple[np.ndarray, np.ndarray, tuple[float, float, float, float]] | None:
+    """The photo and the render cropped around a RoomPlan box, its edges drawn in magenta on both, and
+    the crop (0-1 of the view); None if the box isn't wholly in front of the camera."""
+    from PIL import ImageDraw
+
+    h, w = view.rendered.shape[:2]
+    local = (box.corners() - view.camtoworld[:3, 3]) @ view.camtoworld[:3, :3]
+    if (local[:, 2] <= 0.05).any():
+        return None
+    uv = np.stack([view.K[0, 0] * local[:, 0] / local[:, 2] + view.K[0, 2], view.K[1, 1] * local[:, 1] / local[:, 2] + view.K[1, 2]], 1)
+    (x0, y0), (x1, y1) = uv.min(0), uv.max(0)
+    gx, gy = cfg.piece_pad * (x1 - x0), cfg.piece_pad * (y1 - y0)
+    cx0, cy0, cx1, cy1 = (int(max(0, x0 - gx)), int(max(0, y0 - gy)), int(min(w, x1 + gx)), int(min(h, y1 + gy)))
+    if cx1 - cx0 < 32 or cy1 - cy0 < 32:
+        return None
+    # The 12 edges: corners differing in one coordinate's sign (box.corners' order).
+    edges = [(a, b) for a in range(8) for b in range(a + 1, 8) if (a ^ b).bit_count() == 1]
+    out = []
+    for image in (view.photo, view.rendered):
+        im = Image.fromarray(np.asarray(image, np.uint8))
+        draw = ImageDraw.Draw(im)
+        for a, b in edges:
+            draw.line([tuple(uv[a]), tuple(uv[b])], fill=(255, 0, 255), width=max(2, round(max(w, h) / 400)))
+        crop = im.crop((cx0, cy0, cx1, cy1))
+        scale = min(1.0, cfg.piece_side / max(crop.size))
+        if scale < 1:
+            crop = crop.resize((max(1, round(crop.width * scale)), max(1, round(crop.height * scale))), Image.LANCZOS)
+        out.append(np.asarray(crop))
+    return out[0], out[1], (cx0 / w, cy0 / h, cx1 / w, cy1 / h)
+
+
+def check_pieces(reviewer: Reviewer, views: list[View], pieces: list[Box], verdict: Verdict, cfg: ReviewConfig, log=print) -> None:
+    """Every dresser, cabinet and table among `pieces` not already to be rebuilt as a box, shown on its
+    own from the view showing the most of it: a broken closed box is listed to be rebuilt as one."""
+    check = getattr(reviewer, "check_piece", None)
+    if check is None:
+        return
+    asks = []
+    for i, box in enumerate(pieces):
+        if box.category not in BOXES or verdict.rebuild.get(box.id) == "box":
+            continue
+        shown = [(int((v.box_of == i).sum()), v) for v in views if v.box_of is not None]
+        count, view = max(shown, key=lambda t: t[0], default=(0, None))
+        if view is None or count < cfg.piece_shown * view.box_of.size:
+            continue
+        crops = outlined_crops(view, box, cfg)
+        if crops is not None:
+            asks.append((count, box, view, crops))
+    asks = sorted(asks, key=lambda t: -t[0])[: cfg.piece_checks]
+
+    def one(job):
+        _, box, _, (photo, rendered, _) = job
+        try:
+            return check(photo, rendered)
+        except Exception as e:
+            log(f"review: piece {box.id[:8]}: {type(e).__name__}: {e}"[:200])
+            return None
+
+    with ThreadPoolExecutor(max_workers=max(1, cfg.workers)) as pool:
+        answers = list(pool.map(one, asks))
+    for (_, box, view, (_, _, crop)), answer in zip(asks, answers):
+        if answer is None:
+            continue
+        rebuild = answer["closed_box"] and answer["broken"] and answer["sure"] != "low"
+        log(f"review: piece {box.category} {box.id[:8]} (view {view.index}): {'a closed box' if answer['closed_box'] else 'not a closed box'}, {'broken' if answer['broken'] else 'fine'} ({answer['sure']}){': rebuilt as a box' if rebuild else ''}")
+        if rebuild:
+            verdict.rebuild[box.id] = "box"
+            what = "dresser or cabinet" if box.category == "storage" else "box-like table"
+            verdict.issues.append(Issue("incomplete", f"{what} checked on its own: broken", crop, "rebuild", answer["sure"], True, box.category, None, view.index, "to be rebuilt as a box", box.id))
 
 
 def final(
@@ -563,6 +674,17 @@ def selftest(reviewer: Reviewer) -> dict:
         inside = i.point is not None and t[0] <= i.point[0] <= t[2] and t[1] <= i.point[1] <= t[3]
         aim.append({"kind": i.kind, "furniture": i.furniture, "boxIoU": round(iou(i.box, t), 2), "pointOnIt": inside})
     out["aim"] = aim
+    # The one-piece question on the dresser, outlined: a closed box, broken.
+    if hasattr(reviewer, "check_piece"):
+        crops = []
+        for image in (photo, rendered):
+            crop = image[140:320, 130:390].copy()  # the dresser at rows 30-150, columns 30-230
+            crop[28:30, 28:232] = crop[150:152, 28:232] = crop[28:152, 28:30] = crop[28:152, 230:232] = (255, 0, 255)
+            crops.append(crop)
+        try:
+            out["piece"] = reviewer.check_piece(*crops)
+        except Exception as e:
+            out["piece"] = {"why": f"{type(e).__name__}: {e}"[:200]}
     if hasattr(reviewer, "usage"):
         out["tokens"] = reviewer.usage()
     return out
