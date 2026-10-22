@@ -1,7 +1,6 @@
 import "server-only";
 import Stripe from "stripe";
 import { getAdminRepository } from "@/lib/data/repository";
-import { dispatchJob, inputNames } from "@/lib/photoreal";
 import { photosForRemaster, queueRemaster, remasterConfigured } from "@/lib/remaster";
 import type { Payer } from "./access";
 import { stripeApiOverride, stripeSecretKey } from "./config";
@@ -253,27 +252,22 @@ export async function applyCheckoutSession(session: Stripe.Checkout.Session, bas
   if (!kind || !propertyId) return null;
   if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") return { kind, propertyId, plan: null, pending: true };
   const added = await store.addGrant({ userId, propertyId, kind, source: "purchase", reference: session.id, amountCents: session.amount_total ?? 0 });
-  if (added) await fulfil(kind, userId, propertyId, baseUrl, meta.start === "remaster");
+  if (added) await fulfil(kind, userId, propertyId, baseUrl);
   return { kind, propertyId, plan: null, pending: false };
 }
 
-async function fulfil(kind: "listing" | "photoreal", userId: string, propertyId: string, baseUrl: string, remaster: boolean) {
+async function fulfil(kind: "listing" | "photoreal", userId: string, propertyId: string, baseUrl: string) {
   try {
     const repo = await getAdminRepository();
     if (kind === "listing") {
       await repo.setPublished(userId, propertyId, true);
       return;
     }
-    // Paid from the remaster panel: the remastered model, from the photos on the server (not photoreal).
-    if (remaster) {
-      const tour = (await repo.getProperty(userId, propertyId))?.tour;
-      const upload = tour && remasterConfigured() ? await photosForRemaster(repo, userId, propertyId, tour) : null;
-      if (tour && upload) await queueRemaster(repo, userId, propertyId, tour, upload, baseUrl);
-      return;
-    }
-    // The job the realtor paid from: waiting for payment, or a failed run they're retrying.
-    const job = await repo.latestPhotorealJob(userId, propertyId);
-    if ((job?.status === "queued" || job?.status === "failed") && (await inputNames(job)).length >= job.files) await dispatchJob(repo, job, baseUrl);
+    // The AI-enhanced model, from the photos on the server. (A "photoreal" purchase once trained
+    // photoreal splats; photoreal is retired, docs/photoreal.md.)
+    const tour = (await repo.getProperty(userId, propertyId))?.tour;
+    const upload = tour && remasterConfigured() ? await photosForRemaster(repo, userId, propertyId, tour) : null;
+    if (tour && upload) await queueRemaster(repo, userId, propertyId, tour, upload, baseUrl);
   } catch (e) {
     // It's paid for either way: Publish or Start on the listing page finishes it at no charge.
     console.error(`billing: couldn't finish a paid ${kind}:`, (e as Error).message);

@@ -133,12 +133,21 @@ export function bundleToTourData(bundle: PropertyBundle): TourData | null {
     },
     assetUrl: tour.assetUrl,
     cleanAssetUrl: tour.cleanAssetUrl ?? null,
-    splatUrl: tour.splatUrl ?? null,
-    splatSpots: tour.splatUrl ? (tour.splatSpots ?? null) : null,
+    // Photoreal is retired (docs/photoreal.md): its splats no longer show, and a tour that started
+    // in it starts in the AI-enhanced model, or else the painted one.
+    splatUrl: null,
+    splatSpots: null,
     remasterUrl: tour.remasterUrl ?? null,
     source: tour.source,
     // A look whose model is missing falls back to the painted one.
-    appearance: tour.appearance === "remastered" && !tour.remasterUrl ? "captured" : (tour.appearance ?? "studio"),
+    appearance:
+      tour.appearance === "photoreal"
+        ? tour.remasterUrl
+          ? "remastered"
+          : "captured"
+        : tour.appearance === "remastered" && !tour.remasterUrl
+          ? "captured"
+          : (tour.appearance ?? "studio"),
     space,
   };
 }

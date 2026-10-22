@@ -1,5 +1,14 @@
 # Photoreal walkthroughs
 
+> **Retired (October 2026).** The splats looked worse than the AI-enhanced model (docs/remaster.md),
+> so the site no longer offers photoreal: the listing page has no Photoreal card, tours no longer get
+> the splats (`bundleToTourData` leaves them out, so the walkthrough has no **Photoreal** button, and
+> a tour that started in photoreal starts in the AI-enhanced model, or else the painted one), and
+> nothing starts a training run (the phone's upload, a payment and the dashboard all go to the
+> AI-enhanced model instead). The phone's upload still makes a photoreal job: it holds the photos the
+> AI-enhanced model is made from. **Delete the photos** is on the Remastered model card. The worker,
+> the viewer's splat code and the database tables stay, unused; what follows describes them.
+
 A photoreal walkthrough shows the home the way the scan's photos saw it: window views, reflections,
 plants, the texture of a sofa. It is made from the same photos the phone paints onto the 3D model, by
 a cloud GPU that trains 3D Gaussian splats on them (35–50 minutes). Buyers switch to it with the

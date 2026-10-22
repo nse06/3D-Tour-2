@@ -1,12 +1,12 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { claim, payerFor, photorealAccess } from "@/lib/billing/access";
-import { PHOTOREAL_UNPAID, PHOTOS_FOR_REMASTER, REMASTER_UNPAID } from "@/lib/billing/plans";
+import { PHOTOS_FOR_REMASTER, REMASTER_UNPAID } from "@/lib/billing/plans";
 import { apiError, resolveCaptureSession, serverError } from "@/lib/capture-api";
 import { serverBaseUrl } from "@/lib/capture-sessions";
 import type { Repository } from "@/lib/data/repository";
 import type { CaptureSessionLookup } from "@/lib/data/types";
-import { dispatchJob, inputNames, jobSummary, pruneListingPhotos } from "@/lib/photoreal";
+import { inputNames, jobSummary, pruneListingPhotos } from "@/lib/photoreal";
 import { photosForRemaster, queueRemaster, remasterConfigured } from "@/lib/remaster";
 
 type Context = RouteContext<"/api/capture/sessions/[token]/photoreal/[job]">;
@@ -33,11 +33,11 @@ export async function GET(_request: Request, ctx: Context) {
 }
 
 /**
- * The phone uploaded every file: check they arrived and start the remastered model from them
- * (docs/remaster.md). The photoreal job they came with waits until the realtor starts photoreal in
- * the dashboard; without a remaster GPU, photoreal starts as before. When it has to be paid for
- * first, it waits; paying on the website starts it (the phone never shows prices: payment happens
- * on the website). The listing's older photos go: these replace them.
+ * The phone uploaded every file: check they arrived and start the AI-enhanced model from them
+ * (docs/remaster.md). The photoreal job they came with only holds the photos: photoreal itself is
+ * retired (docs/photoreal.md). When the model has to be paid for first, it waits; paying on the
+ * website starts it (the phone never shows prices: payment happens on the website). The listing's
+ * older photos go: these replace them.
  */
 export async function POST(_request: Request, ctx: Context) {
   const resolved = await sessionJob(ctx);
@@ -54,12 +54,10 @@ export async function POST(_request: Request, ctx: Context) {
     }
     const access = await photorealAccess(await payerFor(lookup.session.userId), lookup.property.id);
     if (access.allowed) await claim(access);
-    const remaster = remasterConfigured();
-    const message = remaster ? (access.allowed ? PHOTOS_FOR_REMASTER : REMASTER_UNPAID) : access.allowed ? null : PHOTOREAL_UNPAID;
+    const message = access.allowed ? PHOTOS_FOR_REMASTER : REMASTER_UNPAID;
     job = (await repo.updatePhotorealJob(job.id, { status: "queued", stage: null, progress: 0, message })) ?? job;
     const baseUrl = serverBaseUrl(await headers()).url;
-    if (access.allowed && !remaster) job = await dispatchJob(repo, job, baseUrl);
-    if (access.allowed && remaster) {
+    if (access.allowed && remasterConfigured()) {
       // The photos are in either way: a GPU that doesn't take it leaves the remaster waiting in the dashboard.
       try {
         const tour = (await repo.getProperty(job.userId, job.propertyId))?.tour;

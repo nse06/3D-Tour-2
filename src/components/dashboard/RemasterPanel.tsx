@@ -3,7 +3,7 @@
 import { AlertTriangle, CheckCircle2, Eye, Loader2, Play, RefreshCw, RotateCcw, WandSparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { setAppearanceAction, startRemasterAction } from "@/app/dashboard/actions";
+import { deletePhotorealPhotosAction, setAppearanceAction, startRemasterAction } from "@/app/dashboard/actions";
 import { Button, ButtonLink } from "@/components/ui";
 import type { RemasterSummary } from "@/lib/remaster";
 import { stepLabel } from "@/lib/remaster-steps";
@@ -140,6 +140,17 @@ export function RemasterPanel({
       router.refresh();
     });
 
+  const deletePhotos = () => {
+    if (!window.confirm("Delete the scan's photos kept on the server? The AI-enhanced model stays; making it again would need the photos sent from the phone."))
+      return;
+    startTransition(async () => {
+      setError(null);
+      const res = await deletePhotorealPhotosAction(propertyId);
+      if (!res.ok) setError(res.error ?? "The photos couldn't be deleted.");
+      router.refresh();
+    });
+  };
+
   const busy = pending || leaving;
   const done = Math.round((job?.progress ?? 0) * 100);
   const stats = job?.stats ?? {};
@@ -160,10 +171,15 @@ export function RemasterPanel({
         {label}
       </Button>
     ) : null;
+  const deleteButton = photosReady && (
+    <button type="button" onClick={deletePhotos} disabled={busy} className="block text-xs text-neutral-400 hover:text-red-700 hover:underline">
+      Delete the photos
+    </button>
+  );
   const needsPhotos = !photosReady && (
     <p className="text-xs text-neutral-500">
       It works from the scan&apos;s photos on the server. In <b className="font-semibold">Atrium Capture</b>, open this scan and tap{" "}
-      <b className="font-semibold">Make it AI-enhanced</b> (<i>Make it photoreal</i> before build 14): that sends them, and the remaster starts by itself.
+      <b className="font-semibold">Make it AI-enhanced</b>: that sends them, and the remaster starts by itself.
     </p>
   );
 
@@ -182,6 +198,7 @@ export function RemasterPanel({
           {needsPhotos}
           {!gpuReady && <p className="text-xs text-neutral-400">The remaster GPU isn&apos;t connected to this site yet (see docs/remaster.md).</p>}
           {startButton("Remaster with AI", "play")}
+          {deleteButton}
         </div>
       )}
 
@@ -309,6 +326,7 @@ export function RemasterPanel({
             <p className="text-xs text-neutral-500">Remaster it again with the newest version of the AI (the photos are still on the server).</p>
             {needsPhotos}
             {startButton("Remaster again", "again")}
+            {deleteButton}
           </div>
         </div>
       )}
@@ -320,6 +338,7 @@ export function RemasterPanel({
           </p>
           {needsPhotos}
           {startButton("Try again", "retry")}
+          {deleteButton}
         </div>
       )}
 

@@ -61,7 +61,7 @@ export default async function DeleteAccount(props: PageProps<"/legal/delete-acco
       </ul>
       <p>
         To delete just one listing, open it in the dashboard and choose <strong>Delete listing</strong>. To delete only the photos kept for AI
-        enhancement, use <strong>Delete the photos</strong> in the listing&apos;s Photoreal panel.
+        enhancement, use <strong>Delete the photos</strong> in the listing&apos;s Remastered model card.
       </p>
 
       <h2>Questions</h2>

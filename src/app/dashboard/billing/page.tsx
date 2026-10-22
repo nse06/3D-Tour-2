@@ -35,7 +35,7 @@ export default async function BillingPage(props: PageProps<"/dashboard/billing">
         <p className="text-[12px] font-semibold uppercase tracking-[0.24em] text-stone">Billing</p>
         <h1 className="font-display mt-2 text-5xl leading-[1.05] text-ink">Plans &amp; billing</h1>
         <Card className="mt-8 p-6 text-sm text-neutral-600">
-          Billing is off on this site, so publishing and photoreal cost nothing. To start charging, add <code>STRIPE_SECRET_KEY</code> and{" "}
+          Billing is off on this site, so publishing and AI enhancement cost nothing. To start charging, add <code>STRIPE_SECRET_KEY</code> and{" "}
           <code>STRIPE_WEBHOOK_SECRET</code> to the server&apos;s environment variables (README.md, Billing).
         </Card>
       </div>
@@ -54,7 +54,7 @@ export default async function BillingPage(props: PageProps<"/dashboard/billing">
   const photorealBeta = !chargeForPhotoreal();
   const freeListingLeft = !grants.some((g) => g.kind === "listing" && g.source === "free");
   const addresses = new Map(listings.map((l) => [l.property.id, l.property.addressLine]));
-  const photorealLine = photorealBeta ? "Photoreal free during the beta" : `Photoreal ${dollars(PRICES.photoreal.amount)} per listing`;
+  const photorealLine = photorealBeta ? "AI enhancement free during the beta" : `AI enhancement ${dollars(PRICES.photoreal.amount)} per listing`;
 
   const cards: { id: "listing" | Plan; name: string; price: string; per: string; features: string[] }[] = [
     {
@@ -78,8 +78,8 @@ export default async function BillingPage(props: PageProps<"/dashboard/billing">
       per: "per month",
       features: [
         "Publish every listing",
-        `${PRO_PHOTOREAL_INCLUDED} photoreal listings a month`,
-        `Then ${dollars(PRICES.photorealPro.amount)} per photoreal listing`,
+        `${PRO_PHOTOREAL_INCLUDED} AI-enhanced listings a month`,
+        `Then ${dollars(PRICES.photorealPro.amount)} per AI-enhanced listing`,
       ],
     },
   ];
@@ -112,7 +112,7 @@ export default async function BillingPage(props: PageProps<"/dashboard/billing">
           </p>
           <p className="text-sm text-neutral-500">
             {exempt
-              ? "Publishing and photoreal cost nothing on this account."
+              ? "Publishing and AI enhancement cost nothing on this account."
               : plan
                 ? plan.status === "past_due"
                   ? "The last payment didn't go through. Stripe is trying again; update your card in Manage billing."
@@ -122,7 +122,7 @@ export default async function BillingPage(props: PageProps<"/dashboard/billing">
                 : freeListingLeft
                   ? "Your first listing is on us."
                   : "You pay once per listing, when it goes live."}
-            {plan?.plan === "pro" && !photorealBeta && ` ${proUsed} of ${PRO_PHOTOREAL_INCLUDED} photoreal listings used this month.`}
+            {plan?.plan === "pro" && !photorealBeta && ` ${proUsed} of ${PRO_PHOTOREAL_INCLUDED} AI-enhanced listings used this month.`}
           </p>
         </div>
         {customer && <ManageBillingButton />}
@@ -130,7 +130,7 @@ export default async function BillingPage(props: PageProps<"/dashboard/billing">
 
       {photorealBeta && (
         <p className="mt-4 flex items-center gap-2 text-sm text-neutral-600">
-          <Sparkles className="size-4 text-gold" /> Photoreal walkthroughs are free for founding agents during the beta.
+          <Sparkles className="size-4 text-gold" /> AI-enhanced models are free for founding agents during the beta.
         </p>
       )}
 
@@ -166,13 +166,13 @@ export default async function BillingPage(props: PageProps<"/dashboard/billing">
 
       <h2 className="font-display mt-14 text-3xl text-ink">History</h2>
       {grants.length === 0 ? (
-        <p className="mt-3 text-sm text-neutral-500">Nothing yet. Listings you publish and make photoreal show up here.</p>
+        <p className="mt-3 text-sm text-neutral-500">Nothing yet. Listings you publish and AI-enhance show up here.</p>
       ) : (
         <Card className="mt-4 divide-y divide-sand/70">
           {grants.slice(0, 100).map((g) => (
             <div key={g.id} className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-6 py-3 text-sm">
               <span className="min-w-0 flex-1 truncate text-ink">{(g.propertyId && addresses.get(g.propertyId)) || "A deleted listing"}</span>
-              <span className="w-28 text-neutral-500">{g.kind === "listing" ? "Published" : "Photoreal"}</span>
+              <span className="w-28 text-neutral-500">{g.kind === "listing" ? "Published" : "AI-enhanced"}</span>
               <span className="w-44 text-neutral-500">{g.source === "purchase" ? `Paid ${dollars(g.amountCents)}` : HOW[g.source]}</span>
               <span className="w-28 text-right text-neutral-400">{day(g.createdAt)}</span>
             </div>

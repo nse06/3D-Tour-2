@@ -30,11 +30,10 @@ export default async function RoomsPage(props: PageProps<"/dashboard/properties/
           propertyId={id}
           assetUrl={bundle.tour.assetUrl}
           cleanAssetUrl={bundle.tour.cleanAssetUrl}
-          splatUrl={bundle.tour.splatUrl}
-          splatSpots={bundle.tour.splatSpots}
           remasterUrl={bundle.tour.remasterUrl}
           initialSpace={space}
-          initialAppearance={bundle.tour.appearance}
+          // Photoreal is retired: a tour that started in it starts in the AI-enhanced model, or else the painted one.
+          initialAppearance={bundle.tour.appearance === "photoreal" ? (bundle.tour.remasterUrl ? "remastered" : "captured") : bundle.tour.appearance}
         />
       </div>
     </div>

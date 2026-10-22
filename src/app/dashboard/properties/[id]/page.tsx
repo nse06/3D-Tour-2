@@ -5,16 +5,14 @@ import { CaptureUploader } from "@/components/dashboard/CaptureUploader";
 import { CoverMaker } from "@/components/dashboard/CoverMaker";
 import { CoverUpload } from "@/components/dashboard/CoverUpload";
 import { PhoneCapturePanel } from "@/components/dashboard/PhoneCapturePanel";
-import { PhotorealPanel } from "@/components/dashboard/PhotorealPanel";
 import { RemasterPanel } from "@/components/dashboard/RemasterPanel";
 import { AttachDemoButton, DeletePropertyButton, PublishPanel } from "@/components/dashboard/PropertyActions";
 import { PropertyForm } from "@/components/dashboard/PropertyForm";
 import { ButtonLink, Card, StatusPill } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
-import { photorealPricing, publishPricing } from "@/lib/billing/labels";
+import { publishPricing } from "@/lib/billing/labels";
 import { getRepository } from "@/lib/data/repository";
 import { cityLine, formatPrice } from "@/lib/format";
-import { gpuConfigured, jobSummary, keptPhotos } from "@/lib/photoreal";
 import { photosForRemaster, remasterConfigured, remasterSummary } from "@/lib/remaster";
 import { sortedFloors } from "@/lib/tour/navigation";
 import { updatePropertyAction } from "../../actions";
@@ -38,20 +36,8 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
   const bundle = await repo.getProperty(user.id, id);
   if (!bundle) notFound();
   const { property: p, tour, space } = bundle;
-  // The photoreal panel is a side show: a database that can't answer yet mustn't break the page.
-  const photorealJob = await repo.latestPhotorealJob(user.id, id).catch((e) => {
-    console.error("photoreal job lookup:", (e as Error).message);
-    return null;
-  });
-  // Whether the latest job's photos are still on the server, for training it again.
-  const photos =
-    photorealJob && (photorealJob.status === "done" || photorealJob.status === "failed")
-      ? await keptPhotos(repo, photorealJob).catch((e) => {
-          console.error("photoreal photos lookup:", (e as Error).message);
-          return null;
-        })
-      : null;
-  // The remastered model (docs/remaster.md): its own job, from the photos photoreal left. A side show too.
+  // The AI-enhanced model (docs/remaster.md), from the photos the phone sent: a side show, so a
+  // database that can't answer yet mustn't break the page.
   const photoScan = tour?.source === "ios_scan" && !!tour.cleanAssetUrl;
   const [remasterJob, remasterPhotos] = photoScan
     ? await Promise.all([
@@ -73,16 +59,13 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
     console.error("billing lookup:", (e as Error).message);
     return null;
   };
-  const [publishCost, photorealCost] = await Promise.all([
-    live ? null : publishPricing(user, id).catch(noPricing),
-    tour?.source === "ios_scan" ? photorealPricing(user, id).catch(noPricing) : null,
-  ]);
+  const publishCost = live ? null : await publishPricing(user, id).catch(noPricing);
 
   return (
     <div className="rise">
       {paid === "listing" && <p className="mb-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Payment received. Your tour is live.</p>}
       {paid === "photoreal" && (
-        <p className="mb-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Payment received. Photoreal is on for this listing.</p>
+        <p className="mb-6 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">Payment received. The AI-enhanced model is on its way.</p>
       )}
       {paid === "pending" && (
         <p className="mb-6 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -190,29 +173,6 @@ export default async function PropertyPage(props: PageProps<"/dashboard/properti
           <Card className="p-6">
             <PhoneCapturePanel propertyId={p.id} tourId={tour?.id ?? null} autoStart={scan === "1"} />
           </Card>
-
-          {tour?.source === "ios_scan" && (
-            <Card className="p-6">
-              <PhotorealPanel
-                propertyId={p.id}
-                initialJob={photorealJob ? jobSummary(photorealJob) : null}
-                gpuReady={gpuConfigured()}
-                hasPhotoScan={!!tour.cleanAssetUrl}
-                pricing={photorealCost}
-                photos={photos}
-                remasterFirst={remasterConfigured()}
-                buyersSee={
-                  !photorealJob || !tour.splatUrl
-                    ? null
-                    : tour.splatUrl === photorealJob.variants?.ai?.splatUrl
-                      ? "ai"
-                      : tour.splatUrl === photorealJob.splatUrl
-                        ? "faithful"
-                        : null
-                }
-              />
-            </Card>
-          )}
 
           {photoScan && (
             <Card className="p-6">

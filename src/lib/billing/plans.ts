@@ -16,8 +16,8 @@ export interface PriceSpec {
 
 export const PRICES: Record<PriceKey, PriceSpec> = {
   listing: { key: "listing", lookupKey: "atrium_listing", name: "Atrium listing", amount: 1900 },
-  photoreal: { key: "photoreal", lookupKey: "atrium_photoreal", name: "Photoreal walkthrough", amount: 2000 },
-  photorealPro: { key: "photorealPro", lookupKey: "atrium_photoreal_pro", name: "Photoreal walkthrough (Pro)", amount: 1500 },
+  photoreal: { key: "photoreal", lookupKey: "atrium_photoreal", name: "AI-enhanced model", amount: 2000 },
+  photorealPro: { key: "photorealPro", lookupKey: "atrium_photoreal_pro", name: "AI-enhanced model (Pro)", amount: 1500 },
   unlimited: { key: "unlimited", lookupKey: "atrium_unlimited_monthly", name: "Atrium Unlimited", amount: 3900, interval: "month" },
   pro: { key: "pro", lookupKey: "atrium_pro_monthly", name: "Atrium Pro", amount: 7900, interval: "month" },
 };
@@ -27,25 +27,11 @@ export const PRO_PHOTOREAL_INCLUDED = 5;
 
 export const PLAN_NAMES: Record<Plan, string> = { unlimited: "Unlimited", pro: "Pro" };
 
-/**
- * A photoreal job waiting to be paid for, as the phone shows it. No price: the app doesn't sell
- * anything, payment happens on the website.
- */
-export const PHOTOREAL_UNPAID = "The photos are in. Training starts once photoreal is turned on for this listing in the Atrium dashboard.";
+/** The phone's photos make the AI-enhanced model (docs/remaster.md). As the phone shows it. */
+export const PHOTOS_FOR_REMASTER = "The photos are in and the AI-enhanced model is on its way. Follow it in the Atrium dashboard.";
 
-/**
- * The phone's photos now make the remastered model first (docs/remaster.md); the photoreal job they
- * came with waits until the realtor starts photoreal in the dashboard. As the phone shows it.
- */
-export const PHOTOS_FOR_REMASTER = "The photos are in and the remastered model is on its way. Follow it in the Atrium dashboard, where photoreal can be started too.";
-
-/** The same, waiting to be paid for (no price: payment happens on the website). */
-export const REMASTER_UNPAID = "The photos are in. The remastered model starts once it's turned on for this listing in the Atrium dashboard.";
-
-/** A photoreal job whose photos went to the remaster: photoreal itself starts only when asked. */
-export function photorealParked(message: string | null): boolean {
-  return message === PHOTOS_FOR_REMASTER || message === REMASTER_UNPAID;
-}
+/** The same, waiting to be paid for. No price: the app doesn't sell anything, payment happens on the website. */
+export const REMASTER_UNPAID = "The photos are in. The AI-enhanced model starts once it's turned on for this listing in the Atrium dashboard.";
 
 /** What publishing a listing costs, as the Share panel shows it. */
 export interface PublishPricing {
@@ -54,15 +40,6 @@ export interface PublishPricing {
   note: string | null;
   /** Link to the plans. */
   plans: boolean;
-}
-
-/** What photoreal costs for a listing, as its panel shows it. */
-export interface PhotorealPricing {
-  note: string | null;
-  /** Starting the waiting job sends the realtor to pay first. */
-  pay: boolean;
-  /** "Add photoreal — $20" when it has to be paid for. */
-  payLabel: string;
 }
 
 /** "$19", "$19.50". */

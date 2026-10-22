@@ -296,12 +296,12 @@ struct ScanDetailView: View {
         let job = model.photorealJobs[scan.id]
         switch job?.status {
         case "done"?:
-            Label("Ready. Open the walkthrough and tap Photoreal.", systemImage: "checkmark.circle.fill")
+            Label("The photos are in. Follow the AI-enhanced model in the Atrium dashboard.", systemImage: "checkmark.circle.fill")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.green)
             if model.pairing?.propertyId == sent.propertyId {
-                // Training improves; the photos are still on the phone, so a new run needs no rescan.
-                Text("Sends the photos again for a new AI-enhanced model. Photoreal can be trained again from the Atrium dashboard.")
+                // The AI improves; the photos are still on the phone, so a new model needs no rescan.
+                Text("Sends the photos again for a new AI-enhanced model.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 photorealButton(scan, title: "Send the photos again", primary: false)

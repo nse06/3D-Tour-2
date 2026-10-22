@@ -14,17 +14,7 @@ import { adminRepositoryUnavailableReason, bundleToTourData, getAdminRepository,
 import type { PropertyInput } from "@/lib/data/types";
 import { DEMO_ASSET_URL, DEMO_COVER_URL, demoManifest } from "@/lib/demo";
 import { ingestCapture } from "@/lib/ingest";
-import {
-  deleteListingPhotos,
-  deletePhotos,
-  dispatchJob,
-  gpuConfigured,
-  inputNames,
-  PHOTOS_GONE,
-  photosJobId,
-  photosOnServer,
-  WAITING_FOR_GPU,
-} from "@/lib/photoreal";
+import { deleteListingPhotos, deletePhotos, photosJobId } from "@/lib/photoreal";
 import { NO_PHOTOS, photosForRemaster, queueRemaster, remasterBusy, remasterConfigured, WAITING_FOR_REMASTER_GPU } from "@/lib/remaster";
 import { manifestToSpace } from "@/lib/tour/scan-manifest";
 import { newId, parseSpace } from "@/lib/tour/space";
@@ -154,7 +144,12 @@ export async function deletePropertyAction(propertyId: string): Promise<void> {
  */
 export async function deleteAccountAction(_previous: { error?: string }, form: FormData): Promise<{ error?: string }> {
   const user = await requireUser();
-  if (String(form.get("confirm") ?? "").trim().toUpperCase() !== "DELETE") return { error: "Type DELETE to confirm." };
+  if (
+    String(form.get("confirm") ?? "")
+      .trim()
+      .toUpperCase() !== "DELETE"
+  )
+    return { error: "Type DELETE to confirm." };
   try {
     if (isSupabaseConfigured()) {
       const unavailable = adminRepositoryUnavailableReason();
@@ -286,8 +281,8 @@ export async function saveSpaceAction(propertyId: string, space: unknown): Promi
 
 export async function setAppearanceAction(propertyId: string, appearance: TourAppearance): Promise<ActionResult> {
   const user = await requireUser();
-  if (appearance !== "studio" && appearance !== "captured" && appearance !== "photoreal" && appearance !== "remastered")
-    return { ok: false, error: "Unknown appearance." };
+  // Photoreal is retired: its splats no longer show (docs/photoreal.md).
+  if (appearance !== "studio" && appearance !== "captured" && appearance !== "remastered") return { ok: false, error: "Unknown appearance." };
   try {
     const repo = await getRepository();
     if (appearance === "remastered" && !(await repo.getProperty(user.id, propertyId))?.tour?.remasterUrl) {
@@ -303,119 +298,17 @@ export async function setAppearanceAction(propertyId: string, appearance: TourAp
 }
 
 // ---------------------------------------------------------------------------
-// Photoreal walkthroughs (docs/photoreal.md)
+// The scan's photos (kept on the server for the AI-enhanced model)
 // ---------------------------------------------------------------------------
 
-/**
- * Hands the listing's waiting (or failed) photoreal job to the GPU again, or sends the realtor to
- * pay for photoreal first; the job starts by itself once they have.
- */
-export async function startPhotorealAction(propertyId: string): Promise<ActionResult> {
-  const user = await requireUser();
-  try {
-    // Through the realtor's own session first: only their job is found.
-    const repo = await getRepository();
-    const job = await repo.latestPhotorealJob(user.id, propertyId);
-    if (!job) return { ok: false, error: "No photos have been sent for a photoreal walkthrough yet." };
-    if (job.status !== "queued" && job.status !== "failed")
-      return { ok: false, error: `The photoreal walkthrough is already ${job.status === "done" ? "ready" : job.status}.` };
-    if (!gpuConfigured()) return { ok: false, error: WAITING_FOR_GPU };
-    if ((await inputNames(job)).length < job.files) return { ok: false, error: PHOTOS_GONE };
-    const address = (await repo.getProperty(user.id, propertyId))?.property.addressLine ?? "your listing";
-    const origin = requestOrigin(await headers());
-    const pay = await claimOrCheckout(
-      () => photorealAccess(user, propertyId),
-      (price) =>
-        checkoutUrl({
-          payer: user,
-          price,
-          propertyId,
-          description: `Photoreal walkthrough: ${address}`,
-          origin,
-          cancelPath: `/dashboard/properties/${propertyId}`,
-        }),
-    );
-    if (pay) return { ok: false, checkoutUrl: pay };
-    const started = await dispatchJob(await getAdminRepository(), job, serverBaseUrl(await headers()).url);
-    revalidatePath(`/dashboard/properties/${propertyId}`);
-    return started.status === "running" ? { ok: true } : { ok: false, error: started.message ?? "The GPU didn't take the job." };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
-}
-
-/**
- * Trains the listing's photoreal walkthrough again from the photos already on the server (a newer
- * trainer, another version): a new job, no rescan. Photoreal paid for once covers it; otherwise the
- * job waits and the realtor pays first, like the first time.
- */
-export async function retrainPhotorealAction(propertyId: string): Promise<ActionResult> {
-  const user = await requireUser();
-  try {
-    const repo = await getRepository();
-    const latest = await repo.latestPhotorealJob(user.id, propertyId);
-    if (!latest) return { ok: false, error: "No photos have been sent for a photoreal walkthrough yet." };
-    if (latest.status !== "done" && latest.status !== "failed") return { ok: false, error: "The photoreal walkthrough is already on its way." };
-    if (!gpuConfigured()) return { ok: false, error: WAITING_FOR_GPU };
-    const source = await repo.getPhotorealJob(photosJobId(latest));
-    if (!source || source.inputsDeletedAt || !(await photosOnServer(latest))) return { ok: false, error: PHOTOS_GONE };
-    // The admin repository: the job's columns are the server's to write.
-    const admin = await getAdminRepository();
-    const job = await admin.createPhotorealJob(user.id, propertyId, { files: source.files, bytes: source.bytes, inputsJobId: source.id });
-    if (!job) return { ok: false, error: "Send the scan to Atrium first, then make it AI-enhanced." };
-    const address = (await repo.getProperty(user.id, propertyId))?.property.addressLine ?? "your listing";
-    const origin = requestOrigin(await headers());
-    const pay = await claimOrCheckout(
-      () => photorealAccess(user, propertyId),
-      (price) =>
-        checkoutUrl({
-          payer: user,
-          price,
-          propertyId,
-          description: `Photoreal walkthrough: ${address}`,
-          origin,
-          cancelPath: `/dashboard/properties/${propertyId}`,
-        }),
-    );
-    revalidatePath(`/dashboard/properties/${propertyId}`);
-    // Paying starts the waiting job (billing/stripe.ts).
-    if (pay) return { ok: false, checkoutUrl: pay };
-    const started = await dispatchJob(admin, job, serverBaseUrl(await headers()).url);
-    return started.status === "running" ? { ok: true } : { ok: false, error: started.message ?? "The GPU didn't take the job." };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
-}
-
-/**
- * Which version of the photoreal walkthrough buyers see (docs/photoreal.md §3.1): "faithful", made
- * only from the photos, or "ai", cleaned up by the AI where the photos say little.
- */
-export async function choosePhotorealVersionAction(propertyId: string, version: "faithful" | "ai"): Promise<ActionResult> {
-  const user = await requireUser();
-  try {
-    const repo = await getRepository();
-    const job = await repo.latestPhotorealJob(user.id, propertyId);
-    const ai = job?.variants?.ai;
-    const url = version === "ai" ? (ai?.status === "done" ? ai.splatUrl : null) : job?.status === "done" ? job.splatUrl : null;
-    if (!url) return { ok: false, error: "That version isn't ready." };
-    await repo.setSplatUrl(user.id, propertyId, url);
-    revalidatePath(`/dashboard/properties/${propertyId}`);
-    revalidatePath(`/dashboard/properties/${propertyId}/preview`);
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
-}
-
-/** Deletes the photos kept for training the listing again (the walkthrough itself stays). */
+/** Deletes the photos kept for making the AI-enhanced model again (the model itself stays). */
 export async function deletePhotorealPhotosAction(propertyId: string): Promise<ActionResult> {
   const user = await requireUser();
   try {
     const latest = await (await getRepository()).latestPhotorealJob(user.id, propertyId);
     if (!latest) return { ok: false, error: "There are no photos to delete." };
-    if (latest.status === "uploading" || latest.status === "queued" || latest.status === "running") {
-      return { ok: false, error: "The photos are in use: wait until the walkthrough is ready." };
+    if (latest.status === "uploading" || latest.status === "running") {
+      return { ok: false, error: "The photos are still arriving: try again in a minute." };
     }
     const remaster = await (await getRepository()).latestRemasterJob(user.id, propertyId).catch(() => null);
     if (remaster && remasterBusy(remaster) && remaster.inputsJobId === photosJobId(latest)) {
@@ -435,8 +328,8 @@ export async function deletePhotorealPhotosAction(propertyId: string): Promise<A
 
 /**
  * Remasters the listing's scan from the photos kept on the server: a new job for the remaster GPU.
- * Covered by the listing's photoreal (one look made from the photos, any version of it); otherwise the
- * realtor pays first, as for photoreal, and it starts once paid.
+ * Covered by the listing's AI enhancement (billed under its old "photoreal" key: one look made from
+ * the photos, any version of it); otherwise the realtor pays first, and it starts once paid.
  */
 export async function startRemasterAction(propertyId: string): Promise<ActionResult> {
   const user = await requireUser();
@@ -463,7 +356,7 @@ export async function startRemasterAction(propertyId: string): Promise<ActionRes
           payer: user,
           price,
           propertyId,
-          description: `Remastered model: ${bundle!.property.addressLine}`,
+          description: `AI-enhanced model: ${bundle!.property.addressLine}`,
           origin,
           cancelPath: `/dashboard/properties/${propertyId}`,
           start: "remaster",
@@ -513,7 +406,14 @@ export async function createCaptureSessionAction(propertyId: string): Promise<Ac
     const svg = await QRCode.toString(deepLink, { type: "svg", margin: 1, errorCorrectionLevel: "M", color: { dark: "#161514", light: "#ffffff" } });
     return {
       ok: true,
-      pairing: { deepLink, qrCode: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, serverUrl: server.url, lan: server.lan, preview: process.env.VERCEL_ENV === "preview" && !process.env.NEXT_PUBLIC_SITE_URL, expiresAt },
+      pairing: {
+        deepLink,
+        qrCode: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`,
+        serverUrl: server.url,
+        lan: server.lan,
+        preview: process.env.VERCEL_ENV === "preview" && !process.env.NEXT_PUBLIC_SITE_URL,
+        expiresAt,
+      },
     };
   } catch (e) {
     return { ok: false, error: (e as Error).message };

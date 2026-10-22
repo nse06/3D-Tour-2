@@ -9,7 +9,6 @@ import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { photorealParked } from "@/lib/billing/plans";
 import { isSupabaseConfigured, supabasePublicKey } from "@/lib/data/config";
 import type { Repository } from "@/lib/data/repository";
 import type { PhotorealJob } from "@/lib/data/types";
@@ -233,10 +232,8 @@ export async function pruneListingPhotos(repo: Repository, userId: string, prope
   const uploads = jobs.filter((j) => !j.inputsJobId && !j.inputsDeletedAt);
   const newest = uploads.find((j) => j.status !== "uploading");
   if (!newest) return;
-  // A photoreal job parked behind the remaster (never started) doesn't hold its photos once newer ones arrive.
-  const busy = new Set(
-    jobs.filter((j) => j.status === "uploading" || (j.status === "queued" && !photorealParked(j.message)) || j.status === "running").map(photosJobId),
-  );
+  // A waiting photoreal job never starts now (photoreal is retired): it doesn't hold its photos once newer ones arrive.
+  const busy = new Set(jobs.filter((j) => j.status === "uploading" || j.status === "running").map(photosJobId));
   // A database without remaster jobs has none holding photos.
   const remasters = await repo.listRemasterJobs(userId, propertyId).catch(() => []);
   for (const r of remasters) if ((r.status === "queued" || r.status === "running") && r.inputsJobId) busy.add(r.inputsJobId);

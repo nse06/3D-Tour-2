@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import TourViewer, { type SplatVersion } from "@/components/tour/TourViewer";
+import TourViewer from "@/components/tour/TourViewer";
 import { requireUser } from "@/lib/auth";
 import { bundleToTourData, getRepository } from "@/lib/data/repository";
 
@@ -16,20 +16,9 @@ export default async function PreviewPage(props: PageProps<"/dashboard/propertie
   const data = bundleToTourData(bundle);
   if (!data) notFound();
   const live = bundle.property.published && !!bundle.tour?.published;
-  // Both versions of the photoreal walkthrough, to compare (docs/photoreal.md §3.1).
-  const job = data.splatUrl ? await repo.latestPhotorealJob(user.id, id).catch(() => null) : null;
-  const ai = job?.variants?.ai;
-  const versions: SplatVersion[] | undefined =
-    job?.splatUrl && ai?.status === "done" && ai.splatUrl && [job.splatUrl, ai.splatUrl].includes(data.splatUrl!)
-      ? [
-          { key: "faithful", label: "Faithful", url: job.splatUrl },
-          { key: "ai", label: "AI-enhanced", url: ai.splatUrl },
-        ]
-      : undefined;
   return (
     <TourViewer
       data={data}
-      splatVersions={versions}
       compareRemaster={!!data.remasterUrl}
       shareUrl={live ? `/tour/${bundle.property.slug}` : null}
       banner={
