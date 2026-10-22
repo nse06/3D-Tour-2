@@ -471,6 +471,7 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
     in_box = np.array([any(bool(b.contains(m[None], 0.1)[0]) for b in layout.objects) for m in found.middle], bool)
     removable = (found.area <= cfg.remove_area) & ~in_box
     pieces = rebuildable(layout, cfg)
+    fitted = [b for b in layout.objects if b.category == "storage" and built_in(b, layout, cfg.fixture_reach)]
     cameras = pick_cameras(capture, cfg, mesh, pieces)
     views = make_views(mesh, capture, cfg, found.of_face, pieces, cameras)
     verdict = Verdict(ask(reviewer, views, cfg, log), cameras=cameras)
@@ -496,8 +497,10 @@ def inspect(mesh: Mesh, capture: Capture, layout: Layout, reviewer: Reviewer, cf
                 continue
             box, how = pointed_at(issue, view, pieces, cfg)
             if box is None:
-                log(f"review: view {issue.view}: {issue.what!r} ({issue.furniture or 'any'}, point at {landed(view, issue.point)}) matched no piece: {how}"[:260])
-                issue.outcome = "left: no furniture piece RoomPlan measured there"
+                at = landed(view, issue.point)
+                log(f"review: view {issue.view}: {issue.what!r} ({issue.furniture or 'any'}, point at {at}) matched no piece: {how}"[:260])
+                built = at is not None and any(bool(b.contains(np.array([at]), 0.15)[0]) for b in fitted)
+                issue.outcome = "left: built in (kitchen and bath cabinets aren't rebuilt)" if built else "left: no furniture piece RoomPlan measured there"
                 continue
             log(f"review: view {issue.view}: {issue.what!r} is the {box.category} {box.id[:8]} (by {how}; point at {landed(view, issue.point)})"[:260])
             # Boxy in any view, a box (the photos paint its drawers on it).

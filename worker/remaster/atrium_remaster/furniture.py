@@ -82,6 +82,7 @@ class FurnitureConfig:
     better_by: float = 0.05  # ... nor one matching them less than this better than the scanned piece
     box_iou: float = 0.3  # a reviewer's box pick (RoomPlan's box) matching the cutouts less than this isn't used
     box_slack: float = 0.1  # ... nor one matching them this much worse than the scan (RoomPlan's box isn't the piece)
+    unchecked_boxes: tuple[str, ...] = ("storage",)  # ... but these, picked and in no photo to check them, are used anyway
     upright: bool = True  # the shape maker makes things standing up (y up): only turn them about it
     max_faces: int = 30000
     margin: float = 0.03  # the scanned piece: what lies within this of its box
@@ -376,9 +377,14 @@ def run(
         piece = piece_faces(mesh, b, chart, flat, cfg.margin)
         found = sights(caster, piece, b, capture.cameras, cfg) if piece.any() else []
         boxed = also.get(b.id) == "box"
-        # RoomPlan's box needs no cutout to make it from, only photos to check it against.
+        # RoomPlan's box needs no cutout to make it from, only photos to check it against; a storage
+        # box (a dresser, a cabinet: RoomPlan measures those well) the reviewer picked needs none, as a
+        # long dresser against a wall may be in no photo half framed.
         whole = [s for s in found if s.framed >= cfg.in_frame] or (found if boxed else [])
         if not whole:
+            if boxed and piece.any() and b.category in cfg.unchecked_boxes:
+                plans.append((b, piece, None, None, []))
+                continue
             log(f"furniture: {named(b)}: no photo shows it whole")
             stats["furnitureKept"] += 1
             continue
@@ -412,7 +418,7 @@ def run(
             if color is None:
                 color = np.median(image[mask], 0) / 255
             views.append(fit_view(s, mask, scene, cfg.fit_px))
-        if crop is None and not (boxed and views):
+        if crop is None and not (boxed and (views or b.category in cfg.unchecked_boxes)):
             log(f"furniture: {named(b)}: no cutout")
             stats["furnitureKept"] += 1
             continue
@@ -432,10 +438,20 @@ def run(
             continue
         v, f = simplify(*main_parts(*shape), cfg.max_faces)
         world, f, iou = fit(v, f, b, views, cfg.upright)
+        pick = also.get(b.id)
+        if pick == "box" and not views:
+            log(f"furniture: {named(b)}: made as RoomPlan box, unchecked (no photo frames it)")
+            remove |= piece
+            stats["furnitureIds"].append(b.id)
+            stats["furnitureUnchecked"] = stats.get("furnitureUnchecked", 0) + 1
+            from .fuse import piece_color
+
+            # Its color, until the skins paint it from the photos: what the scan painted it.
+            additions.append(Addition(world.astype(np.float32), f, color=piece_color(mesh, np.flatnonzero(piece)), name=f"furniture-{b.id}"))
+            continue
         scanned = outline_iou(mesh.vertices, mesh.faces[piece], views)
         stats["furnitureFit"][b.id] = round(iou, 3)
         stats["furnitureScannedFit"][b.id] = round(scanned, 3)
-        pick = also.get(b.id)
         need = max(cfg.box_iou, scanned - cfg.box_slack) if pick == "box" else cfg.min_iou if pick == "made" else max(cfg.min_iou, scanned + cfg.better_by)
         if iou < need:
             log(f"furniture: {named(b)}: its {'box' if pick == 'box' else 'shape'} matches the photos {iou:.2f}, the scanned one {scanned:.2f}: keeping the scanned one")

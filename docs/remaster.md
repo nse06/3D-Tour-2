@@ -182,7 +182,10 @@ scan without having to beat its outline, since a hole hardly changes an outline 
 broken: a made shape at 60% overlap; RoomPlan's box (for what's a box in real life) at 30%, just enough to show
 it's where the photos see the piece, and no more than 10 points worse than the scan, since RoomPlan's box isn't
 always the piece (a real sofa's, taking in its back cushions, came out a block at 0.55 to the scan's 0.76; a side
-table's box, which looked right, scored 0.55 to about 0.59). `furnitureAll: true` makes every movable piece as before.
+table's box, which looked right, scored 0.55 to about 0.59). A picked storage box (a dresser, a cabinet: RoomPlan
+measures those well) that no photo frames even half goes in unchecked, starting as the color the scan painted it
+(`furnitureUnchecked` in the stats): Sheridan's 1.8 m dresser against the window wall was in no photo half framed.
+`furnitureAll: true` makes every movable piece as before.
 
 TripoSG runs with its marching-cubes decoder (scikit-image). Its fast decoder's mesher (diso) and its background
 remover (RMBG-1.4) aren't used, since neither license is one we take on: the image puts a stub in place of diso
@@ -303,7 +306,7 @@ aren't in the photo, objects with holes or missing parts, smeared patches, wrong
   the truth, whether its point is on it).
 * **What came of it**: each problem in `reviewFound` ends with what was done (removed; to be rebuilt as a
   box, then rebuilt or "tried, but the scan stayed"; left, and why: no furniture RoomPlan measured there,
-  not a small loose piece, repainting isn't built yet). Those acted on come first, 25 at most.
+  built in (its point in kitchen or bath cabinets), not a small loose piece, repainting isn't built yet). Those acted on come first, 25 at most.
 * **The result, last** (after the lighting), from the same photos (no more go to it than the 10 the privacy
   page names; change both together): what it still finds goes to the stats for the dashboard.
 
@@ -415,7 +418,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 75 tests (below)
+python -m pytest tests -q        # CPU, 77 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

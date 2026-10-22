@@ -150,6 +150,31 @@ def test_the_reviewers_picks_replace_the_scan_without_beating_its_outline(tmp_pa
     assert out is mesh and stats["furnitureMade"] == 0 and not maker.images, "the reviewer picked nothing: nothing made"
 
 
+def test_a_picked_dresser_no_photo_frames_is_still_roomplans_box(tmp_path, monkeypatch):
+    """A long dresser against a wall may be in no photo half framed (a real 1.8 m one wasn't): picked
+    by the reviewer, RoomPlan's storage box goes in unchecked, starting as the scan's color. A table
+    so picked isn't (RoomPlan's tables are less often their box)."""
+    monkeypatch.setattr(furniture, "sights", lambda *a, **k: [])
+
+    def maker(images):
+        raise AssertionError("a box needs no shape maker")
+
+    cfg = furniture.FurnitureConfig(long_side=160, in_frame=0.8, crop=64, fit_px=80)
+    for category, made in (("storage", 1), ("table", 0)):
+        room.write(tmp_path / category, layout=room.layout_doc(cabinet=category))
+        mesh = scanned_short(scene.from_model(glb.read((tmp_path / category / "model.glb").read_bytes())), 0.5)
+        capture, lay = load(tmp_path / category / "capture"), layout.load(tmp_path / category / "capture")
+        out, stats = furniture.run(mesh, capture, lay, furniture.BoxSegmenter(), maker, cfg, log=lambda _: None, also={"CAB": "box"}, only_also=True)
+        assert stats["furnitureMade"] == made and stats.get("furnitureUnchecked", 0) == made, (category, stats)
+    cabinet = np.repeat(np.arange(len(room.charts())), 2) >= 6
+    kept = len(mesh.faces) - int(cabinet.sum())
+    room.write(tmp_path / "again", layout=room.layout_doc())
+    mesh = scanned_short(scene.from_model(glb.read((tmp_path / "again" / "model.glb").read_bytes())), 0.5)
+    out, _ = furniture.run(mesh, load(tmp_path / "again" / "capture"), layout.load(tmp_path / "again" / "capture"), furniture.BoxSegmenter(), maker, cfg, log=lambda _: None, also={"CAB": "box"}, only_also=True)
+    new = out.vertices[np.unique(out.faces[kept:])]
+    assert len(out.faces) == kept + 12 and np.allclose(new.min(0), [1.0, 0.0, 0.0], atol=1e-5) and np.allclose(new.max(0), [1.8, 0.9, 0.5], atol=1e-5)
+
+
 def test_a_box_much_worse_than_the_scan_isnt_used(tmp_path):
     """RoomPlan's box for a sofa takes in its back cushions. Here the box is twice the cabinet's height
     and the photos show the cabinet (the lower half): the box matches them far worse than the scan,

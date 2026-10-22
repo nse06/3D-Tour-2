@@ -153,6 +153,33 @@ def test_a_point_on_the_piece_or_a_loose_box_around_it_finds_it(tmp_path, monkey
     assert any("(by its point; point at [" in line for line in logs) and any("(by its box;" in line for line in logs), logs
 
 
+def test_a_built_in_cabinet_is_left_and_says_so(tmp_path, monkeypatch):
+    """Kitchen cabinets (storage beside a sink) are never rebuilt: the problem says why it's left."""
+    doc = room.layout_doc()
+    doc["objects"].append({"id": "SINK", "category": "sink", "center": [2.6, 0.45, 0.25], "axes": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "size": [0.6, 0.9, 0.5]})
+    room.write(tmp_path, layout=doc)
+    capture, plan = load(tmp_path / "capture"), layout.load(tmp_path / "capture")
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    cabinet = next(b for b in plan.objects if b.id == "CAB")
+    seen = []
+    make = review.make_views
+    monkeypatch.setattr(review, "make_views", lambda *a, **k: seen.extend(make(*a, **k)) or list(seen))
+
+    def spotter(photo, rendered):
+        view = seen[spotter.calls % len(seen)]
+        spotter.calls += 1
+        outline = review.projected_box(cabinet, view)
+        if outline is None:
+            return []
+        point = ((outline[0] + outline[2]) / 2, (outline[1] + outline[3]) / 2)
+        return [review.Issue("incomplete", "white cabinet", outline, "rebuild", "high", True, "storage", point)]
+
+    spotter.calls = 0
+    _, verdict = review.inspect(mesh, capture, plan, spotter, review.ReviewConfig(views=6, long_side=160, workers=1), log=lambda _: None)
+    assert verdict.issues and verdict.rebuild == {}, verdict
+    assert {i.outcome for i in verdict.issues} == {"left: built in (kitchen and bath cabinets aren't rebuilt)"}
+
+
 def test_the_photos_reviewed_show_every_piece_of_furniture(tmp_path):
     """Photos picked evenly along the walk can all miss a piece: the first picked shows the most
     furniture not yet shown, the most of it on a tie."""
