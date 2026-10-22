@@ -16,8 +16,8 @@ wrong, where (a box on the render) and what the thing should be. Then:
   finds its dresser. The reviewer having seen the scan is broken, a pick replaces it without having to
   match the photos' outlines better than the scan does (holes don't show in an outline);
 * `check_pieces`, right after: every dresser, cabinet and box-like table RoomPlan measured is shown to
-  it on its own (outlined, cropped from the photo that shows it best) with two questions: is it a
-  closed box, and is the model of it broken? A broken closed box is made again as RoomPlan's box. The
+  it on its own (outlined, cropped from the photo that shows it best) with two questions: is it
+  box-shaped, and is the model of it broken? A broken box is made again as RoomPlan's box. The
   open look over the home notices a piece one run and misses it the next (a real dresser by a window);
   asked about each piece, it doesn't have to notice;
 * `final`, once the remaster is done: what it still finds goes into the stats, for the dashboard.
@@ -122,16 +122,16 @@ PIECE_SYSTEM = """You check one piece of furniture in a 3D model of a home made 
 real estate listing. You get two images from the same camera, cropped around the piece: first a photo of the real \
 room, then the 3D model rendered from that viewpoint (flat-shaded from its own textures; grey background means the \
 model has nothing there). The piece is outlined in magenta on both. Answer about the outlined piece only:
-- closed_box: in the photo, is it basically a closed box: a dresser, chest of drawers, cabinet, nightstand, TV stand \
-or sideboard with doors or drawers? Not open shelves, not a table on legs, not a chair, sofa or bed.
+- box_shaped: in the photo, is its overall shape a box: a dresser, chest of drawers, cabinet, nightstand, TV stand \
+or sideboard? A drawer or door left open doesn't matter. Not open shelves, a table on legs, a chair, sofa or bed.
 - broken: in the model, is it clearly broken next to the photo: holes, missing chunks, ragged or warped sides, lumps, \
 or blotched with patches of the wrong color where the photo shows a clean surface? Ignore lighting and color cast.
 - sure: how sure you are of both."""
 
 PIECE_SCHEMA = {
     "type": "object",
-    "properties": {"closed_box": {"type": "boolean"}, "broken": {"type": "boolean"}, "sure": {"type": "string", "enum": ["low", "medium", "high"]}},
-    "required": ["closed_box", "broken", "sure"],
+    "properties": {"box_shaped": {"type": "boolean"}, "broken": {"type": "boolean"}, "sure": {"type": "string", "enum": ["low", "medium", "high"]}},
+    "required": ["box_shaped", "broken", "sure"],
     "additionalProperties": False,
 }
 
@@ -253,12 +253,13 @@ class ClaudeReviewer:
         return parse_issues(text, (w, h)) if text else []
 
     def check_piece(self, photo: np.ndarray, rendered: np.ndarray) -> dict | None:
-        """One outlined piece: {"closed_box", "broken", "sure"}, or None. A narrow question: low effort."""
-        text = self._answer(PIECE_SYSTEM, PIECE_SCHEMA, "low", photo, rendered, "The outlined piece: is it a closed box, and is the model of it broken?")
+        """One outlined piece: {"box_shaped", "broken", "sure"}, or None. At its usual effort: at low,
+        the same piece got opposite answers on two runs."""
+        text = self._answer(PIECE_SYSTEM, PIECE_SCHEMA, self.effort, photo, rendered, "The outlined piece: is it box-shaped, and is the model of it broken?")
         if not text:
             return None
         answer = json.loads(text)
-        return {"closed_box": bool(answer.get("closed_box")), "broken": bool(answer.get("broken")), "sure": str(answer.get("sure", "medium"))}
+        return {"box_shaped": bool(answer.get("box_shaped")), "broken": bool(answer.get("broken")), "sure": str(answer.get("sure", "medium"))}
 
 
 def reviewer_from_env(log=print) -> Reviewer | None:
@@ -630,8 +631,13 @@ def check_pieces(reviewer: Reviewer, views: list[View], pieces: list[Box], verdi
     for (_, box, view, (_, _, crop)), answer in zip(asks, answers):
         if answer is None:
             continue
-        rebuild = answer["closed_box"] and answer["broken"] and answer["sure"] != "low"
-        log(f"review: piece {box.category} {box.id[:8]} (view {view.index}): {'a closed box' if answer['closed_box'] else 'not a closed box'}, {'broken' if answer['broken'] else 'fine'} ({answer['sure']}){': rebuilt as a box' if rebuild else ''}")
+        # Storage RoomPlan measured is a box unless the reviewer is fairly sure it isn't (open shelves):
+        # an unsure "not a box" (a real dresser with a drawer open) doesn't keep it as scanned. A table
+        # is a box only if it says so and is fairly sure (most stand on legs).
+        unsure = answer["sure"] == "low"
+        boxy = answer["box_shaped"] or (box.category == "storage" and unsure)
+        rebuild = answer["broken"] and boxy and (box.category == "storage" or not unsure)
+        log(f"review: piece {box.category} {box.id[:8]} (view {view.index}): {'box-shaped' if answer['box_shaped'] else 'not box-shaped'}, {'broken' if answer['broken'] else 'fine'} ({answer['sure']}){': rebuilt as a box' if rebuild else ''}")
         if rebuild:
             verdict.rebuild[box.id] = "box"
             what = "dresser or cabinet" if box.category == "storage" else "box-like table"
@@ -674,7 +680,7 @@ def selftest(reviewer: Reviewer) -> dict:
         inside = i.point is not None and t[0] <= i.point[0] <= t[2] and t[1] <= i.point[1] <= t[3]
         aim.append({"kind": i.kind, "furniture": i.furniture, "boxIoU": round(iou(i.box, t), 2), "pointOnIt": inside})
     out["aim"] = aim
-    # The one-piece question on the dresser, outlined: a closed box, broken.
+    # The one-piece question on the dresser, outlined: box-shaped, broken.
     if hasattr(reviewer, "check_piece"):
         crops = []
         for image in (photo, rendered):

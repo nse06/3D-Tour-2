@@ -309,10 +309,13 @@ aren't in the photo, objects with holes or missing parts, smeared patches, wrong
   broken both times). So every dresser, cabinet and table RoomPlan measured (storage and tables,
   not built in, not already picked as a box) is then shown to it on its own: cropped from the reviewed
   photo showing the most of it, its RoomPlan box outlined in magenta on the photo and the render, with
-  two questions (low effort): is it a closed box (doors or drawers, not open shelves or a table on
-  legs), and is the model of it broken (holes, ragged or warped sides, lumps, blotches)? A broken
-  closed box it's fairly sure of is rebuilt as RoomPlan's box. Up to 12 pieces, the most visible first;
-  the crops come from the same photos, so no more go to it. The log has each answer.
+  two questions (at its usual effort: at low, one cabinet got opposite answers on two runs): is it
+  box-shaped (a dresser, cabinet, nightstand; an open drawer doesn't matter; not open shelves or a
+  table on legs), and is the model of it broken (holes, ragged or warped sides, lumps, blotches)? A
+  broken one is rebuilt as RoomPlan's box: storage unless it's fairly sure it isn't box-shaped (asked
+  "a closed box?", it called Sheridan's window dresser, a drawer open, not one, unsure, and the
+  dresser stayed broken), a table only if it's fairly sure it is. Up to 12 pieces, the most visible
+  first; the crops come from the same photos, so no more go to it. The log has each answer.
 * **What came of it**: each problem in `reviewFound` ends with what was done (removed; to be rebuilt as a
   box, then rebuilt or "tried, but the scan stayed"; left, and why: no furniture RoomPlan measured there,
   built in (its point in kitchen or bath cabinets), not a small loose piece, repainting isn't built yet). Those acted on come first, 25 at most.
@@ -327,7 +330,7 @@ is output and most of it). Two passes of 10 views come to roughly 60 cents a hom
 `atrium-photoreal` Modal secret; without it the review is skipped. The legal pages name Anthropic as a
 subprocessor and say what it sees. To check the key works: `modal run modal_app.py::check_reviewer` (one review of
 a made-up room on a CPU, a few cents; prints what it found, how well it aims, its answer about the
-made-up dresser on its own (`piece`: a closed box, broken) and the tokens, never the key).
+made-up dresser on its own (`piece`: box-shaped, broken) and the tokens, never the key).
 
 ## 5. The job (`atrium_remaster/job.py`)
 
@@ -428,7 +431,7 @@ GPU.
 
 ```sh
 cd worker/remaster
-python -m pytest tests -q        # CPU, 79 tests (below)
+python -m pytest tests -q        # CPU, 80 tests (below)
 modal run modal_app.py::remaster_folder --capture <folder> --model <painted.glb> --out <folder>   # the stages on a GPU
 modal run modal_app.py::make_shape --image <photo> --box x0,y0,x1,y1 --out <folder>             # SAM 2.1 + TripoSG on one piece
 ```

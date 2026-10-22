@@ -200,15 +200,15 @@ class PieceChecker:
 
     name = "stub"
 
-    def __init__(self, broken: bool):
-        self.broken, self.shown = broken, []
+    def __init__(self, broken: bool, shaped: bool = True, sure: str = "high"):
+        self.broken, self.shaped, self.sure, self.shown = broken, shaped, sure, []
 
     def __call__(self, photo, rendered):
         return []
 
     def check_piece(self, photo, rendered):
         self.shown.append((photo, rendered))
-        return {"closed_box": True, "broken": self.broken, "sure": "high"}
+        return {"box_shaped": self.shaped, "broken": self.broken, "sure": self.sure}
 
 
 def test_each_dresser_and_cabinet_is_checked_on_its_own(tmp_path):
@@ -225,9 +225,25 @@ def test_each_dresser_and_cabinet_is_checked_on_its_own(tmp_path):
         photo, rendered = checker.shown[0]
         magenta = lambda im: ((im[..., 0] > 200) & (im[..., 1] < 60) & (im[..., 2] > 200)).sum()
         assert magenta(photo) > 20 and magenta(rendered) > 20, "outlined on both"
+    # Unsure it's a box (a dresser with a drawer open): storage is rebuilt anyway; sure it isn't (open
+    # shelves), it isn't.
+    for shaped, sure, rebuild in ((False, "low", {"CAB": "box"}), (False, "high", {}), (True, "low", {"CAB": "box"})):
+        _, verdict = review.inspect(mesh, capture, plan, PieceChecker(True, shaped, sure), cfg, log=lambda _: None)
+        assert verdict.rebuild == rebuild, (shaped, sure, verdict.rebuild)
     _, verdict = review.inspect(mesh, capture, plan, PieceChecker(True), cfg, log=lambda _: None)
     (issue,) = verdict.issues
     assert issue.piece == "CAB" and issue.outcome == "to be rebuilt as a box" and issue.what.startswith("dresser or cabinet")
+
+
+def test_a_table_is_a_box_only_if_the_reviewer_is_sure(tmp_path):
+    """Most tables stand on legs: one is rebuilt as a box only when it's said to be box-shaped, fairly sure."""
+    room.write(tmp_path, layout=room.layout_doc(cabinet="table"))
+    capture, plan = load(tmp_path / "capture"), layout.load(tmp_path / "capture")
+    mesh = scene.from_model(glb.read((tmp_path / "model.glb").read_bytes()))
+    cfg = review.ReviewConfig(views=6, long_side=160, workers=1)
+    for shaped, sure, rebuild in ((True, "medium", {"CAB": "box"}), (True, "low", {}), (False, "low", {})):
+        _, verdict = review.inspect(mesh, capture, plan, PieceChecker(True, shaped, sure), cfg, log=lambda _: None)
+        assert verdict.rebuild == rebuild, (shaped, sure, verdict.rebuild)
 
 
 class FakeClient:
@@ -267,13 +283,13 @@ def test_claude_is_asked_with_both_images_and_answers_in_boxes():
     assert review.ClaudeReviewer(client=FakeClient(stop="refusal"))(photo, photo) == []
 
 
-def test_claude_is_asked_about_one_piece_at_low_effort():
-    client = FakeClient(json.dumps({"closed_box": True, "broken": True, "sure": "medium"}))
+def test_claude_is_asked_about_one_piece():
+    client = FakeClient(json.dumps({"box_shaped": True, "broken": True, "sure": "medium"}))
     reviewer = review.ClaudeReviewer(client=client)
     crop = np.zeros((40, 60, 3), np.uint8)
-    assert reviewer.check_piece(crop, crop) == {"closed_box": True, "broken": True, "sure": "medium"}
+    assert reviewer.check_piece(crop, crop) == {"box_shaped": True, "broken": True, "sure": "medium"}
     (request,) = client.requests
-    assert request["output_config"]["effort"] == "low" and request["output_config"]["format"]["schema"] == review.PIECE_SCHEMA
+    assert request["output_config"]["effort"] == "medium" and request["output_config"]["format"]["schema"] == review.PIECE_SCHEMA
     assert request["system"] == review.PIECE_SYSTEM and sum(c["type"] == "image" for c in request["messages"][0]["content"]) == 2
     assert review.ClaudeReviewer(client=FakeClient(stop="refusal")).check_piece(crop, crop) is None
 
@@ -304,7 +320,7 @@ def test_the_selftest_says_whether_the_reviewer_answers():
     ]}
     result = review.selftest(review.ClaudeReviewer(client=FakeClient(json.dumps(answer))))
     assert result["ok"] and result["fixes"] == ["rebuild", "remove"] and result["boxy"] and result["tokens"]["input"] == 2 * 2600, result
-    assert result["piece"] == {"closed_box": False, "broken": False, "sure": "medium"}, "the one-piece question asked too (the recorded answer has none of its fields)"
+    assert result["piece"] == {"box_shaped": False, "broken": False, "sure": "medium"}, "the one-piece question asked too (the recorded answer has none of its fields)"
     fragment, dresser = result["aim"]
     assert fragment["boxIoU"] > 0.8 and fragment["pointOnIt"], "it aimed true at the fragment"
     assert dresser["boxIoU"] < 0.2 and dresser["pointOnIt"], "its box is the hole, not the dresser (asked for the whole), its point on the dresser"
